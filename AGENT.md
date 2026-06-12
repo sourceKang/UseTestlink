@@ -20,13 +20,13 @@ You are operating TestLink through `testlink_agent.py`.
 Preview:
 
 ```powershell
-python .\testlink_agent.py upload-report --project "NetAtlasEMS" --plan "NetAtlas EMS" --platform "NetAtlas EMS" --build-id "19641" --report "D:\path\report.txt" --skip-policy ignore
+python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Test Plan" --platform "Your Platform" --build-id "12345" --report "C:\path\to\report.txt" --skip-policy ignore
 ```
 
 Write:
 
 ```powershell
-python .\testlink_agent.py upload-report --project "NetAtlasEMS" --plan "NetAtlas EMS" --platform "NetAtlas EMS" --build-id "19641" --report "D:\path\report.txt" --skip-policy ignore --write
+python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Test Plan" --platform "Your Platform" --build-id "12345" --report "C:\path\to\report.txt" --skip-policy ignore --write
 ```
 
 ## Bug Handling
@@ -37,9 +37,9 @@ Department bug integration is not configured yet. Do not call native TestLink bu
 BUG-ID: <bug id>
 ```
 
-## Release Note Content
+## Custom Release Note Content
 
-The department `Release Note Content` page is a custom TestLink UI feature. Native XML-RPC calls such as build lookup and test suite lookup do not expose this content today. Do not claim release notes are absent only because XML-RPC cannot see them. Tell the user that this integration is pending TestLink owner guidance, then update the tool when the custom API, database table, or supported access method is provided.
+Some teams use custom TestLink UI pages for release-note content. Native XML-RPC calls such as build lookup and test suite lookup may not expose that content. Do not claim release notes are absent only because XML-RPC cannot see them. Tell the user that the integration needs TestLink owner guidance, then update the tool when the custom API, database table, or supported access method is provided.
 
 ## Safety
 

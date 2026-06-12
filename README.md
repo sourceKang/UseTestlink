@@ -11,7 +11,7 @@ and upload automation results.
 - The default `upload-report` mode is preview only. Add `--write` only after reviewing the preview.
 - Result upload appends execution records by default; it does not use overwrite.
 - Native TestLink bug-linking is not used. Until the department bug integration is defined, put bug IDs in execution notes only.
-- The department `Release Note Content` UI is custom and is not currently available through the native TestLink XML-RPC API used by this CLI. Update this tool after the TestLink owner provides the custom API, database table, or supported access method.
+- Custom release-note or bug-linking pages may not be available through the native TestLink XML-RPC API used by this CLI. Update this tool only after the TestLink owner provides the supported API, database table, or access method.
 - Destructive actions such as deletion or overwrite are intentionally not implemented in this CLI.
 
 ## Setup
@@ -21,7 +21,7 @@ Requires Python 3.10+ and only the Python standard library.
 Create environment variables:
 
 ```powershell
-$env:TESTLINK_URL="http://testlink.zyxel.com/testlink"
+$env:TESTLINK_URL="https://your-testlink.example.com/testlink"
 $env:TESTLINK_DEVKEY="your-personal-api-access-key"
 ```
 
@@ -37,11 +37,11 @@ python .\testlink_agent.py list-projects
 
 ```powershell
 python .\testlink_agent.py upload-report `
-  --project "NetAtlasEMS" `
-  --plan "NetAtlas EMS" `
-  --platform "NetAtlas EMS" `
-  --build-id "19641" `
-  --report "D:\RestApi auto\reports\03.00.11 (AAVV.221) b5\Web_Ems_Rest_Api_03.00.11 (AAVV.221) b5_NeoX-03_NXC400_report_2026-06-12_13-26-09.txt" `
+  --project "YourProject" `
+  --plan "Your Test Plan" `
+  --platform "Your Platform" `
+  --build-id "12345" `
+  --report "C:\path\to\report.txt" `
   --skip-policy ignore
 ```
 
@@ -59,11 +59,11 @@ Add `--write` after the preview looks correct:
 
 ```powershell
 python .\testlink_agent.py upload-report `
-  --project "NetAtlasEMS" `
-  --plan "NetAtlas EMS" `
-  --platform "NetAtlas EMS" `
-  --build-id "19641" `
-  --report "D:\path\to\report.txt" `
+  --project "YourProject" `
+  --plan "Your Test Plan" `
+  --platform "Your Platform" `
+  --build-id "12345" `
+  --report "C:\path\to\report.txt" `
   --skip-policy ignore `
   --write
 ```
@@ -83,6 +83,6 @@ Execution notes include automation source, report generation time, EMS version, 
 
 ## Share With Teammates
 
-Publish this repository as a private GitHub or GitHub Enterprise repository. Teammates can clone it, set their own `TESTLINK_DEVKEY`, and run the same commands from their own agent or terminal.
+Publish this repository to the location your team uses for shared tooling. Teammates can clone it, set their own `TESTLINK_URL` and `TESTLINK_DEVKEY`, and run the same commands from their own agent or terminal.
 
-Do not make this repository public if project names, internal URLs, platform names, or report paths are considered internal information.
+Before making a fork or copy public, make sure examples, docs, logs, and test fixtures do not contain internal URLs, project names, platform names, report paths, or credentials.
