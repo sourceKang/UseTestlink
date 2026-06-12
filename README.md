@@ -40,9 +40,19 @@ python .\testlink_agent.py upload-report `
   --project "YourProject" `
   --plan "Your Test Plan" `
   --platform "Your Platform" `
-  --build-id "12345" `
   --report "C:\path\to\report.txt" `
   --skip-policy ignore
+```
+
+If `--build` and `--build-id` are omitted, the CLI selects the latest active/open build in the target test plan and shows the selected build in preview. You can still specify a build explicitly when needed:
+
+```powershell
+python .\testlink_agent.py upload-report `
+  --project "YourProject" `
+  --plan "Your Test Plan" `
+  --platform "Your Platform" `
+  --build "1.2.3 build 5" `
+  --report "C:\path\to\report.txt"
 ```
 
 Preview validates:
@@ -62,7 +72,6 @@ python .\testlink_agent.py upload-report `
   --project "YourProject" `
   --plan "Your Test Plan" `
   --platform "Your Platform" `
-  --build-id "12345" `
   --report "C:\path\to\report.txt" `
   --skip-policy ignore `
   --write

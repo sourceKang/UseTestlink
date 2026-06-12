@@ -116,6 +116,12 @@ class TestLinkClient:
             "tl.getBuildsForTestPlan",
             {"devKey": self.devkey, "testplanid": testplan_id},
         )
+        if not build and not build_id:
+            selected = choose_latest_open_build(builds or [])
+            if selected:
+                return selected
+            raise TestLinkError("No active/open build found. Specify --build or --build-id.")
+
         for candidate in builds or []:
             if build_id and str(candidate.get("id")) == str(build_id):
                 return candidate
@@ -254,6 +260,25 @@ def flatten_plan_cases(raw: Any) -> list[dict[str, Any]]:
 
     walk(raw)
     return cases
+
+
+def choose_latest_open_build(builds: list[dict[str, Any]]) -> dict[str, Any] | None:
+    open_builds = [
+        build
+        for build in builds
+        if str(build.get("active")) == "1" and str(build.get("is_open")) == "1"
+    ]
+    if not open_builds:
+        return None
+    return sorted(
+        open_builds,
+        key=lambda build: (
+            str(build.get("creation_ts") or ""),
+            str(build.get("release_date") or ""),
+            str(build.get("id") or ""),
+        ),
+        reverse=True,
+    )[0]
 
 
 def map_results_to_plan(results: list[ParsedResult], plan_cases: dict[str, dict[str, Any]]) -> list[str]:
@@ -479,9 +504,9 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--project", required=True)
     upload.add_argument("--plan", required=True)
     upload.add_argument("--platform", required=True)
-    build_group = upload.add_mutually_exclusive_group(required=True)
-    build_group.add_argument("--build", help="Build name.")
-    build_group.add_argument("--build-id", help="Build ID.")
+    build_group = upload.add_mutually_exclusive_group(required=False)
+    build_group.add_argument("--build", help="Build name. Omit with --build-id to use the latest active/open build.")
+    build_group.add_argument("--build-id", help="Build ID. Omit with --build to use the latest active/open build.")
     upload.add_argument("--report", required=True)
     upload.add_argument("--skip-policy", choices=("ignore", "blocked"), default="ignore")
     upload.add_argument("--write", action="store_true", help="Actually write results. Omit for preview only.")

@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from testlink_agent import parse_report
+from testlink_agent import choose_latest_open_build, parse_report
 
 
 class ReportParserTests(unittest.TestCase):
@@ -28,6 +28,17 @@ Test Results:
         self.assertIsNone(results[0].status)
         self.assertEqual(results[1].status, "f")
         self.assertEqual(results[2].status, "p")
+
+    def test_selects_latest_open_build(self):
+        selected = choose_latest_open_build(
+            [
+                {"id": "1", "name": "old", "active": "1", "is_open": "1", "creation_ts": "2026-01-01 00:00:00"},
+                {"id": "2", "name": "closed", "active": "1", "is_open": "0", "creation_ts": "2026-03-01 00:00:00"},
+                {"id": "3", "name": "latest", "active": "1", "is_open": "1", "creation_ts": "2026-02-01 00:00:00"},
+            ]
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["id"], "3")
 
 
 if __name__ == "__main__":

@@ -20,14 +20,16 @@ You are operating TestLink through `testlink_agent.py`.
 Preview:
 
 ```powershell
-python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Test Plan" --platform "Your Platform" --build-id "12345" --report "C:\path\to\report.txt" --skip-policy ignore
+python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Test Plan" --platform "Your Platform" --report "C:\path\to\report.txt" --skip-policy ignore
 ```
 
 Write:
 
 ```powershell
-python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Test Plan" --platform "Your Platform" --build-id "12345" --report "C:\path\to\report.txt" --skip-policy ignore --write
+python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Test Plan" --platform "Your Platform" --report "C:\path\to\report.txt" --skip-policy ignore --write
 ```
+
+If the user does not provide `--build` or `--build-id`, the CLI selects the latest active/open build and shows it in preview. If the user needs a specific release, prefer `--build "Build Name"` because most users do not know internal build IDs.
 
 ## Bug Handling
 
