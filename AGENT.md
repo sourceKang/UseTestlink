@@ -37,6 +37,10 @@ Department bug integration is not configured yet. Do not call native TestLink bu
 BUG-ID: <bug id>
 ```
 
+## Release Note Content
+
+The department `Release Note Content` page is a custom TestLink UI feature. Native XML-RPC calls such as build lookup and test suite lookup do not expose this content today. Do not claim release notes are absent only because XML-RPC cannot see them. Tell the user that this integration is pending TestLink owner guidance, then update the tool when the custom API, database table, or supported access method is provided.
+
 ## Safety
 
 - Do not use overwrite unless a future version explicitly implements an approval-protected option.

@@ -11,6 +11,7 @@ and upload automation results.
 - The default `upload-report` mode is preview only. Add `--write` only after reviewing the preview.
 - Result upload appends execution records by default; it does not use overwrite.
 - Native TestLink bug-linking is not used. Until the department bug integration is defined, put bug IDs in execution notes only.
+- The department `Release Note Content` UI is custom and is not currently available through the native TestLink XML-RPC API used by this CLI. Update this tool after the TestLink owner provides the custom API, database table, or supported access method.
 - Destructive actions such as deletion or overwrite are intentionally not implemented in this CLI.
 
 ## Setup
