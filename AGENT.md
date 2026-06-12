@@ -10,12 +10,37 @@ You are operating TestLink through `testlink_agent.py`.
 
 ## Normal Workflow
 
-1. Run preview first.
-2. Confirm project, test plan, platform, build, and result counts.
-3. Use `--write` only after preview has no missing or duplicate test cases.
-4. Report success and failure counts back to the user.
+1. Use read-only lookup commands when project, plan, platform, or build names are unclear.
+2. Run preview first.
+3. Confirm project, test plan, platform, selected build, and result counts.
+4. Use `--write` only after preview has no missing or duplicate test cases.
+5. Report success and failure counts back to the user.
 
 ## Commands
+
+List projects:
+
+```powershell
+python .\testlink_agent.py list-projects
+```
+
+List plans:
+
+```powershell
+python .\testlink_agent.py list-plans --project "YourProject"
+```
+
+List platforms:
+
+```powershell
+python .\testlink_agent.py list-platforms --project "YourProject" --plan "Your Test Plan"
+```
+
+List active/open builds:
+
+```powershell
+python .\testlink_agent.py list-builds --project "YourProject" --plan "Your Test Plan" --open-only
+```
 
 Preview:
 

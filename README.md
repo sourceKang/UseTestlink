@@ -33,6 +33,29 @@ Or copy `.env.example` to `.env` and pass `--env-file .env`.
 python .\testlink_agent.py list-projects
 ```
 
+## Find Plans, Platforms, And Builds
+
+Use these read-only commands when you do not know the exact TestLink names or IDs.
+
+```powershell
+python .\testlink_agent.py list-plans --project "YourProject"
+```
+
+```powershell
+python .\testlink_agent.py list-platforms `
+  --project "YourProject" `
+  --plan "Your Test Plan"
+```
+
+```powershell
+python .\testlink_agent.py list-builds `
+  --project "YourProject" `
+  --plan "Your Test Plan" `
+  --open-only
+```
+
+Most users can omit `--build` and `--build-id` during report upload. The CLI will use the latest active/open build and show the selected build in preview.
+
 ## Preview A Report Upload
 
 ```powershell
@@ -44,7 +67,7 @@ python .\testlink_agent.py upload-report `
   --skip-policy ignore
 ```
 
-If `--build` and `--build-id` are omitted, the CLI selects the latest active/open build in the target test plan and shows the selected build in preview. You can still specify a build explicitly when needed:
+You can still specify a build explicitly when needed:
 
 ```powershell
 python .\testlink_agent.py upload-report `

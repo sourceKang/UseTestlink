@@ -101,21 +101,36 @@ class TestLinkClient:
         raise TestLinkError(f"Test Plan not found: {project_name} / {plan_name}")
 
     def get_platform_by_name(self, testplan_id: str, platform_name: str) -> dict[str, Any]:
+        platforms = self.get_platforms(testplan_id)
+        for platform in platforms:
+            if str(platform.get("name", "")).casefold() == platform_name.casefold():
+                return platform
+        available = ", ".join(str(p.get("name")) for p in platforms)
+        raise TestLinkError(f"Platform not found: {platform_name}. Available: {available}")
+
+    def get_platforms(self, testplan_id: str) -> list[dict[str, Any]]:
         platforms = self.call(
             "tl.getTestPlanPlatforms",
             {"devKey": self.devkey, "testplanid": testplan_id},
         )
-        for platform in platforms or []:
-            if str(platform.get("name", "")).casefold() == platform_name.casefold():
-                return platform
-        available = ", ".join(str(p.get("name")) for p in platforms or [])
-        raise TestLinkError(f"Platform not found: {platform_name}. Available: {available}")
+        return list(platforms or [])
 
-    def get_build(self, testplan_id: str, build: str | None, build_id: str | None) -> dict[str, Any]:
+    def get_project_test_plans(self, project_id: str) -> list[dict[str, Any]]:
+        plans = self.call(
+            "tl.getProjectTestPlans",
+            {"devKey": self.devkey, "testprojectid": project_id},
+        )
+        return list(plans or [])
+
+    def get_builds(self, testplan_id: str) -> list[dict[str, Any]]:
         builds = self.call(
             "tl.getBuildsForTestPlan",
             {"devKey": self.devkey, "testplanid": testplan_id},
         )
+        return list(builds or [])
+
+    def get_build(self, testplan_id: str, build: str | None, build_id: str | None) -> dict[str, Any]:
+        builds = self.get_builds(testplan_id)
         if not build and not build_id:
             selected = choose_latest_open_build(builds or [])
             if selected:
@@ -328,10 +343,19 @@ def result_to_dict(result: ParsedResult) -> dict[str, Any]:
     }
 
 
-def resolve_context(args: argparse.Namespace, client: TestLinkClient) -> dict[str, Any]:
+def parse_common_env(args: argparse.Namespace) -> TestLinkClient:
+    parse_env_file(args.env_file)
+    base_url = args.url or os.environ.get("TESTLINK_URL", "")
+    devkey = args.devkey or os.environ.get("TESTLINK_DEVKEY", "")
+    if not devkey:
+        raise TestLinkError("TESTLINK_DEVKEY is required.")
+    client = TestLinkClient(base_url, devkey, timeout=args.timeout)
     if not client.check_devkey():
         raise TestLinkError("tl.checkDevKey failed.")
+    return client
 
+
+def resolve_context(args: argparse.Namespace, client: TestLinkClient) -> dict[str, Any]:
     project = client.get_project_by_name(args.project)
     plan = client.get_test_plan_by_name(args.project, args.plan)
     platform = client.get_platform_by_name(str(plan["id"]), args.platform)
@@ -349,12 +373,6 @@ def resolve_context(args: argparse.Namespace, client: TestLinkClient) -> dict[st
 
 
 def command_upload_report(args: argparse.Namespace) -> int:
-    parse_env_file(args.env_file)
-    base_url = args.url or os.environ.get("TESTLINK_URL", "")
-    devkey = args.devkey or os.environ.get("TESTLINK_DEVKEY", "")
-    if not devkey:
-        raise TestLinkError("TESTLINK_DEVKEY is required.")
-
     report_path = Path(args.report)
     if not report_path.exists():
         raise TestLinkError(f"Report file does not exist: {report_path}")
@@ -375,7 +393,7 @@ def command_upload_report(args: argparse.Namespace) -> int:
     if duplicate_ids:
         raise TestLinkError(f"Duplicate testcase ids in report: {', '.join(duplicate_ids)}")
 
-    client = TestLinkClient(base_url, devkey, timeout=args.timeout)
+    client = parse_common_env(args)
     context = resolve_context(args, client)
 
     plan_id = str(context["plan"]["id"])
@@ -464,15 +482,7 @@ def command_upload_report(args: argparse.Namespace) -> int:
 
 
 def command_list_projects(args: argparse.Namespace) -> int:
-    parse_env_file(args.env_file)
-    base_url = args.url or os.environ.get("TESTLINK_URL", "")
-    devkey = args.devkey or os.environ.get("TESTLINK_DEVKEY", "")
-    if not devkey:
-        raise TestLinkError("TESTLINK_DEVKEY is required.")
-
-    client = TestLinkClient(base_url, devkey, timeout=args.timeout)
-    if not client.check_devkey():
-        raise TestLinkError("tl.checkDevKey failed.")
+    client = parse_common_env(args)
     projects = client.call("tl.getProjects", {"devKey": client.devkey})
     rows = [
         {
@@ -488,6 +498,62 @@ def command_list_projects(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_list_plans(args: argparse.Namespace) -> int:
+    client = parse_common_env(args)
+    project = client.get_project_by_name(args.project)
+    plans = client.get_project_test_plans(str(project["id"]))
+    rows = [
+        {
+            "id": plan.get("id"),
+            "name": plan.get("name"),
+            "active": plan.get("active"),
+            "is_public": plan.get("is_public"),
+            "testproject_id": plan.get("testproject_id"),
+        }
+        for plan in plans
+    ]
+    print(json.dumps(rows, indent=2, ensure_ascii=False))
+    return 0
+
+
+def command_list_platforms(args: argparse.Namespace) -> int:
+    client = parse_common_env(args)
+    plan = client.get_test_plan_by_name(args.project, args.plan)
+    platforms = client.get_platforms(str(plan["id"]))
+    rows = [
+        {
+            "id": platform.get("id"),
+            "name": platform.get("name"),
+        }
+        for platform in platforms
+    ]
+    print(json.dumps(rows, indent=2, ensure_ascii=False))
+    return 0
+
+
+def command_list_builds(args: argparse.Namespace) -> int:
+    client = parse_common_env(args)
+    plan = client.get_test_plan_by_name(args.project, args.plan)
+    builds = client.get_builds(str(plan["id"]))
+    rows = [
+        {
+            "id": build.get("id"),
+            "name": build.get("name"),
+            "active": build.get("active"),
+            "is_open": build.get("is_open"),
+            "release_date": build.get("release_date"),
+            "closed_on_date": build.get("closed_on_date"),
+            "creation_ts": build.get("creation_ts"),
+        }
+        for build in builds
+    ]
+    if args.open_only:
+        rows = [row for row in rows if str(row.get("active")) == "1" and str(row.get("is_open")) == "1"]
+    rows = sorted(rows, key=lambda row: str(row.get("creation_ts") or ""), reverse=True)
+    print(json.dumps(rows, indent=2, ensure_ascii=False))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="TestLink XML-RPC helper.")
     parser.add_argument("--url", help="TestLink base URL or XML-RPC endpoint. Defaults to TESTLINK_URL.")
@@ -499,6 +565,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     list_projects = subparsers.add_parser("list-projects", help="List visible TestLink projects.")
     list_projects.set_defaults(func=command_list_projects)
+
+    list_plans = subparsers.add_parser("list-plans", help="List test plans for a project.")
+    list_plans.add_argument("--project", required=True)
+    list_plans.set_defaults(func=command_list_plans)
+
+    list_platforms = subparsers.add_parser("list-platforms", help="List platforms for a test plan.")
+    list_platforms.add_argument("--project", required=True)
+    list_platforms.add_argument("--plan", required=True)
+    list_platforms.set_defaults(func=command_list_platforms)
+
+    list_builds = subparsers.add_parser("list-builds", help="List builds for a test plan.")
+    list_builds.add_argument("--project", required=True)
+    list_builds.add_argument("--plan", required=True)
+    list_builds.add_argument("--open-only", action="store_true", help="Show only active/open builds.")
+    list_builds.set_defaults(func=command_list_builds)
 
     upload = subparsers.add_parser("upload-report", help="Preview or upload an automation report.")
     upload.add_argument("--project", required=True)
