@@ -8,9 +8,9 @@
 - TestLink API key 讀取 `TESTLINK_DEVKEY`。
 - 建立 testcase 時，author login 讀取 `TESTLINK_AUTHOR_LOGIN`。
 - 未提供 `--env-file` 時，依序讀取 `TESTLINK_AGENT_ENV_FILE` 指向檔案、`.env`、`local/testlink_agent.env`。
-- 只有建立 Redmine bug 時才讀取 `REDMINE_URL` 與 `REDMINE_API_KEY`。
+- 建立 Redmine bug 時讀取 `REDMINE_URL` 與 `REDMINE_API_KEY`；使用 `--redmine-issue-id` 時若未提供 `--redmine-issue-url`，會用 `REDMINE_URL` 組出 issue URL。
 - 不要印出、提交或要求使用者貼出任何 key；對話中一律遮蔽為 `*****`。
-- 個人執行資料保留在 `.env`、`local/`、`downloads/`、`reports/` 或 `output/`，不要提交。
+- 個人執行資料保留在 `.env`、`local/`、`downloads/`、`reports/`、`output/` 或 `outputs/`，不要提交。
 - 下載的 testcase JSON、Excel 與 automation report 預設只供本機使用；除非使用者明確要求，否則不要上傳或提交。
 
 ## 操作原則
@@ -65,8 +65,11 @@ python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Te
 python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Test Plan" --platform "Your Platform" --report "C:\path\to\report.txt" --skip-policy ignore --redmine-create-bugs
 python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Test Plan" --platform "Your Platform" --report "C:\path\to\report.txt" --skip-policy ignore --redmine-create-bugs --write
 
-# 記錄既有 Redmine issue
+# 預覽記錄既有 Redmine issue
 python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Test Plan" --platform "Your Platform" --report "C:\path\to\report.txt" --skip-policy ignore --redmine-issue-id 255162 --redmine-issue-url "https://redmine.example.com/issues/255162"
+
+# 確認 preview 後，用既有 Redmine issue 寫回 TestLink execution result 與 note
+python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Test Plan" --platform "Your Platform" --report "C:\path\to\report.txt" --skip-policy ignore --redmine-issue-id 255162 --redmine-issue-url "https://redmine.example.com/issues/255162" --write
 ```
 
 未提供 `--build` 或 `--build-id` 時，CLI 會選擇最新 active/open build，並在 preview 顯示選到的 build。需要指定 release 時，優先使用 `--build "Build Name"`。
@@ -75,6 +78,8 @@ python .\testlink_agent.py upload-report --project "YourProject" --plan "Your Te
 
 - `--redmine-create-bugs` 只可用於 `Fail` 與 `Error` 結果。
 - `--redmine-issue-id` 不呼叫 Redmine API，只把既有 issue 記錄到 `Fail` 與 `Error` 的 execution notes。
+- 若 bug 已先用 Redmine API 或 UI 建立，固定流程是先取得 issue id，再執行 `upload-report --redmine-issue-id <id> --write` 寫回 TestLink。
+- 若環境中有 `REDMINE_URL`，可以只傳 `--redmine-issue-id`；否則請同時傳 `--redmine-issue-url`。
 - execution notes 格式：
 
 ```text

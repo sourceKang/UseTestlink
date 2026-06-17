@@ -2,6 +2,7 @@
 downloads/
 reports/
 output/
+outputs/
 *.local.*
 *_testcases.json
 *_testcases.xlsx

@@ -6,6 +6,7 @@ from typing import Any
 
 from .config import DEFAULT_TIMEOUT_SECONDS, normalize_endpoint
 from .errors import TestLinkError
+from .testcases import flatten_plan_cases
 
 
 def xmlrpc_items_to_list(value: Any) -> list[dict[str, Any]]:

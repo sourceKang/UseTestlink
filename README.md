@@ -245,6 +245,36 @@ python .\testlink_agent.py upload-report `
   --redmine-create-bugs
 ```
 
+Record an existing Redmine issue without calling the Redmine API:
+
+```powershell
+python .\testlink_agent.py upload-report `
+  --project "YourProject" `
+  --plan "Your Test Plan" `
+  --platform "Your Platform" `
+  --report "reports\automation_report.txt" `
+  --skip-policy ignore `
+  --redmine-issue-id 255162 `
+  --redmine-issue-url "https://redmine.example.com/issues/255162"
+```
+
+After preview, add `--write` to write the TestLink execution result and note:
+
+```powershell
+python .\testlink_agent.py upload-report `
+  --project "YourProject" `
+  --plan "Your Test Plan" `
+  --platform "Your Platform" `
+  --report "reports\automation_report.txt" `
+  --skip-policy ignore `
+  --redmine-issue-id 255162 `
+  --redmine-issue-url "https://redmine.example.com/issues/255162" `
+  --write
+```
+
+The note includes `REDMINE-ID` and `REDMINE-URL`. If `--redmine-issue-url` is omitted,
+the CLI builds the URL from `REDMINE_URL`.
+
 ## Local Files
 
 These paths are ignored and are safe for local use:
@@ -254,6 +284,7 @@ These paths are ignored and are safe for local use:
 - `downloads/`
 - `reports/`
 - `output/`
+- `outputs/`
 - cache/build artifacts
 
 Only commit source files, docs, examples, and tests.
