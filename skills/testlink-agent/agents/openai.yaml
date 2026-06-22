@@ -1,0 +1,7 @@
+interface:
+  display_name: "TestLink Agent"
+  short_description: "Use TestLink MCP tools safely."
+  default_prompt: "Use $testlink-agent to preview and upload this automation report to TestLink safely."
+
+policy:
+  allow_implicit_invocation: true

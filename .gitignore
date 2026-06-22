@@ -1,4 +1,16 @@
 .env
+local/
+downloads/
+reports/
+output/
+outputs/
+github_upload/
+github_upload.zip
+*.local.*
+*_testcases.json
+*_testcases.xlsx
+testcases.json
+testcases.xlsx
 *.pyc
 __pycache__/
 .pytest_cache/
