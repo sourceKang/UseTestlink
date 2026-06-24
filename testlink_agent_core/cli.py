@@ -26,8 +26,6 @@ from .config import DEFAULT_CATALOG_PATH, DEFAULT_PROFILES_PATH, DEFAULT_TIMEOUT
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="TestLink XML-RPC helper.")
-    parser.add_argument("--url", help="TestLink base URL or XML-RPC endpoint. Defaults to TESTLINK_URL.")
-    parser.add_argument("--devkey", help="Personal API access key. Prefer TESTLINK_DEVKEY.")
     parser.add_argument(
         "--env-file",
         help=(
@@ -257,9 +255,15 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--redmine-tracker-id", help="Redmine tracker ID. Defaults to REDMINE_TRACKER_ID.")
     upload.add_argument("--redmine-status-id", help="Redmine status ID for new issues. Defaults to REDMINE_STATUS_ID.")
     upload.add_argument("--redmine-priority-id", help="Redmine priority ID. Defaults to REDMINE_PRIORITY_ID.")
-    upload.add_argument("--redmine-assigned-to-id", help="Redmine assignee ID. Defaults to REDMINE_ASSIGNED_TO_ID.")
+    upload.add_argument(
+        "--redmine-assigned-to-id",
+        help="Manager-only Redmine assignee ID. Requires REDMINE_ALLOW_MANAGER_FIELDS=true.",
+    )
     upload.add_argument("--redmine-category-id", help="Redmine category ID. Defaults to REDMINE_CATEGORY_ID.")
-    upload.add_argument("--redmine-fixed-version-id", help="Redmine target version ID. Defaults to REDMINE_FIXED_VERSION_ID.")
+    upload.add_argument(
+        "--redmine-fixed-version-id",
+        help="Manager-only Redmine target version ID. Requires REDMINE_ALLOW_MANAGER_FIELDS=true.",
+    )
     upload.add_argument("--redmine-issue-id", help="Existing Redmine issue ID to link for failed results without using Redmine API.")
     upload.add_argument("--redmine-issue-url", help="Existing Redmine issue URL to record in notes.")
     upload.add_argument(

@@ -1,7 +1,9 @@
 import unittest
+import os
 from argparse import Namespace
 from pathlib import Path
 
+from testlink_agent_core.errors import RedmineError
 from testlink_agent_core.models import ParsedResult, RedmineIssue
 from testlink_agent_core.redmine import (
     build_existing_redmine_issue,
@@ -11,6 +13,25 @@ from testlink_agent_core.redmine import (
 
 
 class RedmineTests(unittest.TestCase):
+    def setUp(self):
+        self.saved_env = {
+            key: os.environ.get(key)
+            for key in (
+                "REDMINE_ALLOW_MANAGER_FIELDS",
+                "REDMINE_ASSIGNED_TO_ID",
+                "REDMINE_FIXED_VERSION_ID",
+            )
+        }
+        for key in self.saved_env:
+            os.environ.pop(key, None)
+
+    def tearDown(self):
+        for key, value in self.saved_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
     def test_builds_redmine_issue_payload(self):
         args = Namespace(
             redmine_project="ems",
@@ -48,9 +69,97 @@ class RedmineTests(unittest.TestCase):
         self.assertEqual(payload["project_id"], "ems")
         self.assertEqual(payload["tracker_id"], 1)
         self.assertEqual(payload["priority_id"], 2)
+        self.assertNotIn("assigned_to_id", payload)
+        self.assertNotIn("fixed_version_id", payload)
         self.assertIn("[PRJ-6682]", payload["subject"])
         self.assertIn("Test case: PRJ-6682", payload["description"])
         self.assertIn("Platform: NetAtlas EMS", payload["description"])
+
+    def test_blocks_manager_only_redmine_fields(self):
+        args = Namespace(
+            redmine_project="ems",
+            redmine_tracker_id="1",
+            redmine_status_id="",
+            redmine_priority_id="2",
+            redmine_assigned_to_id="123",
+            redmine_category_id="",
+            redmine_fixed_version_id="",
+        )
+        result = ParsedResult(
+            external_id="PRJ-6682",
+            test_name="test_get_port_by_devicename",
+            raw_status="Fail",
+            status="f",
+            duration_text="0s",
+            duration_seconds=0.0,
+        )
+        context = {
+            "project": {"name": "EMS"},
+            "plan": {"name": "Regression"},
+            "platform": {"name": "NetAtlas EMS"},
+            "build": {"name": "03.00.11(AAVV.221)b5"},
+        }
+
+        with self.assertRaises(RedmineError):
+            build_redmine_issue_payload(args, {}, Path("report.txt"), result, context)
+
+    def test_blocks_manager_only_redmine_fields_from_env(self):
+        os.environ["REDMINE_FIXED_VERSION_ID"] = "9"
+        args = Namespace(
+            redmine_project="ems",
+            redmine_tracker_id="1",
+            redmine_status_id="",
+            redmine_priority_id="2",
+            redmine_category_id="",
+        )
+        result = ParsedResult(
+            external_id="PRJ-6682",
+            test_name="test_get_port_by_devicename",
+            raw_status="Fail",
+            status="f",
+            duration_text="0s",
+            duration_seconds=0.0,
+        )
+        context = {
+            "project": {"name": "EMS"},
+            "plan": {"name": "Regression"},
+            "platform": {"name": "NetAtlas EMS"},
+            "build": {"name": "03.00.11(AAVV.221)b5"},
+        }
+
+        with self.assertRaises(RedmineError):
+            build_redmine_issue_payload(args, {}, Path("report.txt"), result, context)
+
+    def test_manager_env_switch_allows_manager_only_redmine_fields(self):
+        os.environ["REDMINE_ALLOW_MANAGER_FIELDS"] = "true"
+        args = Namespace(
+            redmine_project="ems",
+            redmine_tracker_id="1",
+            redmine_status_id="",
+            redmine_priority_id="2",
+            redmine_assigned_to_id="123",
+            redmine_category_id="",
+            redmine_fixed_version_id="9",
+        )
+        result = ParsedResult(
+            external_id="PRJ-6682",
+            test_name="test_get_port_by_devicename",
+            raw_status="Fail",
+            status="f",
+            duration_text="0s",
+            duration_seconds=0.0,
+        )
+        context = {
+            "project": {"name": "EMS"},
+            "plan": {"name": "Regression"},
+            "platform": {"name": "NetAtlas EMS"},
+            "build": {"name": "03.00.11(AAVV.221)b5"},
+        }
+
+        payload = build_redmine_issue_payload(args, {}, Path("report.txt"), result, context)
+
+        self.assertEqual(payload["assigned_to_id"], 123)
+        self.assertEqual(payload["fixed_version_id"], 9)
 
     def test_build_notes_includes_redmine_link(self):
         result = ParsedResult(

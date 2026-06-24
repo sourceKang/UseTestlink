@@ -1,4 +1,7 @@
 .env
+.env.bak.*
+.codex/
+.agents/
 local/
 downloads/
 reports/

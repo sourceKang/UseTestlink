@@ -36,6 +36,17 @@ $env:REDMINE_TRACKER_ID="1"
 $env:REDMINE_PRIORITY_ID="2"
 ```
 
+Manager-only Redmine fields are blocked by default. A manager can enable them only on
+their own machine:
+
+```powershell
+$env:REDMINE_ALLOW_MANAGER_FIELDS="true"
+$env:REDMINE_ASSIGNED_TO_ID="123"
+$env:REDMINE_FIXED_VERSION_ID="9"
+```
+
+Do not put `REDMINE_ALLOW_MANAGER_FIELDS` in shared env files.
+
 For repeated local use, create a shared local record file instead:
 
 ```powershell
@@ -71,6 +82,31 @@ Install the package locally when you want console entrypoints:
 python -m pip install -e .
 ```
 
+Install directly from git with `pipx`:
+
+```powershell
+pipx install "git+https://your-git.example.com/department/testlink-agent.git"
+```
+
+Or run the MCP server from git with `uvx`:
+
+```powershell
+uvx --from "git+https://your-git.example.com/department/testlink-agent.git" testlink-mcp
+```
+
+Add the MCP server to Codex after setting `TESTLINK_URL` and `TESTLINK_DEVKEY` in your shell or in the Codex MCP env:
+
+```powershell
+codex mcp add testlink-mcp -- testlink-mcp
+```
+
+The MCP server runs a startup health check before serving tools:
+
+- `tl.checkDevKey`
+- `tl.about`
+
+Health output is written to stderr as `testlink-mcp vX.Y.Z`, so stdio JSON-RPC on stdout stays clean.
+
 Example MCP server config:
 
 ```json
@@ -78,7 +114,7 @@ Example MCP server config:
   "mcpServers": {
     "testlink-agent": {
       "command": "python",
-      "args": ["-m", "testlink_agent_core.mcp_server"],
+      "args": ["-m", "testlink_agent_core.server"],
       "cwd": "D:\\UseTestlink",
       "env": {
         "TESTLINK_AGENT_ENV_FILE": "D:\\UseTestlink\\local\\testlink_agent.env"
@@ -94,7 +130,7 @@ If you installed the package, the command can be shortened:
 {
   "mcpServers": {
     "testlink-agent": {
-      "command": "testlink-agent-mcp",
+      "command": "testlink-mcp",
       "cwd": "D:\\UseTestlink"
     }
   }
@@ -103,6 +139,21 @@ If you installed the package, the command can be shortened:
 
 MCP tools exposed by this server:
 
+- `find_project`
+- `find_test_plan`
+- `list_test_suites`
+- `list_test_cases`
+- `get_test_case`
+- `get_last_result`
+- `get_builds`
+- `report_result`
+- `report_results_batch`
+- `create_build`
+- `create_test_case`
+- `update_test_case`
+- `add_case_to_plan`
+- `upload_attachment`
+- `testlink_about`
 - `testlink_list_projects`
 - `testlink_list_plans`
 - `testlink_list_platforms`
@@ -121,6 +172,15 @@ MCP tools exposed by this server:
 Write-capable tools default to preview mode. Agents should call `testlink_create_testcase`,
 `testlink_update_testcase`, and `testlink_upload_report` with `write: false`, summarize the
 preview, and call again with `write: true` only after explicit user confirmation.
+
+The Phase 1 tools above are read-only and prefer names over internal IDs. When a project,
+plan, suite, platform, or build name cannot be matched exactly, the server returns close
+suggestions instead of guessing.
+
+Phase 2 and Phase 3 write-capable tools default to `write: false`. They return the payload
+that would be sent to TestLink and only write when `write: true` is passed after review.
+Create tools check for existing builds or test cases before writing and return the existing
+matches instead of creating duplicates.
 
 ## File Separation
 
@@ -143,7 +203,7 @@ Files for local use only are ignored by git:
 - `reports/`
 - `output/`
 - `outputs/`
-- `github_upload/`
+- `github_upload/` local GitHub upload staging folder; keep it locally, but do not commit it.
 - downloaded testcase JSON files such as `testcases.json` or `ems_testcases.json`
 - downloaded testcase Excel files such as `testcases.xlsx` or `ems_testcases.xlsx`
 - shared local record files such as `local/testlink_agent.env`
@@ -163,6 +223,9 @@ D:\UseTestlink
 
 This root folder is the local working copy. Keep personal files such as `.env`, downloaded
 testcase exports, and automation reports here only.
+
+Keep `github_upload/` as the local staging folder for future GitHub uploads. It is ignored by
+git on purpose because its contents are generated from the shareable source files.
 
 To prepare a clean GitHub-ready copy:
 
@@ -187,7 +250,12 @@ Core behavior lives in `testlink_agent_core/`:
 
 - `cli.py` builds argparse commands and handles top-level errors.
 - `commands.py` contains command handlers.
-- `clients.py` contains the TestLink XML-RPC client.
+- `server.py` registers MCP tools, runs startup health checks, and serves stdio JSON-RPC.
+- `client.py` contains the TestLink XML-RPC client.
+- `clients.py` is a compatibility import wrapper for older code.
+- `resolver.py` contains the name-to-id resolver cache used by newer tools.
+- `tools/` contains MCP tool schemas split into query, report, and mutate groups.
+- `errors.py` contains structured TestLink errors and secret masking helpers.
 - `redmine.py` contains Redmine integration helpers.
 - `reports.py`, `testcases.py`, `suites.py`, and `catalog.py` contain domain logic.
 - `output.py` writes JSON and XLSX output.

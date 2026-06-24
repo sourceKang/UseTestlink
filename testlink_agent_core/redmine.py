@@ -124,6 +124,26 @@ def redmine_optional_id(value: str | None) -> int | str | None:
         return int(text)
     return text
 
+def manager_fields_enabled() -> bool:
+    return os.environ.get("REDMINE_ALLOW_MANAGER_FIELDS", "").strip().casefold() in {"1", "true", "yes", "on"}
+
+def redmine_manager_fields(args: argparse.Namespace) -> dict[str, str]:
+    return {
+        "assigned_to_id": redmine_arg(args, "redmine_assigned_to_id", "REDMINE_ASSIGNED_TO_ID"),
+        "fixed_version_id": redmine_arg(args, "redmine_fixed_version_id", "REDMINE_FIXED_VERSION_ID"),
+    }
+
+def reject_restricted_issue_fields(args: argparse.Namespace) -> None:
+    if manager_fields_enabled():
+        return
+    blocked = [field for field, value in redmine_manager_fields(args).items() if value]
+    if blocked:
+        joined = ", ".join(blocked)
+        raise RedmineError(
+            f"Restricted Redmine fields are not allowed for automation-created bugs: {joined}. "
+            "Set REDMINE_ALLOW_MANAGER_FIELDS=true only on a manager-owned machine to allow them."
+        )
+
 def build_redmine_subject(header: dict[str, str], result: ParsedResult, context: dict[str, Any]) -> str:
     build_name = str(context["build"].get("name") or header.get("EMS Version") or "")
     suffix = f" - {build_name}" if build_name else ""
@@ -173,6 +193,7 @@ def build_redmine_issue_payload(
     result: ParsedResult,
     context: dict[str, Any],
 ) -> dict[str, Any]:
+    reject_restricted_issue_fields(args)
     project_id = redmine_arg(args, "redmine_project", "REDMINE_PROJECT_ID")
     if not project_id:
         raise RedmineError("REDMINE_PROJECT_ID or --redmine-project is required when --redmine-create-bugs is used.")
@@ -186,10 +207,10 @@ def build_redmine_issue_payload(
         "tracker_id": redmine_arg(args, "redmine_tracker_id", "REDMINE_TRACKER_ID"),
         "status_id": redmine_arg(args, "redmine_status_id", "REDMINE_STATUS_ID"),
         "priority_id": redmine_arg(args, "redmine_priority_id", "REDMINE_PRIORITY_ID"),
-        "assigned_to_id": redmine_arg(args, "redmine_assigned_to_id", "REDMINE_ASSIGNED_TO_ID"),
         "category_id": redmine_arg(args, "redmine_category_id", "REDMINE_CATEGORY_ID"),
-        "fixed_version_id": redmine_arg(args, "redmine_fixed_version_id", "REDMINE_FIXED_VERSION_ID"),
     }
+    if manager_fields_enabled():
+        optional_fields.update(redmine_manager_fields(args))
     for field, value in optional_fields.items():
         coerced = redmine_optional_id(value)
         if coerced is not None:

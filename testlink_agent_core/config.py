@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -83,6 +84,33 @@ def load_env_files(explicit_env_file: str | None) -> list[str]:
             parse_env_file(str(path))
             loaded.append(str(path))
     return loaded
+
+@dataclass(frozen=True)
+class TestLinkSettings:
+    url: str
+    devkey: str
+    timeout: int = DEFAULT_TIMEOUT_SECONDS
+    loaded_env_files: tuple[str, ...] = ()
+
+
+def load_testlink_settings(
+    *,
+    env_file: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> TestLinkSettings:
+    loaded = load_env_files(env_file)
+    base_url = os.environ.get("TESTLINK_URL", "").strip()
+    devkey = os.environ.get("TESTLINK_DEVKEY", "").strip()
+    if not base_url:
+        raise TestLinkError("TESTLINK_URL is required.")
+    if not devkey:
+        raise TestLinkError("TESTLINK_DEVKEY is required.")
+    return TestLinkSettings(
+        url=base_url,
+        devkey=devkey,
+        timeout=timeout,
+        loaded_env_files=tuple(loaded),
+    )
 
 def catalog_path(value: str | None = None) -> Path:
     return Path(value or DEFAULT_CATALOG_PATH)

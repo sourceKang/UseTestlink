@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import build_catalog, find_suites_in_catalog, read_catalog, write_catalog
-from .clients import TestLinkClient
-from .config import DEFAULT_CATALOG_PATH, catalog_path, load_env_files
+from .client import TestLinkClient
+from .config import DEFAULT_CATALOG_PATH, catalog_path, load_testlink_settings
 from .errors import TestLinkError
 from .models import RedmineIssue
 from .output import write_json_output, write_xlsx_output
@@ -29,6 +29,7 @@ from .redmine import (
     build_existing_redmine_issue,
     build_notes,
     build_redmine_issue_payload,
+    manager_fields_enabled,
     redmine_arg,
     redmine_issue_to_dict,
 )
@@ -38,12 +39,8 @@ from .testcases import create_testcase_payload, flatten_plan_cases, normalize_te
 
 
 def parse_common_env(args: argparse.Namespace) -> TestLinkClient:
-    load_env_files(args.env_file)
-    base_url = args.url or os.environ.get("TESTLINK_URL", "")
-    devkey = args.devkey or os.environ.get("TESTLINK_DEVKEY", "")
-    if not devkey:
-        raise TestLinkError("TESTLINK_DEVKEY is required.")
-    client = TestLinkClient(base_url, devkey, timeout=args.timeout)
+    settings = load_testlink_settings(env_file=args.env_file, timeout=args.timeout)
+    client = TestLinkClient(settings.url, settings.devkey, timeout=settings.timeout)
     if not client.check_devkey():
         raise TestLinkError("tl.checkDevKey failed.")
     return client
@@ -157,6 +154,7 @@ def command_upload_report(args: argparse.Namespace) -> int:
             "enabled": args.redmine_create_bugs or bool(args.redmine_issue_id),
             "dedupe": args.redmine_dedupe,
             "testlink_bug_link": args.testlink_bug_link,
+            "manager_fields_enabled": manager_fields_enabled(),
             "issues_to_create_or_reuse": redmine_bug_preview,
         },
     }

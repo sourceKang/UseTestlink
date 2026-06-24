@@ -187,7 +187,7 @@ def update_testcase_payload(args: argparse.Namespace) -> dict[str, Any]:
         raise TestLinkError("--testcase-id or --testcase-external-id is required.")
 
     if getattr(args, "version", None):
-        payload["version"] = str(args.version)
+        payload["version"] = int(args.version) if str(args.version).isdigit() else args.version
     if getattr(args, "name", None):
         payload["testcasename"] = args.name
     if getattr(args, "summary", None) is not None or getattr(args, "summary_file", None):

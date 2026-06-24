@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from testlink_agent_core.config import ENV_FILE_POINTER, load_env_files
+from testlink_agent_core.config import ENV_FILE_POINTER, load_env_files, load_testlink_settings
 from testlink_agent_core.errors import TestLinkError
 
 
@@ -71,6 +71,16 @@ class ConfigTests(unittest.TestCase):
 
         with self.assertRaises(TestLinkError):
             load_env_files(None)
+
+    def test_load_testlink_settings_reads_only_environment_values(self):
+        os.environ["TESTLINK_URL"] = "https://testlink.example.com/testlink"
+        os.environ["TESTLINK_DEVKEY"] = "replace-with-test-key"
+
+        settings = load_testlink_settings(timeout=12)
+
+        self.assertEqual(settings.url, "https://testlink.example.com/testlink")
+        self.assertEqual(settings.devkey, "replace-with-test-key")
+        self.assertEqual(settings.timeout, 12)
 
 
 if __name__ == "__main__":
