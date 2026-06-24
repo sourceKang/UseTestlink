@@ -1,4 +1,4 @@
-import json
+﻿import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -45,7 +45,7 @@ class McpServerTests(unittest.TestCase):
         response = handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
 
         self.assertEqual(response["result"]["serverInfo"]["name"], "testlink-mcp")
-        self.assertEqual(response["result"]["serverInfo"]["version"], "0.4.0")
+        self.assertEqual(response["result"]["serverInfo"]["version"], "1.2.0")
         self.assertIn("tools", response["result"]["capabilities"])
 
     def test_tool_schemas_do_not_accept_url_or_devkey(self):
@@ -97,6 +97,23 @@ class McpServerTests(unittest.TestCase):
         self.assertEqual(tools_by_name["report_result"]["inputSchema"]["properties"]["status"]["enum"], ["p", "f", "b"])
         self.assertFalse(tools_by_name["create_build"]["inputSchema"]["properties"]["write"]["default"])
 
+    def test_phase4_tools_are_exposed_with_confirmation(self):
+        tools_by_name = {tool["name"]: tool for tool in TOOLS}
+
+        self.assertIn("delete_execution", tools_by_name)
+        self.assertIn("overwrite_result", tools_by_name)
+        self.assertIn("link_bug", tools_by_name)
+        self.assertTrue(tools_by_name["delete_execution"]["annotations"]["destructiveHint"])
+        self.assertTrue(tools_by_name["delete_execution"]["annotations"]["requiresConfirmation"])
+        self.assertTrue(tools_by_name["overwrite_result"]["annotations"]["destructiveHint"])
+        self.assertTrue(tools_by_name["overwrite_result"]["annotations"]["requiresConfirmation"])
+        self.assertEqual(
+            tools_by_name["delete_execution"]["inputSchema"]["properties"]["confirm"]["const"],
+            True,
+        )
 
 if __name__ == "__main__":
     unittest.main()
+
+
+

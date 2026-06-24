@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
@@ -106,6 +106,18 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
         ),
     },
     {
+        "name": "delete_execution",
+        "description": "Preview or delete a TestLink execution. Requires explicit confirmation before write.",
+        "inputSchema": schema(
+            {
+                "execution_id": string("Internal TestLink execution ID."),
+                "confirm": {"type": "boolean", "const": True},
+                "write": {"type": "boolean", "default": False},
+            },
+            ["execution_id"],
+        ),
+        "annotations": {"destructiveHint": True, "requiresConfirmation": True},
+    },    {
         "name": "testlink_save_profile",
         "description": "Save a reusable local project/suite profile.",
         "inputSchema": schema(
@@ -191,3 +203,4 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
         ),
     },
 ]
+

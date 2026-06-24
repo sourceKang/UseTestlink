@@ -1,3 +1,4 @@
-"""Core modules for TestLink MCP and CLI."""
+﻿"""Core modules for TestLink MCP and CLI."""
 
-__version__ = "0.4.0"
+__version__ = "1.2.0"
+

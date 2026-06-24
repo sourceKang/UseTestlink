@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import base64
@@ -377,7 +377,10 @@ def _report_payload_from_args(item: dict[str, Any], target: dict[str, Any]) -> d
     if item.get("execution_duration") not in (None, ""):
         payload["execduration"] = item["execution_duration"]
     if item.get("overwrite") not in (None, ""):
-        payload["overwrite"] = _coerce_bool_flag(item["overwrite"])
+        overwrite = _coerce_bool_flag(item["overwrite"])
+        if overwrite and item.get("confirm_overwrite") is not True:
+            raise TestLinkError("overwrite=true requires confirm_overwrite=true.")
+        payload["overwrite"] = overwrite
     return payload
 
 
@@ -579,6 +582,8 @@ def report_result(
     failure_summary: str | None = None,
     bug_id: str | None = None,
     execution_duration: int | float | None = None,
+    overwrite: bool = False,
+    confirm_overwrite: bool = False,
     write: bool = False,
     **kwargs: Any,
 ) -> dict[str, Any]:
@@ -606,6 +611,8 @@ def report_result(
             "failure_summary": failure_summary,
             "bug_id": bug_id,
             "execution_duration": execution_duration,
+            "overwrite": overwrite,
+            "confirm_overwrite": confirm_overwrite,
         }
         payload = _report_payload_from_args(item, target)
         result: dict[str, Any] = {
@@ -953,6 +960,66 @@ def upload_attachment(
     return _run_live(run, **kwargs)
 
 
+def overwrite_result(confirm: bool = False, **kwargs: Any) -> dict[str, Any]:
+    if confirm is not True:
+        return {
+            "ok": False,
+            "code": 1,
+            "error": {
+                "type": "ConfirmationRequired",
+                "message": "overwrite_result requires confirm=true.",
+            },
+        }
+    kwargs["overwrite"] = True
+    kwargs["confirm_overwrite"] = True
+    return report_result(**kwargs)
+
+
+def delete_execution(
+    execution_id: str,
+    confirm: bool = False,
+    write: bool = False,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    def run(client_obj: TestLinkClient, _resolver: NameResolver) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "mode": "write" if write else "preview",
+            "execution_id": execution_id,
+            "requires_confirmation": True,
+            "confirmed": confirm is True,
+        }
+        if write and confirm is not True:
+            raise TestLinkError("delete_execution requires confirm=true when write=true.")
+        if write:
+            result["response"] = client_obj.delete_execution(execution_id)
+        return result
+
+    return _run_live(run, **kwargs)
+
+
+def link_bug(
+    bug_id: str,
+    status: str,
+    notes: str = "",
+    write: bool = False,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    if not bug_id:
+        return {
+            "ok": False,
+            "code": 1,
+            "error": {"type": "ValidationError", "message": "bug_id is required."},
+        }
+    kwargs["bug_id"] = bug_id
+    kwargs["status"] = status
+    kwargs["notes"] = notes
+    kwargs["write"] = write
+    result = report_result(**kwargs)
+    if result.get("ok") and isinstance(result.get("result"), dict):
+        result["result"]["link_mode"] = "notes"
+        result["result"]["bug_id"] = bug_id
+        result["result"]["message"] = "Bug ID is written to report_result notes only; native TestLink bugid is not used."
+    return result
 def list_projects(**kwargs: Any) -> dict[str, Any]:
     return _run_command(command_list_projects, **kwargs)
 
@@ -1056,6 +1123,9 @@ TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "update_test_case": update_test_case,
     "add_case_to_plan": add_case_to_plan,
     "upload_attachment": upload_attachment,
+    "overwrite_result": overwrite_result,
+    "delete_execution": delete_execution,
+    "link_bug": link_bug,
     "testlink_about": about,
     "testlink_list_projects": list_projects,
     "testlink_list_plans": list_plans,
@@ -1078,3 +1148,7 @@ def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, A
     if name not in TOOLS:
         return {"ok": False, "code": 1, "error": {"type": "UnknownTool", "message": f"Unknown tool: {name}"}}
     return TOOLS[name](**(arguments or {}))
+
+
+
+

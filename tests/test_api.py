@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -203,6 +203,61 @@ class ApiTests(unittest.TestCase):
         self.assertNotIn("content", result["result"]["payload"])
         self.assertEqual(result["result"]["payload"]["filename"], "evidence.txt")
 
+    def test_phase4_delete_execution_requires_confirmation_for_write(self):
+        class FakeClient:
+            def delete_execution(self, execution_id):
+                return {"deleted": execution_id}
+
+        with patch.object(api, "_client", return_value=FakeClient()):
+            result = api.call_tool("delete_execution", {"execution_id": "99", "write": True})
+
+        self.assertFalse(result["ok"])
+        self.assertIn("confirm=true", result["error"]["message"])
+
+    def test_phase4_overwrite_result_requires_confirm(self):
+        result = api.call_tool(
+            "overwrite_result",
+            {
+                "project": "Gateway",
+                "plan": "Regression",
+                "build_id": "30",
+                "testcase_external_id": "GW-1",
+                "status": "f",
+                "notes": "overwrite",
+            },
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["type"], "ConfirmationRequired")
+
+    def test_phase4_link_bug_writes_bug_id_to_notes_only(self):
+        class FakeClient:
+            def get_projects(self):
+                return [{"id": "10", "name": "Gateway"}]
+
+            def get_project_test_plans(self, project_id):
+                return [{"id": "20", "name": "Regression", "testproject_id": project_id}]
+
+        with patch.object(api, "_client", return_value=FakeClient()):
+            result = api.call_tool(
+                "link_bug",
+                {
+                    "bug_id": "BUG-123",
+                    "project": "Gateway",
+                    "plan": "Regression",
+                    "build_id": "30",
+                    "testcase_external_id": "GW-1",
+                    "status": "f",
+                    "notes": "Known issue.",
+                },
+            )
+
+        self.assertTrue(result["ok"])
+        payload = result["result"]["payload"]
+        self.assertIn("BUG-ID: BUG-123", payload["notes"])
+        self.assertNotIn("bugid", payload)
+        self.assertEqual(result["result"]["link_mode"], "notes")
 
 if __name__ == "__main__":
     unittest.main()
+

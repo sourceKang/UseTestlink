@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import time
 import urllib.error
@@ -260,3 +260,7 @@ class TestLinkClient:
 
     def upload_execution_attachment(self, params: dict[str, Any]) -> Any:
         return self.call_tl("tl.uploadExecutionAttachment", params)
+
+    def delete_execution(self, execution_id: str) -> Any:
+        return self.call_tl("tl.deleteExecution", {"executionid": execution_id})
+

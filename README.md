@@ -1,4 +1,4 @@
-# TestLink Agent CLI
+﻿# TestLink Agent CLI
 
 TestLink Agent CLI is a small Python XML-RPC helper for department TestLink workflows.
 It is designed for Codex/agent use and for engineers who need a repeatable way to preview
@@ -153,6 +153,9 @@ MCP tools exposed by this server:
 - `update_test_case`
 - `add_case_to_plan`
 - `upload_attachment`
+- `overwrite_result`
+- `delete_execution`
+- `link_bug`
 - `testlink_about`
 - `testlink_list_projects`
 - `testlink_list_plans`
@@ -181,6 +184,7 @@ Phase 2 and Phase 3 write-capable tools default to `write: false`. They return t
 that would be sent to TestLink and only write when `write: true` is passed after review.
 Create tools check for existing builds or test cases before writing and return the existing
 matches instead of creating duplicates.
+`delete_execution` and `overwrite_result` are destructive Phase 4 tools. They require MCP destructive annotations plus explicit `confirm: true` before a write. `link_bug` records bug IDs in execution notes as `BUG-ID: ...`; it does not call native TestLink `bugid`.
 
 ## File Separation
 
@@ -583,3 +587,5 @@ Useful options:
 Publish this repository to the location your team uses for shared tooling. Teammates can clone it, set their own `TESTLINK_URL` and `TESTLINK_DEVKEY`, and run the same commands from their own agent or terminal.
 
 Before making a fork or copy public, make sure examples, docs, logs, and test fixtures do not contain internal URLs, project names, platform names, report paths, or credentials.
+
+

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
@@ -90,6 +90,70 @@ REPORT_TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "overwrite_result",
+        "description": "Overwrite an existing TestLink execution result through reportTCResult. Requires confirmation.",
+        "inputSchema": {
+            **schema(
+                {
+                    "project": string("Exact TestLink project name. Use with plan when testplan_id is omitted."),
+                    "plan": string("Exact TestLink test plan name. Use with project when testplan_id is omitted."),
+                    "testplan_id": string("Internal TestLink test plan ID."),
+                    "testcase_external_id": string("External testcase ID, for example GW-123."),
+                    "testcase_id": string("Internal TestLink testcase ID."),
+                    "build": string("Exact build name. Use when build_id is omitted."),
+                    "build_id": string("Internal TestLink build ID."),
+                    "platform": string("Exact platform name."),
+                    "platform_id": string("Internal TestLink platform ID."),
+                    "platformname": string("Platform name sent to reportTCResult."),
+                    "status": {"type": "string", "enum": ["p", "f", "b"]},
+                    "notes": {"type": "string"},
+                    "framework": string("Automation framework name."),
+                    "executed_at": string("Automation execution time."),
+                    "failure_summary": string("Failure reason summary."),
+                    "bug_id": string("Bug ID appended to notes as BUG-ID."),
+                    "execution_duration": {"type": "number"},
+                    "confirm": {"type": "boolean", "const": True},
+                    "write": {"type": "boolean", "default": False},
+                },
+                ["status", "notes", "confirm"],
+            ),
+            "allOf": [
+                {"anyOf": [{"required": ["testcase_external_id"]}, {"required": ["testcase_id"]}]},
+                {"anyOf": [{"required": ["testplan_id"]}, {"required": ["project", "plan"]}]},
+                {"anyOf": [{"required": ["build_id"]}, {"required": ["build"]}]},
+            ],
+        },
+        "annotations": {"destructiveHint": True, "requiresConfirmation": True},
+    },
+    {
+        "name": "link_bug",
+        "description": "Record a bug ID in report_result notes as BUG-ID without using native TestLink bugid.",
+        "inputSchema": {
+            **schema(
+                {
+                    "bug_id": string("Bug ID to append to notes as BUG-ID."),
+                    "project": string("Exact TestLink project name. Use with plan when testplan_id is omitted."),
+                    "plan": string("Exact TestLink test plan name. Use with project when testplan_id is omitted."),
+                    "testplan_id": string("Internal TestLink test plan ID."),
+                    "testcase_external_id": string("External testcase ID, for example GW-123."),
+                    "testcase_id": string("Internal TestLink testcase ID."),
+                    "build": string("Exact build name. Use when build_id is omitted."),
+                    "build_id": string("Internal TestLink build ID."),
+                    "platform": string("Exact platform name."),
+                    "platform_id": string("Internal TestLink platform ID."),
+                    "status": {"type": "string", "enum": ["p", "f", "b"]},
+                    "notes": {"type": "string", "default": ""},
+                    "write": {"type": "boolean", "default": False},
+                },
+                ["bug_id", "status"],
+            ),
+            "allOf": [
+                {"anyOf": [{"required": ["testcase_external_id"]}, {"required": ["testcase_id"]}]},
+                {"anyOf": [{"required": ["testplan_id"]}, {"required": ["project", "plan"]}]},
+                {"anyOf": [{"required": ["build_id"]}, {"required": ["build"]}]},
+            ],
+        },
+    },    {
         "name": "testlink_upload_report",
         "description": "Preview or upload an automation report. Defaults to preview; set write true only after review.",
         "inputSchema": schema(
@@ -126,3 +190,4 @@ REPORT_TOOLS: list[dict[str, Any]] = [
         ),
     },
 ]
+
