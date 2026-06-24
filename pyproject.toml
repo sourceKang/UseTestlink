@@ -1,10 +1,10 @@
-﻿[build-system]
+[build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "testlink-agent"
-version = "1.2.1"
+version = "1.2.2"
 description = "TestLink XML-RPC helper with CLI and MCP server entrypoints."
 readme = "README.md"
 requires-python = ">=3.10"
