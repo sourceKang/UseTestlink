@@ -45,7 +45,7 @@ class McpServerTests(unittest.TestCase):
         response = handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
 
         self.assertEqual(response["result"]["serverInfo"]["name"], "testlink-mcp")
-        self.assertEqual(response["result"]["serverInfo"]["version"], "1.2.0")
+        self.assertEqual(response["result"]["serverInfo"]["version"], "1.2.1")
         self.assertIn("tools", response["result"]["capabilities"])
 
     def test_tool_schemas_do_not_accept_url_or_devkey(self):
