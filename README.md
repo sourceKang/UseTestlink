@@ -32,8 +32,9 @@ Optional Redmine variables for automatic bug creation:
 $env:REDMINE_URL="https://your-redmine.example.com"
 $env:REDMINE_API_KEY="your-redmine-api-key"
 $env:REDMINE_PROJECT_ID="redmine-project-identifier"
+$env:REDMINE_TEMPLATE="local/redmine_templates/your-redmine-project.json"
 $env:REDMINE_TRACKER_ID="1"
-$env:REDMINE_PRIORITY_ID="2"
+$env:REDMINE_PRIORITY_ID="5"
 ```
 
 Manager-only Redmine fields are blocked by default. A manager can enable them only on
@@ -530,6 +531,38 @@ python .\testlink_agent.py upload-report `
   --redmine-create-bugs
 ```
 
+If the Redmine project requires custom fields, create one project-specific template
+under `local/redmine_templates/` and pass it with `--redmine-template`. Use
+`docs/redmine-template.example.json` as the shareable starting point, then replace the
+example custom field IDs with the real Redmine custom field IDs for that project.
+
+```powershell
+python .\testlink_agent.py upload-report `
+  --project "YourProject" `
+  --plan "Your Test Plan" `
+  --platform "Your Platform" `
+  --report "C:\path\to\report.txt" `
+  --skip-policy ignore `
+  --redmine-create-bugs `
+  --redmine-template "local\redmine_templates\your-redmine-project.json"
+```
+
+Template values can reference report, TestLink, result, and environment data:
+
+```text
+{{header.EMS Version}}
+{{context.plan.name}}
+{{context.build.name}}
+{{result.external_id}}
+{{report_date}}
+{{today}}
+{{env.REDMINE_REPORTER}}
+```
+
+During preview, required custom fields are validated locally. If values such as
+`Model`, `Customer`, or `Reporter` are missing, the command fails before calling the
+Redmine create issue API.
+
 To create/reuse Redmine bugs and record them in TestLink execution notes:
 
 ```powershell
@@ -540,6 +573,7 @@ python .\testlink_agent.py upload-report `
   --report "C:\path\to\report.txt" `
   --skip-policy ignore `
   --redmine-create-bugs `
+  --redmine-template "local\redmine_templates\your-redmine-project.json" `
   --write
 ```
 
@@ -577,6 +611,8 @@ For each `Fail` or `Error`, the CLI creates/reuses a Redmine issue or uses the i
 Useful options:
 
 - `--redmine-project`, `--redmine-tracker-id`, `--redmine-priority-id`, `--redmine-assigned-to-id`
+- `--redmine-template` loads project-specific Redmine defaults and required custom fields.
+- `--redmine-custom-field "12=value"` or `--redmine-custom-field "FW Ver=value"` overrides one template custom field. Field names require the template or override JSON to provide the Redmine custom field ID.
 - `--redmine-issue-id` and `--redmine-issue-url` record an existing Redmine issue without calling the Redmine API.
 - `--redmine-dedupe open` reuses an open issue with the same generated subject before creating a new one.
 - `--testlink-bug-link notes` is the default and writes notes only.

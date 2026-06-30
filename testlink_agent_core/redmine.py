@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import datetime as _datetime
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -12,6 +14,9 @@ from typing import Any
 from .config import DEFAULT_TIMEOUT_SECONDS
 from .errors import RedmineError
 from .models import ParsedResult, RedmineIssue
+
+
+_TEMPLATE_TOKEN_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
 
 
 class RedmineClient:
@@ -144,6 +149,214 @@ def reject_restricted_issue_fields(args: argparse.Namespace) -> None:
             "Set REDMINE_ALLOW_MANAGER_FIELDS=true only on a manager-owned machine to allow them."
         )
 
+def load_redmine_template(args: argparse.Namespace) -> dict[str, Any]:
+    template_path = redmine_arg(args, "redmine_template", "REDMINE_TEMPLATE")
+    if not template_path:
+        return {}
+    path = Path(template_path)
+    if not path.exists():
+        raise RedmineError(f"Redmine template file does not exist: {path}")
+    try:
+        template = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RedmineError(f"Redmine template is not valid JSON: {path}: {exc}") from exc
+    if not isinstance(template, dict):
+        raise RedmineError(f"Redmine template must be a JSON object: {path}")
+    return template
+
+def _context_lookup(path: str, header: dict[str, str], result: ParsedResult, context: dict[str, Any]) -> Any:
+    path = path.strip()
+    if path == "today":
+        return _datetime.date.today().isoformat()
+    if path == "report_date":
+        generated = header.get("Report generated on", "")
+        match = re.search(r"\d{4}[-/]\d{2}[-/]\d{2}", generated)
+        if match:
+            return match.group(0).replace("/", "-")
+        return _datetime.date.today().isoformat()
+    if path.startswith("env."):
+        return os.environ.get(path[4:], "")
+    if path.startswith("header."):
+        return header.get(path[7:], "")
+    if path.startswith("result."):
+        return getattr(result, path[7:], "")
+    if path.startswith("context."):
+        value: Any = context
+        for part in path[8:].split("."):
+            if isinstance(value, dict):
+                value = value.get(part, "")
+            else:
+                value = getattr(value, part, "")
+            if value in (None, ""):
+                return ""
+        return value
+    return ""
+
+def render_redmine_template_value(
+    value: Any,
+    header: dict[str, str],
+    result: ParsedResult,
+    context: dict[str, Any],
+) -> Any:
+    if isinstance(value, str):
+        return _TEMPLATE_TOKEN_RE.sub(lambda match: str(_context_lookup(match.group(1), header, result, context)), value)
+    if isinstance(value, list):
+        return [render_redmine_template_value(item, header, result, context) for item in value]
+    if isinstance(value, dict):
+        return {key: render_redmine_template_value(item, header, result, context) for key, item in value.items()}
+    return value
+
+def _is_blank_redmine_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, list):
+        return not value or all(_is_blank_redmine_value(item) for item in value)
+    return False
+
+def _custom_field_key(field: dict[str, Any]) -> str:
+    field_id = field.get("id")
+    if field_id not in (None, ""):
+        return f"id:{field_id}"
+    return f"name:{str(field.get('name') or '').casefold()}"
+
+def _merge_custom_field(merged: dict[str, dict[str, Any]], field: dict[str, Any]) -> None:
+    field_id = field.get("id")
+    field_name = str(field.get("name") or "")
+    if field_id in (None, "") and field_name:
+        for existing in merged.values():
+            if str(existing.get("name") or "").casefold() == field_name.casefold():
+                existing.update({key: value for key, value in field.items() if value not in (None, "")})
+                return
+    merged[_custom_field_key(field)] = field
+
+def _custom_field_from_named_value(name: str, raw_value: Any) -> dict[str, Any]:
+    field: dict[str, Any] = {}
+    if str(name).isdigit():
+        field["id"] = int(str(name))
+    else:
+        field["name"] = str(name)
+    if isinstance(raw_value, dict):
+        if raw_value.get("id") not in (None, ""):
+            field["id"] = redmine_optional_id(str(raw_value["id"]))
+        if raw_value.get("name") not in (None, ""):
+            field["name"] = str(raw_value["name"])
+        field["value"] = raw_value.get("value")
+    else:
+        field["value"] = raw_value
+    return field
+
+def _parse_custom_field_string(value: str) -> dict[str, Any]:
+    text = value.strip()
+    if not text:
+        raise RedmineError("Empty Redmine custom field override is not allowed.")
+    if text.startswith("{"):
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            raise RedmineError("Redmine custom field JSON override must be an object.")
+        return parsed
+    if "=" not in text:
+        raise RedmineError('Redmine custom field override must use "name=value" or "id=value".')
+    name, field_value = text.split("=", 1)
+    return _custom_field_from_named_value(name.strip(), field_value.strip())
+
+def normalize_redmine_custom_fields(raw_fields: Any) -> list[dict[str, Any]]:
+    if raw_fields in (None, "", []):
+        return []
+    if isinstance(raw_fields, str):
+        text = raw_fields.strip()
+        if not text:
+            return []
+        if text.startswith("[") or text.startswith("{"):
+            return normalize_redmine_custom_fields(json.loads(text))
+        return [_parse_custom_field_string(text)]
+    if isinstance(raw_fields, dict):
+        return [_custom_field_from_named_value(str(name), value) for name, value in raw_fields.items()]
+    if isinstance(raw_fields, list):
+        fields: list[dict[str, Any]] = []
+        for item in raw_fields:
+            if isinstance(item, str):
+                fields.append(_parse_custom_field_string(item))
+            elif isinstance(item, dict):
+                fields.append(dict(item))
+            else:
+                raise RedmineError("Redmine custom field entries must be objects or name=value strings.")
+        return fields
+    raise RedmineError("Redmine custom fields must be an object, array, JSON string, or name=value string.")
+
+def build_redmine_custom_fields(
+    args: argparse.Namespace,
+    template: dict[str, Any],
+    header: dict[str, str],
+    result: ParsedResult,
+    context: dict[str, Any],
+) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for raw_field in normalize_redmine_custom_fields(template.get("custom_fields")):
+        field = render_redmine_template_value(raw_field, header, result, context)
+        _merge_custom_field(merged, field)
+    for raw_field in normalize_redmine_custom_fields(getattr(args, "redmine_custom_fields", None)):
+        field = render_redmine_template_value(raw_field, header, result, context)
+        _merge_custom_field(merged, field)
+
+    missing_ids = [str(field.get("name") or field.get("value") or field) for field in merged.values() if field.get("id") in (None, "")]
+    if missing_ids:
+        raise RedmineError(
+            "Redmine custom fields must include Redmine custom field IDs. Missing id for: "
+            + ", ".join(missing_ids)
+        )
+
+    required = template.get("required_custom_fields") or []
+    if not isinstance(required, list):
+        raise RedmineError("Redmine template required_custom_fields must be an array.")
+    missing_required: list[str] = []
+    for raw_required in required:
+        if isinstance(raw_required, dict):
+            required_id = raw_required.get("id")
+            required_name = str(raw_required.get("name") or required_id or "").strip()
+        else:
+            required_id = raw_required if str(raw_required).isdigit() else None
+            required_name = str(raw_required).strip()
+        matched = None
+        for field in merged.values():
+            if required_id is not None and str(field.get("id")) == str(required_id):
+                matched = field
+                break
+            if required_name and str(field.get("name") or "").casefold() == required_name.casefold():
+                matched = field
+                break
+        if matched is None or _is_blank_redmine_value(matched.get("value")):
+            missing_required.append(required_name or str(required_id))
+    if missing_required:
+        raise RedmineError("Missing required Redmine custom fields: " + ", ".join(missing_required))
+
+    custom_fields: list[dict[str, Any]] = []
+    for field in merged.values():
+        value = field.get("value")
+        if _is_blank_redmine_value(value):
+            continue
+        custom_fields.append({"id": redmine_optional_id(str(field["id"])), "value": value})
+    return custom_fields
+
+def _redmine_template_field(
+    args: argparse.Namespace,
+    template: dict[str, Any],
+    issue_field: str,
+    arg_attr: str,
+    env_name: str,
+    header: dict[str, str],
+    result: ParsedResult,
+    context: dict[str, Any],
+) -> Any:
+    explicit = redmine_arg(args, arg_attr, env_name)
+    if explicit:
+        return explicit
+    template_value = template.get(issue_field)
+    if template_value in (None, ""):
+        return ""
+    return render_redmine_template_value(template_value, header, result, context)
+
 def build_redmine_subject(header: dict[str, str], result: ParsedResult, context: dict[str, Any]) -> str:
     build_name = str(context["build"].get("name") or header.get("EMS Version") or "")
     suffix = f" - {build_name}" if build_name else ""
@@ -194,7 +407,17 @@ def build_redmine_issue_payload(
     context: dict[str, Any],
 ) -> dict[str, Any]:
     reject_restricted_issue_fields(args)
-    project_id = redmine_arg(args, "redmine_project", "REDMINE_PROJECT_ID")
+    template = load_redmine_template(args)
+    project_id = _redmine_template_field(
+        args,
+        template,
+        "project_id",
+        "redmine_project",
+        "REDMINE_PROJECT_ID",
+        header,
+        result,
+        context,
+    )
     if not project_id:
         raise RedmineError("REDMINE_PROJECT_ID or --redmine-project is required when --redmine-create-bugs is used.")
 
@@ -204,10 +427,18 @@ def build_redmine_issue_payload(
         "description": build_redmine_description(header, report_path, result, context),
     }
     optional_fields = {
-        "tracker_id": redmine_arg(args, "redmine_tracker_id", "REDMINE_TRACKER_ID"),
-        "status_id": redmine_arg(args, "redmine_status_id", "REDMINE_STATUS_ID"),
-        "priority_id": redmine_arg(args, "redmine_priority_id", "REDMINE_PRIORITY_ID"),
-        "category_id": redmine_arg(args, "redmine_category_id", "REDMINE_CATEGORY_ID"),
+        "tracker_id": _redmine_template_field(
+            args, template, "tracker_id", "redmine_tracker_id", "REDMINE_TRACKER_ID", header, result, context
+        ),
+        "status_id": _redmine_template_field(
+            args, template, "status_id", "redmine_status_id", "REDMINE_STATUS_ID", header, result, context
+        ),
+        "priority_id": _redmine_template_field(
+            args, template, "priority_id", "redmine_priority_id", "REDMINE_PRIORITY_ID", header, result, context
+        ),
+        "category_id": _redmine_template_field(
+            args, template, "category_id", "redmine_category_id", "REDMINE_CATEGORY_ID", header, result, context
+        ),
     }
     if manager_fields_enabled():
         optional_fields.update(redmine_manager_fields(args))
@@ -215,6 +446,9 @@ def build_redmine_issue_payload(
         coerced = redmine_optional_id(value)
         if coerced is not None:
             issue[field] = coerced
+    custom_fields = build_redmine_custom_fields(args, template, header, result, context)
+    if custom_fields:
+        issue["custom_fields"] = custom_fields
     return issue
 
 def redmine_issue_to_dict(issue: RedmineIssue | None) -> dict[str, Any] | None:

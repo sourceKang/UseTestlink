@@ -54,6 +54,8 @@ _BASE_DEFAULTS: dict[str, Any] = {
     "redmine_url": None,
     "redmine_api_key": None,
     "redmine_project": None,
+    "redmine_template": None,
+    "redmine_custom_fields": None,
     "redmine_tracker_id": None,
     "redmine_status_id": None,
     "redmine_priority_id": None,

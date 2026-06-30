@@ -41,6 +41,7 @@ Never display `TESTLINK_DEVKEY`, `REDMINE_API_KEY`, or other secrets in response
 - `testlink_upload_report` defaults to the latest active/open build when `build` and `build_id` are omitted.
 - `skip_policy: "ignore"` leaves skipped rows out of TestLink writes; `skip_policy: "blocked"` writes skipped rows as blocked.
 - Redmine bug creation is opt-in with `redmine_create_bugs: true`.
+- When a Redmine project requires custom fields, pass `redmine_template` and preview first. The template is project-specific and should define required custom fields before `write: true`.
 - Native TestLink `bugid` linking is off by default; use `testlink_bug_link: "notes"` unless the user explicitly requests `bugid` or `both`.
 - Local files such as catalogs and profiles are under `local/` by default and are ignored by git.
 

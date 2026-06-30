@@ -171,6 +171,12 @@ REPORT_TOOLS: list[dict[str, Any]] = [
                 "redmine_url": string("Redmine base URL. Defaults to REDMINE_URL."),
                 "redmine_api_key": string("Redmine API key. Prefer REDMINE_API_KEY."),
                 "redmine_project": string("Redmine project identifier or ID."),
+                "redmine_template": string("Redmine project template JSON file. Defaults to REDMINE_TEMPLATE."),
+                "redmine_custom_fields": {
+                    "description": "Optional Redmine custom field overrides. Use an object keyed by field name or ID.",
+                    "type": "object",
+                    "additionalProperties": True,
+                },
                 "redmine_tracker_id": string("Redmine tracker ID."),
                 "redmine_status_id": string("Redmine status ID."),
                 "redmine_priority_id": string("Redmine priority ID."),

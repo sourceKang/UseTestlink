@@ -252,6 +252,13 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--redmine-url", help="Redmine base URL. Defaults to REDMINE_URL.")
     upload.add_argument("--redmine-api-key", help="Redmine API key. Prefer REDMINE_API_KEY.")
     upload.add_argument("--redmine-project", help="Redmine project identifier or ID. Defaults to REDMINE_PROJECT_ID.")
+    upload.add_argument("--redmine-template", help="Redmine project template JSON file. Defaults to REDMINE_TEMPLATE.")
+    upload.add_argument(
+        "--redmine-custom-field",
+        dest="redmine_custom_fields",
+        action="append",
+        help='Override one Redmine custom field as "custom field id=value" or "name=value". May be repeated.',
+    )
     upload.add_argument("--redmine-tracker-id", help="Redmine tracker ID. Defaults to REDMINE_TRACKER_ID.")
     upload.add_argument("--redmine-status-id", help="Redmine status ID for new issues. Defaults to REDMINE_STATUS_ID.")
     upload.add_argument("--redmine-priority-id", help="Redmine priority ID. Defaults to REDMINE_PRIORITY_ID.")

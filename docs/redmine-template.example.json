@@ -1,0 +1,75 @@
+{
+  "project_id": "redmine-project-identifier",
+  "tracker_id": 1,
+  "priority_id": 5,
+  "required_custom_fields": [
+    "Severity",
+    "FW Ver",
+    "Product Line",
+    "Model",
+    "Customer",
+    "Test plan ver",
+    "Test case No",
+    "Report Date",
+    "Reporter dept",
+    "Reporter",
+    "Service Type"
+  ],
+  "custom_fields": [
+    {
+      "id": 1,
+      "name": "Severity",
+      "value": "Major"
+    },
+    {
+      "id": 2,
+      "name": "FW Ver",
+      "value": "{{header.EMS Version}}"
+    },
+    {
+      "id": 3,
+      "name": "Product Line",
+      "value": "EMS"
+    },
+    {
+      "id": 4,
+      "name": "Model",
+      "value": "{{env.REDMINE_MODEL}}"
+    },
+    {
+      "id": 5,
+      "name": "Customer",
+      "value": "{{env.REDMINE_CUSTOMER}}"
+    },
+    {
+      "id": 6,
+      "name": "Test plan ver",
+      "value": "{{context.plan.name}}"
+    },
+    {
+      "id": 7,
+      "name": "Test case No",
+      "value": "{{result.external_id}}"
+    },
+    {
+      "id": 8,
+      "name": "Report Date",
+      "value": "{{report_date}}"
+    },
+    {
+      "id": 9,
+      "name": "Reporter dept",
+      "value": "{{env.REDMINE_REPORTER_DEPT}}"
+    },
+    {
+      "id": 10,
+      "name": "Reporter",
+      "value": "{{env.REDMINE_REPORTER}}"
+    },
+    {
+      "id": 11,
+      "name": "Service Type",
+      "value": "Testing"
+    }
+  ]
+}

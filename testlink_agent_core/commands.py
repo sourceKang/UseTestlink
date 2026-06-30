@@ -127,6 +127,7 @@ def command_upload_report(args: argparse.Namespace) -> int:
                         "project_id": issue_payload["project_id"],
                         "tracker_id": issue_payload.get("tracker_id"),
                         "priority_id": issue_payload.get("priority_id"),
+                        "custom_fields": issue_payload.get("custom_fields", []),
                         "action": "create-or-reuse",
                     }
                 )
