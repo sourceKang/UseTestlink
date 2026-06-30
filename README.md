@@ -61,8 +61,15 @@ Copy-Item .\.env.example local\testlink_agent.env
 
 You can point any command at a specific file with `--env-file <path>`. When
 `--env-file` is not given, the CLI loads credentials in this order: the file named in
-`TESTLINK_AGENT_ENV_FILE`, then `.env`, then `local/testlink_agent.env`. So other
-commands and project scripts do not need to pass keys again.
+`TESTLINK_AGENT_ENV_FILE`, then the current working directory's `.env`, then the
+current working directory's `local/testlink_agent.env`.
+
+If neither default file exists in the current working directory, the agent also checks
+the UseTestlink project root for `.env` and `local/testlink_agent.env`. This lets an
+MCP server started from another project still reuse the Redmine/TestLink settings kept
+beside this agent checkout. Existing non-empty environment variables still win over
+file values, but empty environment variables are treated as unset so the env file can
+fill them in.
 
 If another project keeps the record file elsewhere, set one environment variable once:
 

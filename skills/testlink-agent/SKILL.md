@@ -18,6 +18,7 @@ Verify one credential path exists before calling live TestLink tools:
 - Environment variables: `TESTLINK_URL` and `TESTLINK_DEVKEY`
 - Or an env file passed as `env_file`
 - Or the local default `local/testlink_agent.env`
+- For MCP used from another project, prefer `TESTLINK_AGENT_ENV_FILE` with an absolute path. If the current project has no default env file, the agent can fall back to the UseTestlink project root defaults.
 
 Never display `TESTLINK_DEVKEY`, `REDMINE_API_KEY`, or other secrets in responses.
 
