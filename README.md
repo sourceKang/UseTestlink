@@ -430,6 +430,7 @@ Useful options:
 - `refresh-catalog` stores project/suite lookup data in `local/testlink_catalog.json`; this local cache is ignored by git.
 - `--summary-file` and `--preconditions-file` read UTF-8 text from files.
 - `--steps-file` reads a JSON array of strings or objects with `actions`, `expected_results`, and optional `execution_type`.
+- `--single-step` collapses all supplied steps into one TestLink step row with numbered action and expected-result lines.
 - Multi-line summary, preconditions, step actions, and expected results are converted to TestLink rich-text line breaks.
 - `--duplicate-action block` is the default; use `--duplicate-action generate-new` only when you intentionally want TestLink to create a renamed duplicate.
 
@@ -457,6 +458,17 @@ python .\testlink_agent.py update-testcase `
   --step "Connect VPN => Connection succeeds"
 ```
 
+Replace steps but keep them in one TestLink row:
+
+```powershell
+python .\testlink_agent.py update-testcase `
+  --profile gateway-vpn `
+  --testcase-external-id "GW-123" `
+  --step "Open VPN page => VPN page is shown" `
+  --step "Connect VPN => Connection succeeds" `
+  --single-step
+```
+
 After the preview looks correct, add `--write`.
 
 Useful options:
@@ -465,6 +477,7 @@ Useful options:
 - `--version` can target a specific testcase version when your TestLink instance requires it.
 - `--summary-file`, `--preconditions-file`, and `--steps-file` work the same way as `create-testcase`.
 - `--step` and `--steps-file` replace the testcase steps with the supplied steps.
+- `--single-step` keeps repeated `--step` entries in one TestLink row instead of creating one row per entry.
 - Multi-line preconditions and step text are converted to TestLink rich-text line breaks.
 
 ## Preview a Report Upload

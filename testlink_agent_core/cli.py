@@ -191,6 +191,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--steps-file",
         help='Read steps from a JSON array. Items may be strings or objects with "actions" and "expected_results".',
     )
+    create.add_argument(
+        "--single-step",
+        action="store_true",
+        help="Collapse all supplied steps into one TestLink step row with numbered action/result lines.",
+    )
     create.add_argument("--importance", default="medium", help="low, medium, high, or a numeric TestLink value.")
     create.add_argument("--execution-type", default="manual", help="manual, automated, or a numeric TestLink value.")
     create.add_argument("--order", type=int, help="Optional display order inside the target suite.")
@@ -229,6 +234,11 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument(
         "--steps-file",
         help='Replace steps from a JSON array. Items may be strings or objects with "actions" and "expected_results".',
+    )
+    update.add_argument(
+        "--single-step",
+        action="store_true",
+        help="Collapse all supplied replacement steps into one TestLink step row with numbered action/result lines.",
     )
     update.add_argument("--importance", help="low, medium, high, or a numeric TestLink value.")
     update.add_argument("--execution-type", help="manual, automated, or a numeric TestLink value.")

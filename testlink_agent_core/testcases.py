@@ -102,6 +102,34 @@ def normalize_create_step(step: dict[str, Any], step_number: int, default_execut
         "execution_type": coerce_testlink_enum(execution_type, EXECUTION_TYPE_TO_TESTLINK, "step execution type"),
     }
 
+def collapse_raw_steps(raw_steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if len(raw_steps) <= 1:
+        return raw_steps
+
+    actions_lines: list[str] = []
+    expected_lines: list[str] = []
+    for index, step in enumerate(raw_steps, start=1):
+        actions = str(step.get("actions") or step.get("action") or "").strip()
+        expected = str(
+            step.get("expected_results")
+            or step.get("expected")
+            or step.get("result")
+            or ""
+        ).strip()
+        if not actions:
+            raise TestLinkError(f"Step {index} is missing actions.")
+        actions_lines.append(f"{index}. {actions}")
+        expected_lines.append(f"{index}. {expected}" if expected else f"{index}.")
+
+    execution_type = raw_steps[0].get("execution_type") or raw_steps[0].get("executiontype")
+    collapsed: dict[str, Any] = {
+        "actions": "\n".join(actions_lines),
+        "expected_results": "\n".join(expected_lines),
+    }
+    if execution_type not in (None, ""):
+        collapsed["execution_type"] = execution_type
+    return [collapsed]
+
 def parse_create_steps(args: argparse.Namespace) -> list[dict[str, Any]]:
     raw_steps: list[dict[str, Any]] = []
     if args.steps_file:
@@ -127,6 +155,9 @@ def parse_create_steps(args: argparse.Namespace) -> list[dict[str, Any]]:
 
     if not raw_steps:
         raise TestLinkError("At least one --step or --steps-file entry is required.")
+
+    if getattr(args, "single_step", False):
+        raw_steps = collapse_raw_steps(raw_steps)
 
     default_execution_type = coerce_testlink_enum(
         getattr(args, "execution_type", None) or "manual",
