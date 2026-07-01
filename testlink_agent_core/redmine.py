@@ -357,6 +357,11 @@ def _redmine_template_field(
         return ""
     return render_redmine_template_value(template_value, header, result, context)
 
+
+def _template_has_field(template: dict[str, Any], issue_field: str) -> bool:
+    return issue_field in template
+
+
 def build_redmine_subject(header: dict[str, str], result: ParsedResult, context: dict[str, Any]) -> str:
     build_name = str(context["build"].get("name") or header.get("EMS Version") or "")
     suffix = f" - {build_name}" if build_name else ""
@@ -442,6 +447,26 @@ def build_redmine_issue_payload(
     }
     if manager_fields_enabled():
         optional_fields.update(redmine_manager_fields(args))
+    if _template_has_field(template, "fixed_version_id"):
+        fixed_version_id = _redmine_template_field(
+            args,
+            template,
+            "fixed_version_id",
+            "redmine_fixed_version_id",
+            "REDMINE_FIXED_VERSION_ID",
+            header,
+            result,
+            context,
+        )
+        if fixed_version_id:
+            if not manager_fields_enabled():
+                raise RedmineError(
+                    "Restricted Redmine field fixed_version_id is not allowed for automation-created bugs. "
+                    "Set REDMINE_ALLOW_MANAGER_FIELDS=true only on a manager-owned machine to allow it."
+                )
+            optional_fields["fixed_version_id"] = fixed_version_id
+        else:
+            issue["fixed_version_id"] = ""
     for field, value in optional_fields.items():
         coerced = redmine_optional_id(value)
         if coerced is not None:

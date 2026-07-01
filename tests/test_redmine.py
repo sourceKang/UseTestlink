@@ -148,6 +148,93 @@ class RedmineTests(unittest.TestCase):
             ],
         )
 
+    def test_redmine_template_can_clear_fixed_version(self):
+        with TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "redmine-template.json"
+            template_path.write_text(
+                json.dumps(
+                    {
+                        "project_id": "netatlas-ems_pqa",
+                        "tracker_id": 1,
+                        "priority_id": 5,
+                        "fixed_version_id": "",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = Namespace(
+                redmine_project="",
+                redmine_template=str(template_path),
+                redmine_custom_fields=None,
+                redmine_tracker_id="",
+                redmine_status_id="",
+                redmine_priority_id="",
+                redmine_assigned_to_id="",
+                redmine_category_id="",
+                redmine_fixed_version_id="",
+            )
+            result = ParsedResult(
+                external_id="EMS1-7128",
+                test_name="test_login",
+                raw_status="Fail",
+                status="f",
+                duration_text="1s",
+                duration_seconds=1.0,
+            )
+            context = {
+                "project": {"name": "EMS"},
+                "plan": {"name": "Regression"},
+                "platform": {"name": "NetAtlas EMS"},
+                "build": {"name": "03.00.11(AAVV.221)b5"},
+            }
+
+            payload = build_redmine_issue_payload(args, {}, Path("report.txt"), result, context)
+
+        self.assertEqual(payload["fixed_version_id"], "")
+
+    def test_redmine_template_nonempty_fixed_version_requires_manager_switch(self):
+        with TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "redmine-template.json"
+            template_path.write_text(
+                json.dumps(
+                    {
+                        "project_id": "netatlas-ems_pqa",
+                        "tracker_id": 1,
+                        "priority_id": 5,
+                        "fixed_version_id": "9",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = Namespace(
+                redmine_project="",
+                redmine_template=str(template_path),
+                redmine_custom_fields=None,
+                redmine_tracker_id="",
+                redmine_status_id="",
+                redmine_priority_id="",
+                redmine_assigned_to_id="",
+                redmine_category_id="",
+                redmine_fixed_version_id="",
+            )
+            result = ParsedResult(
+                external_id="EMS1-7128",
+                test_name="test_login",
+                raw_status="Fail",
+                status="f",
+                duration_text="1s",
+                duration_seconds=1.0,
+            )
+            context = {
+                "project": {"name": "EMS"},
+                "plan": {"name": "Regression"},
+                "platform": {"name": "NetAtlas EMS"},
+                "build": {"name": "03.00.11(AAVV.221)b5"},
+            }
+
+            with self.assertRaisesRegex(RedmineError, "fixed_version_id"):
+                build_redmine_issue_payload(args, {}, Path("report.txt"), result, context)
+
     def test_custom_field_overrides_replace_template_values(self):
         with TemporaryDirectory() as tmpdir:
             template_path = Path(tmpdir) / "redmine-template.json"
