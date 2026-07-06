@@ -23,7 +23,7 @@ from .commands import (
     command_update_testcase,
     command_upload_report,
 )
-from .config import DEFAULT_CATALOG_PATH, DEFAULT_PROFILES_PATH, DEFAULT_TIMEOUT_SECONDS
+from .config import DEFAULT_AUDIT_DIR, DEFAULT_CATALOG_PATH, DEFAULT_PROFILES_PATH, DEFAULT_TIMEOUT_SECONDS
 from . import __version__
 from .client import TestLinkClient
 from .config import load_testlink_settings
@@ -50,6 +50,8 @@ _BASE_DEFAULTS: dict[str, Any] = {
     "require_open_build": True,
     "progress": 0,
     "throttle": 0.03,
+    "audit_dir": DEFAULT_AUDIT_DIR,
+    "resume_audit": None,
     "redmine_create_bugs": False,
     "redmine_url": None,
     "redmine_api_key": None,
@@ -343,6 +345,7 @@ def report_result(
     execution_duration: int | float | None = None,
     overwrite: bool = False,
     confirm_overwrite: bool = False,
+    audit_dir: str | None = None,
     write: bool = False,
     **kwargs: Any,
 ) -> dict[str, Any]:
@@ -371,6 +374,7 @@ def report_result(
             execution_duration=execution_duration,
             overwrite=overwrite,
             confirm_overwrite=confirm_overwrite,
+            audit_dir=audit_dir,
             write=write,
         ),
         **kwargs,
@@ -386,6 +390,7 @@ def report_results_batch(
     build_id: str | None = None,
     platform: str | None = None,
     platform_id: str | None = None,
+    audit_dir: str | None = None,
     write: bool = False,
     **kwargs: Any,
 ) -> dict[str, Any]:
@@ -401,6 +406,7 @@ def report_results_batch(
             build_id=build_id,
             platform=platform,
             platform_id=platform_id,
+            audit_dir=audit_dir,
             write=write,
         ),
         **kwargs,

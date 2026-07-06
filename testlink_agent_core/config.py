@@ -12,6 +12,7 @@ DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_CATALOG_PATH = "local/testlink_catalog.json"
 DEFAULT_ENV_FILE_PATH = "local/testlink_agent.env"
 DEFAULT_PROFILES_PATH = "local/testlink_profiles.json"
+DEFAULT_AUDIT_DIR = "local/audit"
 ENV_FILE_POINTER = "TESTLINK_AGENT_ENV_FILE"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -144,3 +145,7 @@ def load_testlink_settings(
 
 def catalog_path(value: str | None = None) -> Path:
     return Path(value or DEFAULT_CATALOG_PATH)
+
+
+def audit_dir_path(value: str | None = None) -> Path:
+    return Path(value or DEFAULT_AUDIT_DIR)

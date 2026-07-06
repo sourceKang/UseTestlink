@@ -14,6 +14,13 @@ from typing import Any
 from .config import DEFAULT_TIMEOUT_SECONDS
 from .errors import RedmineError
 from .models import ParsedResult, RedmineIssue
+from .policy import (
+    blocked_manager_fields,
+    build_dedupe_key,
+    dedupe_digest,
+    dedupe_marker,
+    redmine_manager_fields_allowed,
+)
 
 
 _TEMPLATE_TOKEN_RE = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
@@ -83,6 +90,13 @@ class RedmineClient:
             reused=False,
         )
 
+    def add_issue_comment(self, issue_id: str | int, notes: str) -> dict[str, Any]:
+        if not str(issue_id).strip():
+            raise RedmineError("Redmine issue ID is required before adding a comment.")
+        if not notes.strip():
+            raise RedmineError("Redmine comment notes must not be empty.")
+        return self.request_json("PUT", f"/issues/{issue_id}.json", {"issue": {"notes": notes}})
+
     def find_open_issue_by_subject(
         self,
         project_id: str,
@@ -111,6 +125,39 @@ class RedmineClient:
                 )
         return None
 
+    def find_open_issue_by_dedupe_marker(
+        self,
+        project_id: str,
+        marker: str,
+        tracker_id: str | None = None,
+    ) -> RedmineIssue | None:
+        query = {
+            "project_id": project_id,
+            "status_id": "open",
+            "tracker_id": tracker_id,
+            "limit": 100,
+            "sort": "updated_on:desc",
+        }
+        response = self.request_json("GET", "/issues.json", query=query)
+        issues = response.get("issues") or []
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            haystack = "\n".join(
+                str(issue.get(field) or "")
+                for field in ("subject", "description")
+            )
+            if marker in haystack and "id" in issue:
+                issue_id = str(issue["id"])
+                return RedmineIssue(
+                    id=issue_id,
+                    url=self.issue_url(issue_id),
+                    subject=str(issue.get("subject") or ""),
+                    reused=True,
+                    dedupe_marker=marker,
+                )
+        return None
+
 def truncate_text(value: str, max_length: int) -> str:
     if len(value) <= max_length:
         return value
@@ -130,7 +177,7 @@ def redmine_optional_id(value: str | None) -> int | str | None:
     return text
 
 def manager_fields_enabled() -> bool:
-    return os.environ.get("REDMINE_ALLOW_MANAGER_FIELDS", "").strip().casefold() in {"1", "true", "yes", "on"}
+    return redmine_manager_fields_allowed()
 
 def redmine_manager_fields(args: argparse.Namespace) -> dict[str, str]:
     return {
@@ -139,9 +186,7 @@ def redmine_manager_fields(args: argparse.Namespace) -> dict[str, str]:
     }
 
 def reject_restricted_issue_fields(args: argparse.Namespace) -> None:
-    if manager_fields_enabled():
-        return
-    blocked = [field for field, value in redmine_manager_fields(args).items() if value]
+    blocked = blocked_manager_fields(redmine_manager_fields(args))
     if blocked:
         joined = ", ".join(blocked)
         raise RedmineError(
@@ -367,11 +412,30 @@ def build_redmine_subject(header: dict[str, str], result: ParsedResult, context:
     suffix = f" - {build_name}" if build_name else ""
     return truncate_text(f"[{result.external_id}] {result.test_name} Result {result.raw_status}{suffix}", 255)
 
+def build_redmine_dedupe(
+    redmine_project_id: str,
+    result: ParsedResult,
+    context: dict[str, Any],
+) -> dict[str, str]:
+    key = build_dedupe_key(
+        redmine_project_id=redmine_project_id,
+        context=context,
+        result=result,
+        failure_summary="Result Fail" if result.status == "f" else result.raw_status,
+    )
+    digest = dedupe_digest(key)
+    return {
+        "key": key,
+        "digest": digest,
+        "marker": dedupe_marker(digest),
+    }
+
 def build_redmine_description(
     header: dict[str, str],
     report_path: Path,
     result: ParsedResult,
     context: dict[str, Any],
+    dedupe: dict[str, str] | None = None,
 ) -> str:
     lines = [
         "Automation failure created from TestLink Agent CLI.",
@@ -390,6 +454,15 @@ def build_redmine_description(
         f"- Duration: {result.duration_text}",
         f"- Report file: {report_path.name}",
     ]
+    if dedupe is not None:
+        lines.extend(
+            [
+                "",
+                "Traceability:",
+                f"- Dedupe Key: {dedupe['marker']}",
+                f"- Dedupe Digest: {dedupe['digest']}",
+            ]
+        )
     for label in (
         "Report generated on",
         "EMS Version",
@@ -402,6 +475,62 @@ def build_redmine_description(
         value = header.get(label)
         if value:
             lines.append(f"- {label}: {value}")
+    return "\n".join(lines)
+
+def build_redmine_evidence_comment(
+    header: dict[str, str],
+    report_path: Path,
+    result: ParsedResult,
+    context: dict[str, Any],
+    *,
+    dedupe_marker_value: str | None = None,
+    testlink_response: dict[str, Any] | None = None,
+) -> str:
+    lines = [
+        "Automation retest evidence from TestLink Agent.",
+        "",
+        "TestLink:",
+        f"- Test case: {result.external_id}",
+        f"- Test case name: {result.testlink_name or ''}",
+        f"- Test project: {context['project'].get('name') or ''}",
+        f"- Test plan: {context['plan'].get('name') or ''}",
+        f"- Platform: {context['platform'].get('name') or ''}",
+        f"- Build: {context['build'].get('name') or ''}",
+        "",
+        "Automation:",
+        f"- Test function: {result.test_name}",
+        f"- Result: {result.raw_status}",
+        f"- Duration: {result.duration_text}",
+        f"- Report file: {report_path.name}",
+    ]
+    if dedupe_marker_value:
+        lines.append(f"- Dedupe Key: {dedupe_marker_value}")
+    if testlink_response:
+        execution_id = (
+            testlink_response.get("execution_id")
+            or testlink_response.get("executionId")
+            or testlink_response.get("id")
+        )
+        if execution_id:
+            lines.append(f"- TestLink execution ID: {execution_id}")
+    for label in (
+        "Report generated on",
+        "EMS Version",
+        "Node Name",
+        "Node IP",
+        "Node Chassis",
+        "UI URL",
+        "Test Target Source",
+    ):
+        value = header.get(label)
+        if value:
+            lines.append(f"- {label}: {value}")
+    lines.extend(
+        [
+            "",
+            "Note: TestLink Agent only adds evidence comments. It does not change Redmine status, assignee, or fixed version.",
+        ]
+    )
     return "\n".join(lines)
 
 def build_redmine_issue_payload(
@@ -429,7 +558,13 @@ def build_redmine_issue_payload(
     issue: dict[str, Any] = {
         "project_id": project_id,
         "subject": build_redmine_subject(header, result, context),
-        "description": build_redmine_description(header, report_path, result, context),
+        "description": build_redmine_description(
+            header,
+            report_path,
+            result,
+            context,
+            build_redmine_dedupe(str(project_id), result, context),
+        ),
     }
     optional_fields = {
         "tracker_id": _redmine_template_field(
@@ -484,7 +619,19 @@ def redmine_issue_to_dict(issue: RedmineIssue | None) -> dict[str, Any] | None:
         "url": issue.url,
         "subject": issue.subject,
         "reused": issue.reused,
+        "dedupe_marker": issue.dedupe_marker,
     }
+
+def redmine_issue_from_dict(value: dict[str, Any] | None) -> RedmineIssue | None:
+    if not isinstance(value, dict) or not value.get("id"):
+        return None
+    return RedmineIssue(
+        id=str(value.get("id")),
+        url=str(value.get("url") or ""),
+        subject=str(value.get("subject") or ""),
+        reused=bool(value.get("reused", True)),
+        dedupe_marker=str(value.get("dedupe_marker") or "") or None,
+    )
 
 def build_existing_redmine_issue(args: argparse.Namespace, result: ParsedResult) -> RedmineIssue | None:
     issue_id = str(getattr(args, "redmine_issue_id", "") or "").strip()
@@ -507,6 +654,7 @@ def build_notes(
     report_path: Path,
     result: ParsedResult,
     redmine_issue: RedmineIssue | None = None,
+    dedupe_marker_value: str | None = None,
 ) -> str:
     generated = header.get("Report generated on", "")
     ems_version = header.get("EMS Version", "")
@@ -525,6 +673,8 @@ def build_notes(
     ]
     if result.status == "f":
         lines.append("Failure summary: Result Fail")
+    if dedupe_marker_value:
+        lines.append(f"Dedupe Key: {dedupe_marker_value}")
     if redmine_issue is not None:
         lines.extend(
             [

@@ -21,7 +21,7 @@ from .commands import (
     command_update_testcase,
     command_upload_report,
 )
-from .config import DEFAULT_CATALOG_PATH, DEFAULT_PROFILES_PATH, DEFAULT_TIMEOUT_SECONDS
+from .config import DEFAULT_AUDIT_DIR, DEFAULT_CATALOG_PATH, DEFAULT_PROFILES_PATH, DEFAULT_TIMEOUT_SECONDS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -258,6 +258,8 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--require-open-build", action="store_true", default=True)
     upload.add_argument("--progress", type=int, default=25)
     upload.add_argument("--throttle", type=float, default=0.03)
+    upload.add_argument("--audit-dir", default=DEFAULT_AUDIT_DIR, help="Write audit JSON files to this directory.")
+    upload.add_argument("--resume-audit", help="Resume a previous upload-report audit JSON and skip completed TestLink writes.")
     upload.add_argument("--redmine-create-bugs", action="store_true", help="Create or reuse Redmine issues for failed results.")
     upload.add_argument("--redmine-url", help="Redmine base URL. Defaults to REDMINE_URL.")
     upload.add_argument("--redmine-api-key", help="Redmine API key. Prefer REDMINE_API_KEY.")

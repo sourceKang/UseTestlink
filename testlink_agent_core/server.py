@@ -51,7 +51,12 @@ def handle_request(message: dict[str, Any]) -> dict[str, Any] | None:
         return _result_response(
             request_id,
             {
-                "content": [{"type": "text", "text": json.dumps(result, indent=2, ensure_ascii=False, default=str)}],
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(redact_secrets(result), indent=2, ensure_ascii=False, default=str),
+                    }
+                ],
                 "isError": not bool(result.get("ok")),
             },
         )

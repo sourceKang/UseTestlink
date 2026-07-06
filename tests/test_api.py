@@ -1,4 +1,5 @@
 ﻿import unittest
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -135,6 +136,86 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["result"]["status_counts"], {"pass": 1, "fail": 1, "blocked": 1})
         self.assertEqual(result["result"]["total_count"], 3)
+
+    def test_phase2_report_result_write_creates_audit_log(self):
+        class FakeClient:
+            def get_projects(self):
+                return [{"id": "10", "name": "Gateway"}]
+
+            def get_project_test_plans(self, project_id):
+                return [{"id": "20", "name": "Regression", "testproject_id": project_id}]
+
+            def get_builds(self, testplan_id):
+                return [{"id": "30", "name": "build-1"}]
+
+            def report_result(self, payload):
+                return {"execution_id": "9001", "status": payload["status"]}
+
+        with TemporaryDirectory() as tmpdir:
+            with patch.object(api, "_client", return_value=FakeClient()):
+                result = api.call_tool(
+                    "report_result",
+                    {
+                        "project": "Gateway",
+                        "plan": "Regression",
+                        "build": "build-1",
+                        "testcase_external_id": "GW-1",
+                        "status": "p",
+                        "notes": "ok",
+                        "audit_dir": tmpdir,
+                        "write": True,
+                    },
+                )
+
+            self.assertTrue(result["ok"])
+            audit_path = Path(result["result"]["audit_log"])
+            self.assertTrue(audit_path.exists())
+            audit = json.loads(audit_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(audit["operation"], "report-result")
+        self.assertEqual(audit["status"], "success")
+        self.assertEqual(audit["results"][0]["testlink_write"], "success")
+
+    def test_phase2_batch_write_creates_audit_log_with_failures(self):
+        class FakeClient:
+            def get_projects(self):
+                return [{"id": "10", "name": "Gateway"}]
+
+            def get_project_test_plans(self, project_id):
+                return [{"id": "20", "name": "Regression", "testproject_id": project_id}]
+
+            def report_result(self, payload):
+                if payload.get("testcaseexternalid") == "GW-2":
+                    raise RuntimeError("write failed")
+                return {"execution_id": payload.get("testcaseexternalid")}
+
+        with TemporaryDirectory() as tmpdir:
+            with patch.object(api, "_client", return_value=FakeClient()):
+                result = api.call_tool(
+                    "report_results_batch",
+                    {
+                        "project": "Gateway",
+                        "plan": "Regression",
+                        "build_id": "30",
+                        "audit_dir": tmpdir,
+                        "write": True,
+                        "results": [
+                            {"testcase_external_id": "GW-1", "status": "p", "notes": "ok"},
+                            {"testcase_external_id": "GW-2", "status": "f", "notes": "bad"},
+                        ],
+                    },
+                )
+
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["result"]["failure_count"], 1)
+            audit_path = Path(result["result"]["audit_log"])
+            self.assertTrue(audit_path.exists())
+            audit = json.loads(audit_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(audit["operation"], "report-results-batch")
+        self.assertEqual(audit["status"], "failed")
+        self.assertEqual(len(audit["results"]), 2)
+        self.assertEqual(len(audit["errors"]), 1)
 
     def test_phase3_create_build_blocks_duplicate(self):
         class FakeClient:

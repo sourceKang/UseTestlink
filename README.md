@@ -1,19 +1,44 @@
 ﻿# TestLink Agent CLI
 
-TestLink Agent CLI is a small Python XML-RPC helper for department TestLink workflows.
-It is designed for Codex/agent use and for engineers who need a repeatable way to preview
-and upload automation results.
+TestLink Agent provides the `testlink-mcp` server and CLI for agent-safe TestLink
+operations and controlled Redmine/eITS integration. It is designed for Codex/agent
+use and for engineers who need a repeatable way to preview and upload automation
+results.
+
+This project is a QA integration layer. TestLink remains the test record system, and
+the corporate Redmine/eITS remains the formal defect workflow. A local Redmine, if
+used, is a sandbox only.
+
+Authoritative project instructions live in `AGENTS.md`. Architecture and workflow
+rules live in `docs/architecture.md`, `docs/workflow.md`, and
+`docs/redmine-fields.md`.
 
 ## Safety Rules
 
 - Do not commit personal API keys.
 - Each user must use their own TestLink `Personal API access key`.
+- Use `TESTLINK_AGENT_PROFILE=corp` and `REDMINE_ENV=corp` for the corporate workflow.
+- Use sandbox profiles only for development; sandbox Redmine is not a formal defect system.
 - The default `upload-report` mode is preview only. Add `--write` only after reviewing the preview.
 - Redmine bug creation is opt-in. Add `--redmine-create-bugs` and `--write` only after reviewing the preview.
 - Result upload appends execution records by default; it does not use overwrite.
 - When Redmine bug creation is enabled, the CLI records the Redmine ID/URL in execution notes by default. It does not link `bugid` to the TestLink testcase unless explicitly requested.
 - Custom release-note pages may not be available through the native TestLink XML-RPC API used by this CLI. Update this tool only after the TestLink owner provides the supported API, database table, or access method.
 - Destructive actions such as deletion or overwrite are intentionally not implemented in this CLI.
+
+## Current Integration Guarantees
+
+- TestLink and Redmine/eITS remain separate systems with separate data ownership.
+- `TESTLINK_AGENT_PROFILE` and `REDMINE_ENV` must match before write operations.
+- Automation reports are parsed as `legacy-web-ems-report-v1`; unknown formats fail fast.
+- Report files must be valid UTF-8 and contain `Test Results:` plus at least one recognized result row.
+- Fail/Error Redmine handling uses a stable `testlink-agent:<digest>` dedupe marker.
+- Existing open Redmine issues are reused before new issues are created.
+- Reused Redmine issues receive evidence comments only after TestLink execution write succeeds.
+- The agent does not close Redmine issues, change issue status, assign owners, or set fixed versions.
+- All write paths create local audit JSON under `local/audit` by default.
+- `upload-report --resume-audit <audit.json>` skips TestLink execution rows that were already written successfully in a matching prior audit.
+- MCP content, errors, structured results, and audit logs redact devKeys, API keys, passwords, tokens, and known secret values.
 
 ## Setup
 
@@ -521,6 +546,18 @@ python .\testlink_agent.py upload-report `
   --platform "Your Platform" `
   --report "C:\path\to\report.txt" `
   --skip-policy ignore `
+  --write
+```
+
+To resume a partially failed write without repeating successful TestLink execution rows:
+
+```powershell
+python .\testlink_agent.py upload-report `
+  --project "YourProject" `
+  --plan "Your Test Plan" `
+  --platform "Your Platform" `
+  --report "C:\path\to\report.txt" `
+  --resume-audit "local\audit\previous-upload-report.json" `
   --write
 ```
 

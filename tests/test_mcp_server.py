@@ -2,7 +2,9 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
+from testlink_agent_core import server
 from testlink_agent_core.mcp_server import TOOLS, handle_request
 
 
@@ -17,6 +19,8 @@ class McpServerTests(unittest.TestCase):
         self.assertIn("redmine_fixed_version_id", upload_tool["inputSchema"]["properties"])
         self.assertIn("redmine_template", upload_tool["inputSchema"]["properties"])
         self.assertIn("redmine_custom_fields", upload_tool["inputSchema"]["properties"])
+        self.assertIn("audit_dir", upload_tool["inputSchema"]["properties"])
+        self.assertIn("resume_audit", upload_tool["inputSchema"]["properties"])
         self.assertIn(
             "Manager-only",
             upload_tool["inputSchema"]["properties"]["redmine_assigned_to_id"]["description"],
@@ -55,6 +59,29 @@ class McpServerTests(unittest.TestCase):
             properties = tool["inputSchema"]["properties"]
             self.assertNotIn("url", properties)
             self.assertNotIn("devkey", properties)
+
+    def test_tools_call_redacts_secret_values_from_content(self):
+        with patch.object(
+            server,
+            "call_tool",
+            return_value={"ok": True, "code": 0, "result": {"api_key": "redmine-secret", "devKey": "secret-value"}},
+        ):
+            response = handle_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 9,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "fake-secret-tool",
+                        "arguments": {},
+                    },
+                }
+            )
+
+        text = response["result"]["content"][0]["text"]
+        self.assertNotIn("secret-value", text)
+        self.assertNotIn("redmine-secret", text)
+        self.assertIn("*****", text)
 
     def test_about_tool_is_exposed(self):
         about_tool = next(tool for tool in TOOLS if tool["name"] == "testlink_about")

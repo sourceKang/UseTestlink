@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from testlink_agent_core.errors import TestLinkError
 from testlink_agent_core.reports import choose_latest_open_build, parse_report
 
 
@@ -24,6 +25,7 @@ Test Results:
             header, results = parse_report(report)
 
         self.assertEqual(header["Report generated on"], "2026-06-12_13-26-09")
+        self.assertEqual(header["_schema_version"], "legacy-web-ems-report-v1")
         self.assertEqual(len(results), 4)
         self.assertEqual(results[0].test_name, "test_profile_error_readwrite[ExampleProfile]")
         self.assertIsNone(results[0].status)
@@ -43,6 +45,30 @@ Test Results:
         )
         self.assertIsNotNone(selected)
         self.assertEqual(selected["id"], "3")
+
+    def test_rejects_report_without_test_results_marker(self):
+        with TemporaryDirectory() as tmpdir:
+            report = Path(tmpdir) / "report.txt"
+            report.write_text("[PRJ-1][test_login] Result Pass (1s)\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(TestLinkError, "missing 'Test Results:'"):
+                parse_report(report)
+
+    def test_rejects_report_without_result_rows(self):
+        with TemporaryDirectory() as tmpdir:
+            report = Path(tmpdir) / "report.txt"
+            report.write_text("Report generated on: 2026-06-12\nTest Results:\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(TestLinkError, "no TestLink result rows"):
+                parse_report(report)
+
+    def test_rejects_non_utf8_report(self):
+        with TemporaryDirectory() as tmpdir:
+            report = Path(tmpdir) / "report.txt"
+            report.write_bytes(b"Test Results:\n\xff\xfe\xfa")
+
+            with self.assertRaisesRegex(TestLinkError, "UTF-8"):
+                parse_report(report)
 
 
 if __name__ == "__main__":
