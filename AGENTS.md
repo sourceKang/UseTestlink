@@ -33,6 +33,13 @@ MCP server 名稱：`testlink-mcp`。
 - Redmine 欄位、RM#/eITS# 慣例、manager-only 欄位：先讀 `docs/redmine-fields.md`。
 - 涉及 write path 時，必須檢查 `testlink_agent_core.policy`、`testlink_agent_core.audit` 與相關 tests。
 
+## AGENTS.md 與 Skills 分工
+
+- `AGENTS.md` 放任何工作都必須遵守的全域守則。
+- `.agents/skills/` 放特定任務才需要載入的操作手冊、參考資料與腳本。
+- 目前 repo-scoped TestLink skill 位於 `.agents/skills/testlink-agent/SKILL.md`。
+- 如果某段 SOP 變得很長、只在特定任務會用到，優先拆成 skill，不要塞進 `AGENTS.md`。
+
 ## 寫入路徑要求
 
 新增或修改任何寫入路徑時，必須同時具備：

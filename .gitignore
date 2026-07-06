@@ -1,7 +1,9 @@
 .env
 .env.bak.*
 .codex/
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 local/
 downloads/
 reports/

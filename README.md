@@ -9,9 +9,9 @@ This project is a QA integration layer. TestLink remains the test record system,
 the corporate Redmine/eITS remains the formal defect workflow. A local Redmine, if
 used, is a sandbox only.
 
-Authoritative project instructions live in `AGENTS.md`. Architecture and workflow
-rules live in `docs/architecture.md`, `docs/workflow.md`, and
-`docs/redmine-fields.md`.
+Authoritative project instructions live in `AGENTS.md`. Repo-scoped Codex skills
+live in `.agents/skills/`. Architecture and workflow rules live in
+`docs/architecture.md`, `docs/workflow.md`, and `docs/redmine-fields.md`.
 
 ## Safety Rules
 
@@ -107,7 +107,7 @@ $env:TESTLINK_AGENT_ENV_FILE="D:\UseTestlink\local\testlink_agent.env"
 This project can be used by agents in two layers:
 
 - Primary: MCP server tools from `testlink-agent-mcp`
-- Secondary: Codex skill instructions in `skills/testlink-agent/SKILL.md`
+- Secondary: Codex skill instructions in `.agents/skills/testlink-agent/SKILL.md`
 
 Install the package locally when you want console entrypoints:
 
@@ -228,6 +228,7 @@ Files that are safe to share or upload with this tool:
 - `README.md`
 - `AGENTS.md`
 - `AGENT.md` legacy pointer for older tools
+- `.agents/`
 - `.gitignore`
 - `.env.example`
 - `tests/`
