@@ -1,58 +1,82 @@
-# TestLink Agent Operating Rules
+# TestLink Agent 操作守則
 
-Assistant responses in this repository should be written in Traditional Chinese.
+本 repository 內的 assistant 回覆一律使用繁體中文。
 
-Repo/package name: `testlink-agent`.
-MCP server name: `testlink-mcp`.
-Formal project role: QA Integration Agent for TestLink + corporate Redmine/eITS.
+專案/package 名稱：`testlink-agent`。
+MCP server 名稱：`testlink-mcp`。
+正式專案角色：TestLink + 公司 Redmine/eITS 的 QA 整合層。
 
-This repository is not TestLink itself and is not a second formal Redmine. It is a controlled integration layer between automation reports, TestLink, and the corporate Redmine/eITS workflow.
+本專案不是 TestLink 本體，也不是第二套正式 Redmine。它的責任是把 automation report、TestLink、公司 Redmine/eITS 流程安全地串起來，並保留 preview、schema 驗證、去重、雙向追溯、audit log 與可重跑能力。
 
-## System Boundaries
+## 專案邊界
 
-- TestLink is the test record system for projects, plans, platforms, builds, test cases, and execution results.
-- Corporate Redmine/eITS is the formal defect workflow for RM#, eITS#, issue status, assignee, fixed version, and release note mapping.
-- `testlink-agent` handles preview, schema validation, dedupe, writes, bidirectional traceability, and audit logs.
-- Any self-hosted Redmine must be a sandbox only. It must not be used as the formal defect system.
+- TestLink 是測試紀錄系統，負責 project、plan、platform、build、test case 與 execution result。
+- 公司 Redmine/eITS 是正式缺陷流程，負責 RM#、eITS#、issue 狀態、assignee、fixed version 與 release note 對應。
+- `testlink-agent` 只做整合、驗證、預覽、寫入保護、追溯與 audit。
+- 任何自架 Redmine 都只能是 sandbox，不能當成正式缺陷系統。
 
-## Write Rules
+## 不可破壞的規則
 
-- All write-capable operations must default to preview.
-- Use `--write` or MCP `write: true` only after explicit user confirmation.
-- Redmine issue creation is opt-in through `--redmine-create-bugs` or equivalent MCP arguments.
-- Destructive operations require explicit confirmation.
-- Do not infer deletion, overwrite, issue closure, assignment, or fixed version changes.
+- 所有可寫入操作預設都必須是 preview。
+- 只有在使用者明確確認後，才可以使用 `--write` 或 MCP `write: true`。
+- 建立 Redmine bug 必須額外 opt-in：`--redmine-create-bugs` 或對等 MCP 參數。
+- 破壞性操作必須再次明確確認。
+- 不可自行推論 deletion、overwrite、issue closure、assignment 或 fixed version 變更。
+- 不可把 sandbox Redmine 視為正式 Redmine/eITS。
+- 不可在 log、MCP response、error、audit log 中暴露 devKey、API key、token、password。
+- 測試必須能離線執行，不可打到公司 TestLink 或公司 Redmine/eITS。
 
-## Redmine/eITS Rules
+## 修改前必讀
 
-- Formal bugs must use the corporate Redmine/eITS workflow.
-- Sandbox Redmine profiles are for local development and testing only.
-- Dedupe before creating Redmine issues.
-- Reuse existing open issues when the dedupe marker matches.
-- After a reused issue receives a successful TestLink execution result, add a Redmine evidence comment.
-- The agent may add issue descriptions or comments with evidence.
-- The agent must not close issues, change status, change assignee, or change fixed version.
-- `assigned_to_id` and `fixed_version_id` are manager-only fields by default.
-- `REDMINE_ALLOW_MANAGER_FIELDS=true` may only be used on a manager-owned machine or approved environment.
+- 架構或責任邊界：先讀 `docs/architecture.md`。
+- 匯入、寫入、重跑與 retest 流程：先讀 `docs/workflow.md`。
+- Redmine 欄位、RM#/eITS# 慣例、manager-only 欄位：先讀 `docs/redmine-fields.md`。
+- 涉及 write path 時，必須檢查 `testlink_agent_core.policy`、`testlink_agent_core.audit` 與相關 tests。
 
-## TestLink Rules
+## 寫入路徑要求
 
-- TestLink execution notes must include Redmine ID/URL when a Redmine issue is linked.
-- Result upload appends execution records by default.
-- `overwrite_result` and `delete_execution` are destructive operations and require confirmation.
-- TestLink 1.9.16 XML-RPC behavior may be version-dependent; new version assumptions need tests and docs.
+新增或修改任何寫入路徑時，必須同時具備：
 
-## Traceability
+- preview-first 行為
+- `corp` / `sandbox` profile guard
+- Fail/Error 的 Redmine dedupe 與 reuse 規則
+- 雙向追溯資訊
+- audit JSON
+- partial failure 可重跑且具冪等保護
+- secret redaction
+- 離線單元測試
 
-Release note Redmine format:
+如果缺少其中一項，不要把寫入能力接上正式流程。
+
+## Redmine/eITS 規則
+
+- 正式 bug 必須使用公司 Redmine/eITS 流程。
+- 建單前必須先去重。
+- dedupe marker 相同且 open issue 存在時，重用既有 issue。
+- 重用 issue 且 TestLink execution 寫入成功後，要補 Redmine evidence comment。
+- agent 可以建立 issue description 或留言補證據。
+- agent 不可關單、改狀態、改 assignee、改 fixed version。
+- `assigned_to_id` 與 `fixed_version_id` 預設是 manager-only 欄位。
+- `REDMINE_ALLOW_MANAGER_FIELDS=true` 只能用在 manager-owned machine 或已核准環境。
+
+## TestLink 規則
+
+- TestLink execution notes 若有連到 Redmine，必須包含 Redmine ID/URL。
+- Result upload 預設 append execution record。
+- `overwrite_result` 與 `delete_execution` 是破壞性操作，必須明確確認。
+- TestLink 1.9.16 XML-RPC 行為可能有版本差異；新增版本假設時要補文件與測試。
+
+## Traceability 格式
+
+Release note 的 Redmine 格式：
 
 ```text
 [Bug #<Redmine ID>] <Ticket Subject>
 ```
 
-When both RM# and eITS# exist, RM# must appear before eITS# so PQA import can map it back to TestLink.
+同時存在 RM# 與 eITS# 時，RM# 必須放在 eITS# 前面，讓 PQA 匯入 TestLink 時能自動對應。
 
-TestLink execution notes should include:
+TestLink execution notes 應包含：
 
 ```text
 REDMINE-ID: #<issue id>
@@ -61,31 +85,35 @@ REDMINE-REUSED: yes/no
 Dedupe Key: testlink-agent:<digest>
 ```
 
-Redmine descriptions or comments should include TestLink project, plan, platform, build, test case, result, report file, and dedupe marker.
+Redmine description 或 comment 應包含 TestLink project、plan、platform、build、test case、result、report file 與 dedupe marker。
 
-## Current Safety Features
+## Report Schema 規則
 
-- UTF-8 / LF repository defaults through `.editorconfig` and `.gitattributes`.
-- `corp` / `sandbox` profile guard through `TESTLINK_AGENT_PROFILE` and `REDMINE_ENV`.
-- Report schema fail-fast validation for `legacy-web-ems-report-v1`.
-- Dedupe marker generation for Redmine Fail/Error handling.
-- Audit JSON for write operations under `local/audit` by default.
-- Explicit `--resume-audit` support for retrying partial `upload-report` failures without repeating completed TestLink writes.
-- Secret redaction for MCP content, errors, structured results, and audit logs.
-- Redmine evidence comments for reused issues after TestLink write success.
+- 目前支援的 automation report schema 是 `legacy-web-ems-report-v1`。
+- parser 必須嚴格驗證 schema。
+- 不認得的格式要 fail fast，不可猜測或容錯匯入。
+- 新增 schema version 時，必須補 parser 測試與 workflow 文件。
 
-## Security Rules
+## Security 規則
 
-- Never commit `.env`, `local/`, downloaded reports, personal API keys, or devKeys.
-- Mask `TESTLINK_DEVKEY`, `REDMINE_API_KEY`, `password`, `token`, and other secret values in logs, MCP responses, errors, and audit logs.
-- Tests must run offline and must not call corporate TestLink or corporate Redmine/eITS.
-- New write paths must include preview, profile guard, audit logging, retry-safe behavior, and tests.
+- 不可 commit `.env`、`local/`、下載的 report、個人 API key 或 devKey。
+- 必須遮罩 `TESTLINK_DEVKEY`、`REDMINE_API_KEY`、`password`、`token` 與其他 secret。
+- MCP tool 的 structured result、content、error 都要遵守 secret redaction。
+- 新增 log、exception 或 audit 欄位時，要先確認不會寫入 secret。
 
-## Recommended Flow
+## Definition Of Done
 
-1. Read `docs/architecture.md`, `docs/workflow.md`, and `docs/redmine-fields.md`.
-2. Confirm the active profile is `corp` or `sandbox`.
-3. Run preview for write-capable commands.
-4. Review target environment, dedupe/reuse decision, and planned writes.
-5. Write only after user confirmation.
-6. Check `local/audit/` for the generated JSON record.
+- 相關文件已同步更新。
+- 新增或修改的行為有離線測試。
+- `python -m unittest discover -s tests` 通過。
+- PR 說明有寫清楚 safety impact 與 validation。
+- 確認沒有 `.env`、`local/`、API key、devKey 或下載 report 被加入 git。
+
+## 建議操作流程
+
+1. 先讀 `docs/architecture.md`、`docs/workflow.md`、`docs/redmine-fields.md`。
+2. 確認目前 profile 是 `corp` 或 `sandbox`。
+3. 對可寫入命令先跑 preview。
+4. 檢查 target environment、dedupe/reuse decision 與 planned writes。
+5. 使用者明確確認後才寫入。
+6. 寫入後檢查 `local/audit/` 產生的 JSON 紀錄。

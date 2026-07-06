@@ -1,4 +1,4 @@
-﻿# TestLink Agent CLI
+# TestLink Agent CLI
 
 TestLink Agent provides the `testlink-mcp` server and CLI for agent-safe TestLink
 operations and controlled Redmine/eITS integration. It is designed for Codex/agent
@@ -226,7 +226,8 @@ Files that are safe to share or upload with this tool:
 - `testlink_agent.py`
 - `testlink_agent_core/`
 - `README.md`
-- `AGENT.md`
+- `AGENTS.md`
+- `AGENT.md` legacy pointer for older tools
 - `.gitignore`
 - `.env.example`
 - `tests/`

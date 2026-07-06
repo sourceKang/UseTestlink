@@ -1,10 +1,10 @@
 # Legacy Agent Entry
 
-This file is kept for tools or scripts that still look for `AGENT.md`.
+這個檔案只保留給仍然尋找 `AGENT.md` 的舊工具或腳本。
 
-Use `AGENTS.md` as the authoritative project instruction file.
+本專案的正式 agent 操作規則請以 `AGENTS.md` 為準。
 
-See also:
+相關文件：
 
 - `docs/architecture.md`
 - `docs/workflow.md`

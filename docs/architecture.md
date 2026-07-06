@@ -1,10 +1,10 @@
-# TestLink Agent Architecture
+# TestLink Agent 架構
 
-`testlink-agent` provides the `testlink-mcp` server for agent-safe TestLink operations and controlled Redmine/eITS integration.
+`testlink-agent` 提供 `testlink-mcp` server，讓 agent 能安全操作 TestLink，並受控地整合公司 Redmine/eITS 流程。
 
-The project is a QA integration layer. It does not replace TestLink, and it does not create a second formal Redmine workflow.
+本專案是 QA 整合層。它不取代 TestLink，也不建立第二套正式 Redmine 流程。
 
-## System Roles
+## 系統角色
 
 ```text
 Automation Report
@@ -17,51 +17,51 @@ testlink-agent / testlink-mcp
         +--> Corporate Redmine / eITS
 ```
 
-## Source Of Truth
+## 資料權責
 
-| Domain | Source of truth | Notes |
+| 領域 | Source of truth | 說明 |
 |---|---|---|
-| Test project, test plan, platform, build | TestLink | `testlink-agent` reads and writes through XML-RPC. |
-| Test case and execution result | TestLink | Execution notes may include Redmine references. |
-| Bug, RM#, eITS#, assignment, status, fixed version | Corporate Redmine/eITS | Formal defects must use the company system. |
-| Automation report import decision | `testlink-agent` preview + user confirmation | Write operations are opt-in. |
-| Operation evidence | `local/audit/*.json` | Local audit files are ignored by git. |
+| Test project、test plan、platform、build | TestLink | `testlink-agent` 透過 XML-RPC 讀寫。 |
+| Test case 與 execution result | TestLink | Execution notes 可以包含 Redmine 追溯資訊。 |
+| Bug、RM#、eITS#、assignment、status、fixed version | Corporate Redmine/eITS | 正式缺陷必須使用公司系統。 |
+| Automation report 匯入決策 | `testlink-agent` preview + 使用者確認 | 寫入操作必須 opt-in。 |
+| 操作證據 | `local/audit/*.json` | 本機 audit 檔案由 git ignore。 |
 
-## Deployment Boundaries
+## 部署邊界
 
-TestLink and Redmine/eITS must stay separate:
+TestLink 與 Redmine/eITS 必須分開：
 
-- Separate services
-- Separate databases
-- Separate backup and restore process
-- Separate user roles and permissions
-- API-based integration only
+- 分開的 service
+- 分開的 database
+- 分開的 backup 與 restore 流程
+- 分開的使用者角色與權限
+- 只透過 API 整合
 
-If a local Redmine is deployed later, it must be named and documented as a sandbox. It must not be used for formal RM#, eITS#, release note, or PQA import flow.
+如果之後部署本機 Redmine，必須明確命名並文件化為 sandbox。它不能用於正式 RM#、eITS#、release note 或 PQA import 流程。
 
-The optional `infra/redmine-sandbox/` compose setup is development-only. It is not a production Redmine recipe and must not be connected to formal TestLink/PQA release-note workflows.
+選用的 `infra/redmine-sandbox/` compose 設定只供開發使用。它不是 production Redmine recipe，也不能接到正式 TestLink/PQA release-note 流程。
 
-## Environment Profiles
+## 環境 Profile
 
-Every write-capable run should know which environment is being targeted:
+每一次可寫入操作都必須知道目標環境：
 
 ```text
 TESTLINK_AGENT_PROFILE=corp
 REDMINE_ENV=corp
 ```
 
-or:
+或：
 
 ```text
 TESTLINK_AGENT_PROFILE=sandbox
 REDMINE_ENV=sandbox
 ```
 
-`corp` means the corporate TestLink and corporate Redmine/eITS flow. `sandbox` means local or development-only systems. Agents must not infer that a sandbox Redmine is formal.
+`corp` 代表公司正式 TestLink 與公司 Redmine/eITS 流程。`sandbox` 代表本機或開發專用系統。agent 不可推論 sandbox Redmine 是正式系統。
 
-## Write Safety Model
+## 寫入安全模型
 
-All write paths follow this model:
+所有寫入路徑都遵守這個模型：
 
 ```text
 parse input
@@ -74,27 +74,27 @@ parse input
   -> record audit log
 ```
 
-Write-capable commands default to preview. Redmine bug creation is also opt-in. Destructive operations require extra confirmation.
+可寫入命令預設都是 preview。Redmine bug creation 也必須 opt-in。破壞性操作需要額外確認。
 
-## Key Modules
+## 主要模組
 
-| Module | Responsibility |
+| 模組 | 責任 |
 |---|---|
-| `testlink_agent_core.cli` | CLI arguments and command routing. |
-| `testlink_agent_core.commands` | CLI command orchestration. |
-| `testlink_agent_core.mcp_server` | MCP server entrypoint and tool exposure. |
-| `testlink_agent_core.client` / `clients` | TestLink XML-RPC access. |
-| `testlink_agent_core.redmine` | Redmine API access and issue payload construction. |
-| `testlink_agent_core.reports` | Automation report parsing. |
-| `testlink_agent_core.policy` | Target environment, allowed fields, dedupe, and idempotency rules. |
-| `testlink_agent_core.audit` | Write audit records and retry evidence. |
-| `testlink_agent_core.output` | Console/MCP output and sensitive value masking. |
+| `testlink_agent_core.cli` | CLI 參數與 command routing。 |
+| `testlink_agent_core.commands` | CLI command orchestration。 |
+| `testlink_agent_core.mcp_server` | MCP server entrypoint 與 tool exposure。 |
+| `testlink_agent_core.client` / `clients` | TestLink XML-RPC 存取。 |
+| `testlink_agent_core.redmine` | Redmine API 存取與 issue payload 建構。 |
+| `testlink_agent_core.reports` | Automation report parsing。 |
+| `testlink_agent_core.policy` | 目標環境、允許欄位、去重與冪等規則。 |
+| `testlink_agent_core.audit` | 寫入 audit record 與 retry evidence。 |
+| `testlink_agent_core.output` | Console/MCP output 與敏感資訊遮罩。 |
 
-`policy.py` and `audit.py` are planned modules. Add them before expanding write behavior.
+`policy.py` 與 `audit.py` 是目前有效的安全模組。任何新的寫入行為都必須重用它們，不要另外實作一次性的 profile、dedupe、audit 或 retry 邏輯。
 
-## Future Structure
+## 未來結構
 
-Do not move modules only for aesthetics. After policy and audit behavior are stable, the core can be split into:
+不要只為了美觀移動模組。等 policy 與 audit 行為穩定後，core 可以再拆成：
 
 ```text
 testlink_agent_core/
@@ -108,12 +108,12 @@ testlink_agent_core/
   audit.py
 ```
 
-The migration must preserve CLI and MCP behavior and keep offline tests passing.
+這個 migration 必須保持 CLI 與 MCP 行為不變，並維持離線測試通過。
 
-## Non-Goals
+## 非目標
 
-- Do not store formal Redmine data in TestLink-only files.
-- Do not use local Redmine as a formal defect system.
-- Do not auto-close Redmine issues.
-- Do not auto-assign issues or set fixed versions unless a manager-owned environment explicitly allows it.
-- Do not expose API keys, devKeys, tokens, or passwords in logs or MCP responses.
+- 不把正式 Redmine 資料存成 TestLink-only 檔案。
+- 不把本機 Redmine 當正式缺陷系統。
+- 不自動關閉 Redmine issue。
+- 不自動指派 issue 或設定 fixed version，除非 manager-owned environment 明確允許。
+- 不在 log 或 MCP response 暴露 API key、devKey、token 或 password。
