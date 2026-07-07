@@ -39,8 +39,11 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
                     "steps": {"type": "array", "minItems": 1, "items": {"type": "string"}},
                     "single_step": {
                         "type": "boolean",
-                        "default": False,
-                        "description": "Collapse all supplied steps into one TestLink step row.",
+                        "default": True,
+                        "description": (
+                            "Collapse all supplied steps into one TestLink step row. "
+                            "Defaults to true; set false to create one row per step."
+                        ),
                     },
                     "importance": {"type": "string", "default": "medium"},
                     "execution_type": {"type": "string", "default": "manual"},
@@ -67,8 +70,11 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
                     "steps": {"type": "array", "items": {"type": "string"}},
                     "single_step": {
                         "type": "boolean",
-                        "default": False,
-                        "description": "Collapse all supplied replacement steps into one TestLink step row.",
+                        "default": True,
+                        "description": (
+                            "Collapse all supplied replacement steps into one TestLink step row. "
+                            "Defaults to true; set false to create one row per step."
+                        ),
                     },
                     "importance": string("low, medium, high, or numeric TestLink value."),
                     "execution_type": string("manual, automated, or numeric TestLink value."),
@@ -179,8 +185,11 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
                 "steps_file": string("JSON array of step strings or objects."),
                 "single_step": {
                     "type": "boolean",
-                    "default": False,
-                    "description": "Collapse all supplied steps into one TestLink step row.",
+                    "default": True,
+                    "description": (
+                        "Collapse all supplied steps into one TestLink step row. "
+                        "Defaults to true; set false to create one row per step."
+                    ),
                 },
                 "importance": {"type": "string", "default": "medium"},
                 "execution_type": {"type": "string", "default": "manual"},
@@ -213,8 +222,11 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
                 "steps_file": string("JSON array of replacement steps."),
                 "single_step": {
                     "type": "boolean",
-                    "default": False,
-                    "description": "Collapse all supplied replacement steps into one TestLink step row.",
+                    "default": True,
+                    "description": (
+                        "Collapse all supplied replacement steps into one TestLink step row. "
+                        "Defaults to true; set false to create one row per step."
+                    ),
                 },
                 "importance": string("low, medium, high, or numeric TestLink value."),
                 "execution_type": string("manual, automated, or numeric TestLink value."),

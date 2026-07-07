@@ -193,8 +193,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     create.add_argument(
         "--single-step",
-        action="store_true",
-        help="Collapse all supplied steps into one TestLink step row with numbered action/result lines.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Collapse all supplied steps into one TestLink step row with numbered action/result lines. "
+            "Defaults to true; use --no-single-step to create one TestLink row per step."
+        ),
     )
     create.add_argument("--importance", default="medium", help="low, medium, high, or a numeric TestLink value.")
     create.add_argument("--execution-type", default="manual", help="manual, automated, or a numeric TestLink value.")
@@ -237,8 +241,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     update.add_argument(
         "--single-step",
-        action="store_true",
-        help="Collapse all supplied replacement steps into one TestLink step row with numbered action/result lines.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Collapse all supplied replacement steps into one TestLink step row with numbered action/result lines. "
+            "Defaults to true; use --no-single-step to create one TestLink row per step."
+        ),
     )
     update.add_argument("--importance", help="low, medium, high, or a numeric TestLink value.")
     update.add_argument("--execution-type", help="manual, automated, or a numeric TestLink value.")

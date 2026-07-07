@@ -71,7 +71,7 @@ def create_test_case(
     importance: str = "medium",
     execution_type: str = "manual",
     order: int | None = None,
-    single_step: bool = False,
+    single_step: bool = True,
     write: bool = False,
 ) -> dict[str, Any]:
     if not name:
@@ -137,7 +137,7 @@ def update_test_case(
     summary: str | None = None,
     preconditions: str | None = None,
     steps: list[str] | None = None,
-    single_step: bool = False,
+    single_step: bool = True,
     importance: str | None = None,
     execution_type: str | None = None,
     write: bool = False,
