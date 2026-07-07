@@ -32,7 +32,6 @@ $copies = @(
     @{ Source = "testlink_agent.py"; Destination = "testlink_agent.py" },
     @{ Source = "pyproject.toml"; Destination = "pyproject.toml" },
     @{ Source = "AGENTS.md"; Destination = "AGENTS.md" },
-    @{ Source = "AGENT.md"; Destination = "AGENT.md" },
     @{ Source = ".env.example"; Destination = ".env.example" },
     @{ Source = "README.md"; Destination = "README.md" },
     @{ Source = ".gitignore"; Destination = ".gitignore" }

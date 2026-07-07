@@ -227,7 +227,6 @@ Files that are safe to share or upload with this tool:
 - `testlink_agent_core/`
 - `README.md`
 - `AGENTS.md`
-- `AGENT.md` legacy pointer for older tools
 - `.agents/`
 - `.gitignore`
 - `.env.example`
