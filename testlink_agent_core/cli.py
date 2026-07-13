@@ -269,6 +269,17 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--audit-dir", default=DEFAULT_AUDIT_DIR, help="Write audit JSON files to this directory.")
     upload.add_argument("--resume-audit", help="Resume a previous upload-report audit JSON and skip completed TestLink writes.")
     upload.add_argument("--redmine-create-bugs", action="store_true", help="Create or reuse Redmine issues for failed results.")
+    upload.add_argument(
+        "--redmine-group-failures",
+        action="store_true",
+        help="Create or reuse one shared Redmine issue for all failed results in this report.",
+    )
+    subject_group = upload.add_mutually_exclusive_group(required=False)
+    subject_group.add_argument("--redmine-subject", help="Override the generated Redmine subject.")
+    subject_group.add_argument("--redmine-subject-file", help="Read the Redmine subject from a UTF-8 file.")
+    description_group = upload.add_mutually_exclusive_group(required=False)
+    description_group.add_argument("--redmine-description", help="Override the generated Redmine description.")
+    description_group.add_argument("--redmine-description-file", help="Read the Redmine description from a UTF-8 file.")
     upload.add_argument("--redmine-url", help="Redmine base URL. Defaults to REDMINE_URL.")
     upload.add_argument("--redmine-api-key", help="Redmine API key. Prefer REDMINE_API_KEY.")
     upload.add_argument("--redmine-project", help="Redmine project identifier or ID. Defaults to REDMINE_PROJECT_ID.")

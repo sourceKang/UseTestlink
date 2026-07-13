@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qa-mcp-contracts:v1:qa-report-preview",
+  "title": "QA report import preview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "correlation_id",
+    "environment",
+    "mode",
+    "preview_digest",
+    "planned_write",
+    "input_digest",
+    "report_schema",
+    "target",
+    "parsed_count",
+    "write_count",
+    "ignored_count",
+    "items",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "operation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "correlation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "environment": {"enum": ["corp", "sandbox"]},
+    "mode": {"const": "preview"},
+    "preview_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "planned_write": {"type": "boolean"},
+    "input_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "report_schema": {"const": "legacy-web-ems-report-v1"},
+    "target": {"$ref": "#/$defs/target"},
+    "parsed_count": {"type": "integer", "minimum": 0},
+    "write_count": {"type": "integer", "minimum": 0},
+    "ignored_count": {"type": "integer", "minimum": 0},
+    "items": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "warnings": {"type": "array", "items": {"type": "string", "maxLength": 2000}}
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "plan", "platform", "build"],
+      "properties": {
+        "project": {"type": "string", "minLength": 1},
+        "plan": {"type": "string", "minLength": 1},
+        "platform": {"type": "string", "minLength": 1},
+        "build": {"type": "string", "minLength": 1}
+      }
+    },
+    "issue": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["id", "url", "subject", "state"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "url": {"type": "string", "minLength": 1},
+        "subject": {"type": "string"},
+        "state": {"enum": ["open", "closed"]}
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "testcase_external_id",
+        "test_name",
+        "raw_status",
+        "status",
+        "testlink_planned_write",
+        "testlink_preview_digest",
+        "redmine_action"
+      ],
+      "properties": {
+        "testcase_external_id": {"type": "string", "minLength": 1},
+        "test_name": {"type": "string", "minLength": 1},
+        "raw_status": {"type": "string", "minLength": 1},
+        "status": {"enum": ["p", "f", "b"]},
+        "testlink_planned_write": {"type": "boolean"},
+        "testlink_preview_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "redmine_action": {"enum": ["none", "create", "reuse", "blocked"]},
+        "redmine_preview_digest": {"type": ["string", "null"]},
+        "dedupe_digest": {"type": ["string", "null"]},
+        "existing_issue": {"$ref": "#/$defs/issue"}
+      }
+    }
+  }
+}

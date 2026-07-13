@@ -13,8 +13,18 @@ dependencies = []
 [project.scripts]
 testlink-agent = "testlink_agent_core.cli:main"
 testlink-agent-mcp = "testlink_agent_core.server:main"
-testlink-mcp = "testlink_agent_core.server:main"
+testlink-mcp = "testlink_mcp.server:main"
+redmine-mcp = "redmine_mcp.server:main"
+qa-integration-agent-mcp = "qa_integration_agent.server:main"
 
 [tool.setuptools]
-packages = ["testlink_agent_core", "testlink_agent_core.handlers", "testlink_agent_core.tools"]
+packages = [
+  "qa_mcp_contracts",
+  "qa_integration_agent",
+  "redmine_mcp",
+  "testlink_agent_core",
+  "testlink_agent_core.handlers",
+  "testlink_agent_core.tools",
+  "testlink_mcp",
+]
 

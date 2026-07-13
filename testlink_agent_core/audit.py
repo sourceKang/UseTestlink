@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from qa_mcp_contracts import atomic_replace
+
 from .config import DEFAULT_AUDIT_DIR
 from .errors import TestLinkError, redact_secrets
 
@@ -149,5 +151,5 @@ def write_audit_record(record: dict[str, Any], audit_dir: Path | str | None = DE
     path = directory / audit_filename(record)
     temp_path = path.with_suffix(path.suffix + ".tmp")
     temp_path.write_text(json.dumps(record, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
-    temp_path.replace(path)
+    atomic_replace(temp_path, path)
     return path

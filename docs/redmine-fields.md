@@ -1,8 +1,16 @@
 # Redmine/eITS Field Policy
 
-This document defines Redmine/eITS field handling for `testlink-agent`.
+This document defines Redmine/eITS field handling for `testlink-agent` and the standalone `redmine-mcp` boundary.
 
 Formal bugs must be created in the corporate Redmine/eITS workflow. A local Redmine, if deployed, is a sandbox only.
+
+## Ownership Boundary
+
+- `redmine-mcp` alone loads `REDMINE_API_KEY` and calls the Redmine REST API.
+- `qa-integration-agent` sends validated issue/comment intent and traceability context, never credentials.
+- `testlink-mcp` receives only the resulting Redmine ID/URL needed in execution notes.
+- Formal work does not fall back to Chrome/browser control when the Redmine MCP is missing; fix or explicitly configure the MCP credential path.
+- Metadata discovery and template validation are read-only. Issue and comment writes require a matching preview digest and produce audit JSON.
 
 ## Required Target Configuration
 
@@ -16,6 +24,7 @@ REDMINE_TEMPLATE=<local/redmine_templates/*.json>
 REDMINE_TRACKER_ID=<tracker id>
 REDMINE_PRIORITY_ID=<priority id>
 REDMINE_ENV=corp|sandbox
+REDMINE_MCP_ENV_FILE=<absolute or repository-local env file path>
 ```
 
 `REDMINE_ENV=corp` means formal company workflow. `REDMINE_ENV=sandbox` means development-only Redmine.

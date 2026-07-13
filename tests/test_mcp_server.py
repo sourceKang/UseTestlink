@@ -19,6 +19,9 @@ class McpServerTests(unittest.TestCase):
         self.assertIn("redmine_fixed_version_id", upload_tool["inputSchema"]["properties"])
         self.assertIn("redmine_template", upload_tool["inputSchema"]["properties"])
         self.assertIn("redmine_custom_fields", upload_tool["inputSchema"]["properties"])
+        self.assertIn("redmine_group_failures", upload_tool["inputSchema"]["properties"])
+        self.assertIn("redmine_subject", upload_tool["inputSchema"]["properties"])
+        self.assertIn("redmine_description", upload_tool["inputSchema"]["properties"])
         self.assertIn("audit_dir", upload_tool["inputSchema"]["properties"])
         self.assertIn("resume_audit", upload_tool["inputSchema"]["properties"])
         self.assertIn(

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qa-mcp-contracts:v1:redmine-comment-preview",
+  "title": "Redmine evidence comment preview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "environment",
+    "mode",
+    "preview_digest",
+    "planned_write",
+    "issue_id",
+    "notes_digest",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "operation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "environment": {"enum": ["corp", "sandbox"]},
+    "mode": {"const": "preview"},
+    "preview_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "planned_write": {"type": "boolean"},
+    "issue_id": {"type": "string", "minLength": 1},
+    "notes_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string", "maxLength": 2000}
+    }
+  }
+}

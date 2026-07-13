@@ -1,5 +1,33 @@
 # TestLink Agent Workflow
 
+## v2 Recommended Flow
+
+The recommended integrated path is `qa-integration-agent` -> ownership-specific MCP servers. The legacy combined upload remains a compatibility path only.
+
+```text
+1. Assign stable operation_id and explicit corp|sandbox environment
+2. Parse and strictly validate legacy-web-ems-report-v1
+3. Resolve exact TestLink project/plan/platform/build
+4. Ask redmine-mcp for dedupe-aware bug previews when explicitly enabled
+5. Ask testlink-mcp for execution previews
+6. Return one aggregate preview and preview_digest; perform zero writes
+7. Wait for explicit confirmation of the unchanged preview
+8. Execute Redmine create/reuse decision for Fail/Error
+9. Write TestLink execution with Redmine traceability
+10. If an issue was reused, append Redmine evidence after TestLink succeeds
+11. Save service audits and the item-level workflow audit
+12. Validate traceability; resume only missing actions after partial failure
+```
+
+The platform and build are exact inputs. A missing requested platform is a target validation failure; the coordinator must not replace it with another existing platform without a new user-selected preview.
+
+## Confirmation Contract
+
+- Preview is read-only and returns a canonical `preview_digest`.
+- Write requires `write: true`, the same `operation_id` and environment, unchanged inputs, and the matching digest.
+- Any changed report, target, template, custom field, or Redmine opt-in invalidates the digest and requires a new preview.
+- Resume uses the prior audit identity and completed item states; it is not a fresh bulk retry.
+
 This document defines the expected workflow for importing automation results into TestLink and linking Fail/Error results to corporate Redmine/eITS.
 
 ## Normal Upload Flow
@@ -14,8 +42,8 @@ This document defines the expected workflow for importing automation results int
 7. Query Redmine for existing open issues
 8. Produce preview
 9. Wait for explicit user confirmation
-10. Write TestLink execution results
-11. Create or reuse Redmine issues
+10. Create or reuse explicitly enabled Redmine issues for Fail/Error
+11. Write TestLink execution results with traceability
 12. Write bidirectional traceability
 13. Save local audit log
 ```

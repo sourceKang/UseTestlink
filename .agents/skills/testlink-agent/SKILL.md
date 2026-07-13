@@ -1,54 +1,64 @@
 ---
 name: testlink-agent
-description: Use this skill when Codex needs to work with this TestLink Agent project or a configured TestLink MCP server: list TestLink projects/plans/platforms/builds/suites, search suite catalogs, manage local TestLink target profiles, download test cases, preview/create/update test cases, preview/upload automation reports, or attach/link Redmine issues through TestLink-safe workflows.
+description: Use this skill for the testlink-agent repository or its TestLink, Redmine/eITS, and QA coordinator MCP workflows, including discovery, protected writes, report import, dedupe, traceability, audit, and resume.
 ---
 
 # TestLink Agent
 
 ## Core Rule
 
-Prefer the MCP tools exposed by `testlink-agent-mcp`. Use the CLI only when MCP is unavailable or when the user explicitly asks for terminal commands.
+Route work by ownership boundary:
 
-Never perform external writes first. For `testlink_create_testcase`, `testlink_update_testcase`, and `testlink_upload_report`, call the tool with `write: false` first, review the returned preview, and use `write: true` only after the user explicitly confirms the exact target and payload.
+- Cross-system automation report import: `qa-integration-agent`.
+- TestLink-only discovery or execution: `testlink-mcp`.
+- Redmine/eITS-only metadata, issue, or comment work: `redmine-mcp`.
+- `testlink-agent-mcp` and `testlink_upload_report` are migration compatibility paths only.
+
+Never perform an external write first. Review the exact preview and its `preview_digest`, then write only after the user explicitly confirms the environment, target, and payload. Never reuse a digest after inputs change.
 
 ## Setup Check
 
-Verify one credential path exists before calling live TestLink tools:
+Verify the relevant server has its own credential path before calling live tools:
 
-- Environment variables: `TESTLINK_URL` and `TESTLINK_DEVKEY`
-- Or an env file passed as `env_file`
-- Or the local default `local/testlink_agent.env`
-- For MCP used from another project, prefer `TESTLINK_AGENT_ENV_FILE` with an absolute path. If the current project has no default env file, the agent can fall back to the UseTestlink project root defaults.
+- TestLink: `TESTLINK_URL` + `TESTLINK_DEVKEY`, normally through `TESTLINK_MCP_ENV_FILE`.
+- Redmine: `REDMINE_URL` + `REDMINE_API_KEY` + explicit `REDMINE_ENV`, normally through `REDMINE_MCP_ENV_FILE`.
+- Legacy compatibility only: `TESTLINK_AGENT_ENV_FILE` or `local/testlink_agent.env`.
 
-Never display `TESTLINK_DEVKEY`, `REDMINE_API_KEY`, or other secrets in responses.
+Do not pass credentials through MCP tool arguments. Do not silently switch formal Redmine work to browser/Chrome when the MCP is missing or misconfigured; report the configuration blocker instead. Never display `TESTLINK_DEVKEY`, `REDMINE_API_KEY`, or other secrets.
 
-## Workflow
+## Integrated Report Workflow
 
-1. Discover the target with read-only tools:
+1. Discover the exact target with TestLink read-only tools:
    - `testlink_list_projects`
    - `testlink_list_plans`
    - `testlink_list_platforms`
    - `testlink_list_builds`
    - `testlink_list_suites`
    - `testlink_find_suites`
-2. Save frequent suite targets with `testlink_save_profile` when useful.
-3. Preview testcase creation, testcase updates, or report upload with `write: false`.
-4. Summarize the preview: project, plan, platform, build, suite/profile, counts, ignored rows, failures, and Redmine actions.
-5. Ask for confirmation before `write: true`.
-6. After writing, summarize success/failure counts and surface any failed rows or TestLink/Redmine errors.
+2. Call `qa_preview_report_import` with an explicit `operation_id`, `environment`, project, plan, platform, build, and report.
+3. Summarize target, counts, ignored rows, failures, Redmine create/reuse decisions, warnings, and `preview_digest`.
+4. After explicit confirmation, call `qa_execute_report_import` with unchanged inputs, the matching digest, and `write: true`.
+5. Validate the workflow audit and traceability.
+6. For partial failure, use `qa_resume_report_import` with the same operation identity and matching audit. Do not rerun the whole import as a new operation.
 
-## Important Tool Notes
+## Safety Notes
 
-- `testlink_upload_report` defaults to the latest active/open build when `build` and `build_id` are omitted.
+- The coordinator requires an exact platform and build; it never substitutes another platform because the requested one is absent.
+- Pure `testlink-mcp` excludes Redmine operations and legacy combined report upload.
+- `redmine-mcp` enforces dedupe: an open match is reused and a closed match blocks automatic creation/reopen.
 - `skip_policy: "ignore"` leaves skipped rows out of TestLink writes; `skip_policy: "blocked"` writes skipped rows as blocked.
 - Redmine bug creation is opt-in with `redmine_create_bugs: true`.
 - When a Redmine project requires custom fields, pass `redmine_template` and preview first. The template is project-specific and should define required custom fields before `write: true`.
-- Native TestLink `bugid` linking is off by default; use `testlink_bug_link: "notes"` unless the user explicitly requests `bugid` or `both`.
+- The agent may create issue descriptions or evidence comments, but may not close issues or change status, assignee, or fixed version.
 - Local files such as catalogs and profiles are under `local/` by default and are ignored by git.
+
+## Direct MCP Work
+
+For a TestLink-only write, use the protected `testlink-mcp` preview/result tools and a matching digest. For a Redmine-only write, use `redmine_preview_bug` or `redmine_preview_comment`, then the corresponding write tool only after confirmation.
 
 ## CLI Fallback
 
-Use these commands when MCP is not configured:
+Use the legacy CLI only when MCP is unavailable or the user explicitly requests terminal commands:
 
 ```powershell
 python .\testlink_agent.py list-projects
@@ -56,4 +66,4 @@ python .\testlink_agent.py list-plans --project "Project"
 python .\testlink_agent.py upload-report --project "Project" --plan "Plan" --platform "Platform" --report "reports\report.txt"
 ```
 
-Add `--write` only after the preview has been reviewed and confirmed.
+Add `--write` only after the preview has been reviewed and confirmed. The fallback does not change the ownership or safety rules above.

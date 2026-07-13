@@ -98,6 +98,21 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded, [str(explicit)])
             self.assertEqual(os.environ["TESTLINK_URL"], "https://explicit.example.com/testlink")
 
+    def test_utf8_bom_on_first_key_is_supported(self):
+        with TemporaryDirectory() as tmpdir:
+            explicit = Path(tmpdir) / "bom.env"
+            explicit.write_text(
+                "TESTLINK_AGENT_PROFILE=corp\n"
+                "TESTLINK_URL=https://bom.example.com/testlink\n"
+                "TESTLINK_DEVKEY=replace-with-test-key\n",
+                encoding="utf-8-sig",
+            )
+
+            load_env_files(str(explicit))
+
+            self.assertEqual(os.environ["TESTLINK_AGENT_PROFILE"], "corp")
+            self.assertEqual(os.environ["TESTLINK_URL"], "https://bom.example.com/testlink")
+
     def test_env_file_replaces_empty_environment_value(self):
         with TemporaryDirectory() as tmpdir:
             explicit = Path(tmpdir) / "explicit.env"

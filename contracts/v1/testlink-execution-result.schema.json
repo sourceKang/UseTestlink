@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qa-mcp-contracts:v1:testlink-execution-result",
+  "title": "TestLink execution write result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "environment",
+    "preview_digest",
+    "status",
+    "testcase_external_id",
+    "execution_id",
+    "audit_id"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "operation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "environment": {"enum": ["corp", "sandbox"]},
+    "preview_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "status": {"enum": ["success", "skipped-resume", "failed"]},
+    "testcase_external_id": {"type": "string", "minLength": 1},
+    "execution_id": {"type": ["string", "null"]},
+    "execution_url": {"type": ["string", "null"]},
+    "audit_id": {"type": "string", "minLength": 1}
+  }
+}

@@ -43,6 +43,7 @@ from .redmine import (
     build_notes,
     build_redmine_dedupe,
     build_redmine_evidence_comment,
+    build_redmine_group_dedupe,
     build_redmine_issue_payload,
     manager_fields_enabled,
     redmine_arg,
@@ -117,39 +118,59 @@ def command_upload_report(args: argparse.Namespace) -> int:
     if missing:
         raise TestLinkError(f"Test cases not found in plan/platform: {', '.join(sorted(missing))}")
 
+    failed_results = [result for result in writable if result.status == "f"]
+    group_failures = bool(getattr(args, "redmine_group_failures", False))
     redmine_bug_preview: list[dict[str, Any]] = []
     if args.redmine_create_bugs or args.redmine_issue_id:
-        for result in writable:
-            if result.status != "f":
-                continue
+        issue_groups = [failed_results] if group_failures and failed_results else [[result] for result in failed_results]
+        for issue_group in issue_groups:
+            result = issue_group[0]
             existing_issue = build_existing_redmine_issue(args, result)
             if existing_issue is not None:
                 redmine_bug_preview.append(
                     {
                         "external_id": result.external_id,
+                        "external_ids": [item.external_id for item in issue_group],
                         "test_name": result.test_name,
+                        "test_names": [item.test_name for item in issue_group],
                         "issue_id": existing_issue.id,
                         "issue_url": existing_issue.url,
                         "action": "link-existing",
                     }
                 )
             else:
-                issue_payload = build_redmine_issue_payload(args, header, report_path, result, context)
-                dedupe = build_redmine_dedupe(str(issue_payload["project_id"]), result, context)
-                redmine_bug_preview.append(
-                    {
-                        "external_id": result.external_id,
-                        "test_name": result.test_name,
-                        "subject": issue_payload["subject"],
-                        "project_id": issue_payload["project_id"],
-                        "tracker_id": issue_payload.get("tracker_id"),
-                        "priority_id": issue_payload.get("priority_id"),
-                        "custom_fields": issue_payload.get("custom_fields", []),
-                        "dedupe_digest": dedupe["digest"],
-                        "dedupe_marker": dedupe["marker"],
-                        "action": "create-or-reuse",
-                    }
+                issue_payload = build_redmine_issue_payload(
+                    args,
+                    header,
+                    report_path,
+                    result,
+                    context,
+                    group_results=issue_group if group_failures else None,
                 )
+                dedupe = (
+                    build_redmine_group_dedupe(str(issue_payload["project_id"]), issue_group, context)
+                    if group_failures
+                    else build_redmine_dedupe(str(issue_payload["project_id"]), result, context)
+                )
+                issue_preview = {
+                    "external_id": result.external_id,
+                    "external_ids": [item.external_id for item in issue_group],
+                    "test_name": result.test_name,
+                    "test_names": [item.test_name for item in issue_group],
+                    "subject": issue_payload["subject"],
+                    "description": issue_payload["description"],
+                    "project_id": issue_payload["project_id"],
+                    "tracker_id": issue_payload.get("tracker_id"),
+                    "priority_id": issue_payload.get("priority_id"),
+                    "custom_fields": issue_payload.get("custom_fields", []),
+                    "dedupe_digest": dedupe["digest"],
+                    "dedupe_marker": dedupe["marker"],
+                    "action": "create-or-reuse",
+                }
+                for field in ("status_id", "category_id", "fixed_version_id"):
+                    if field in issue_payload:
+                        issue_preview[field] = issue_payload[field]
+                redmine_bug_preview.append(issue_preview)
 
     preview = {
         "mode": "write" if args.write else "preview",
@@ -179,6 +200,7 @@ def command_upload_report(args: argparse.Namespace) -> int:
         "redmine": {
             "enabled": args.redmine_create_bugs or bool(args.redmine_issue_id),
             "dedupe": args.redmine_dedupe,
+            "group_failures": group_failures,
             "testlink_bug_link": args.testlink_bug_link,
             "manager_fields_enabled": manager_fields_enabled(),
             "issues_to_create_or_reuse": redmine_bug_preview,
@@ -199,6 +221,7 @@ def command_upload_report(args: argparse.Namespace) -> int:
         redmine_target={
             "enabled": preview["redmine"]["enabled"],
             "dedupe": preview["redmine"]["dedupe"],
+            "group_failures": preview["redmine"]["group_failures"],
             "testlink_bug_link": preview["redmine"]["testlink_bug_link"],
             "manager_fields_enabled": preview["redmine"]["manager_fields_enabled"],
         },
@@ -217,6 +240,7 @@ def command_upload_report(args: argparse.Namespace) -> int:
         validate_resume_audit(resume_record, audit_record)
         resume_items = resume_items_by_external_id(resume_record)
 
+    shared_redmine_issue: RedmineIssue | None = None
     for index, result in enumerate(writable, start=1):
         resume_item = resume_items.get(result.external_id)
         redmine_issue: RedmineIssue | None = None
@@ -283,15 +307,28 @@ def command_upload_report(args: argparse.Namespace) -> int:
             continue
 
         if result.status == "f":
-            redmine_issue = build_existing_redmine_issue(args, result)
+            redmine_issue = shared_redmine_issue if group_failures else build_existing_redmine_issue(args, result)
+            if redmine_issue is None:
+                redmine_issue = build_existing_redmine_issue(args, result)
         if redmine_issue is None and resume_item:
             redmine_issue = redmine_issue_from_dict(resume_item.get("redmine_issue"))
             if redmine_issue is not None:
                 redmine_issue.reused = True
         if redmine_client is not None and result.status == "f" and redmine_issue is None:
             try:
-                issue_payload = build_redmine_issue_payload(args, header, report_path, result, context)
-                dedupe = build_redmine_dedupe(str(issue_payload["project_id"]), result, context)
+                issue_payload = build_redmine_issue_payload(
+                    args,
+                    header,
+                    report_path,
+                    result,
+                    context,
+                    group_results=failed_results if group_failures else None,
+                )
+                dedupe = (
+                    build_redmine_group_dedupe(str(issue_payload["project_id"]), failed_results, context)
+                    if group_failures
+                    else build_redmine_dedupe(str(issue_payload["project_id"]), result, context)
+                )
                 if args.redmine_dedupe == "open":
                     redmine_issue = redmine_client.find_open_issue_by_dedupe_marker(
                         str(issue_payload["project_id"]),
@@ -327,6 +364,9 @@ def command_upload_report(args: argparse.Namespace) -> int:
                     },
                 )
                 continue
+
+        if group_failures and result.status == "f" and redmine_issue is not None:
+            shared_redmine_issue = redmine_issue
 
         params: dict[str, Any] = {
             "testcaseexternalid": result.external_id,

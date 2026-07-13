@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qa-mcp-contracts:v1:operation-context",
+  "title": "QA operation context",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "correlation_id",
+    "environment",
+    "requested_at",
+    "source"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "operation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "correlation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "environment": {"enum": ["corp", "sandbox"]},
+    "requested_at": {"type": "string", "format": "date-time"},
+    "source": {
+      "enum": ["qa-integration-agent", "manual", "compatibility-wrapper"]
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {"enum": ["human", "agent", "service"]},
+        "id": {"type": "string", "minLength": 1, "maxLength": 128}
+      }
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qa-mcp-contracts:v1:testlink-execution-preview",
+  "title": "TestLink execution preview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "environment",
+    "mode",
+    "preview_digest",
+    "planned_write",
+    "target",
+    "execution",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "operation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "environment": {"enum": ["corp", "sandbox"]},
+    "mode": {"const": "preview"},
+    "preview_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "planned_write": {"type": "boolean"},
+    "target": {"$ref": "#/$defs/target"},
+    "execution": {"$ref": "#/$defs/execution"},
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string", "maxLength": 2000}
+    }
+  },
+  "$defs": {
+    "namedTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1}
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "plan", "platform", "build"],
+      "properties": {
+        "project": {"$ref": "#/$defs/namedTarget"},
+        "plan": {"$ref": "#/$defs/namedTarget"},
+        "platform": {"$ref": "#/$defs/namedTarget"},
+        "build": {"$ref": "#/$defs/namedTarget"}
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["testcase_external_id", "status", "notes_digest"],
+      "properties": {
+        "testcase_external_id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["p", "f", "b"]},
+        "notes_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "duration_minutes": {"type": "number", "minimum": 0}
+      }
+    }
+  }
+}

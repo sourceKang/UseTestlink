@@ -1,0 +1,27 @@
+# Copy these entries into the consuming project's .codex/config.toml.
+# Credential values stay in ignored local env files; do not place them here.
+
+[mcp_servers.testlink-mcp]
+command = "python"
+args = ["-m", "testlink_mcp.server"]
+cwd = "D:\\UseTestlink"
+
+[mcp_servers.testlink-mcp.env]
+TESTLINK_MCP_ENV_FILE = "D:\\UseTestlink\\local\\testlink_mcp.env"
+
+[mcp_servers.redmine-mcp]
+command = "python"
+args = ["-m", "redmine_mcp.server"]
+cwd = "D:\\UseTestlink"
+
+[mcp_servers.redmine-mcp.env]
+REDMINE_MCP_ENV_FILE = "D:\\UseTestlink\\local\\redmine_mcp.env"
+
+[mcp_servers.qa-integration-agent]
+command = "python"
+args = ["-m", "qa_integration_agent.server"]
+cwd = "D:\\UseTestlink"
+
+[mcp_servers.qa-integration-agent.env]
+QA_TESTLINK_MCP_ENV_FILE = "D:\\UseTestlink\\local\\testlink_mcp.env"
+QA_REDMINE_MCP_ENV_FILE = "D:\\UseTestlink\\local\\redmine_mcp.env"

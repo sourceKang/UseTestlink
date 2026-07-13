@@ -3,7 +3,8 @@
 本 repository 內的 assistant 回覆一律使用繁體中文。
 
 專案/package 名稱：`testlink-agent`。
-MCP server 名稱：`testlink-mcp`。
+正式 MCP 邊界：`testlink-mcp`、`redmine-mcp`、`qa-integration-agent`。
+舊 `testlink-agent-mcp` 僅為遷移期相容入口，不得作為新整合流程的首選。
 正式專案角色：TestLink + 公司 Redmine/eITS 的 QA 整合層。
 
 本專案不是 TestLink 本體，也不是第二套正式 Redmine。它的責任是把 automation report、TestLink、公司 Redmine/eITS 流程安全地串起來，並保留 preview、schema 驗證、去重、雙向追溯、audit log 與可重跑能力。
@@ -15,9 +16,18 @@ MCP server 名稱：`testlink-mcp`。
 - `testlink-agent` 只做整合、驗證、預覽、寫入保護、追溯與 audit。
 - 任何自架 Redmine 都只能是 sandbox，不能當成正式缺陷系統。
 
+## 多 Agent／MCP 分工
+
+- `testlink-mcp` 只持有 TestLink 認證，負責 TestLink discovery 與 execution 寫入保護。
+- `redmine-mcp` 只持有 Redmine/eITS 認證，負責 metadata、template、dedupe、issue 與 evidence comment。
+- `qa-integration-agent` 不持有上游 API key；負責 report schema、跨系統規劃、preview、traceability、audit 與 resume。
+- `qa-mcp-contracts` 定義版本化交接 schema、preview digest 與 operation identity。
+- 即使多個 MCP 由同一團隊提供，也必須維持獨立認證、health check、release 與 failure domain。
+
 ## 不可破壞的規則
 
 - 所有可寫入操作預設都必須是 preview。
+- 新版 MCP 寫入必須帶入與已審閱 payload 完全相符的 `preview_digest`。
 - 只有在使用者明確確認後，才可以使用 `--write` 或 MCP `write: true`。
 - 建立 Redmine bug 必須額外 opt-in：`--redmine-create-bugs` 或對等 MCP 參數。
 - 破壞性操作必須再次明確確認。
@@ -25,6 +35,7 @@ MCP server 名稱：`testlink-mcp`。
 - 不可把 sandbox Redmine 視為正式 Redmine/eITS。
 - 不可在 log、MCP response、error、audit log 中暴露 devKey、API key、token、password。
 - 測試必須能離線執行，不可打到公司 TestLink 或公司 Redmine/eITS。
+- 正式 Redmine 操作不得因 MCP 設定缺失而自動改用瀏覽器或已登入 Chrome；應回報缺少哪一個 server／credential path。
 
 ## 修改前必讀
 
@@ -32,6 +43,7 @@ MCP server 名稱：`testlink-mcp`。
 - 匯入、寫入、重跑與 retest 流程：先讀 `docs/workflow.md`。
 - Redmine 欄位、RM#/eITS# 慣例、manager-only 欄位：先讀 `docs/redmine-fields.md`。
 - 涉及 write path 時，必須檢查 `testlink_agent_core.policy`、`testlink_agent_core.audit` 與相關 tests。
+- 涉及新版寫入路徑時，還必須檢查 `qa_mcp_contracts`、對應 MCP 的 policy/audit，以及 `qa_integration_agent` 的 workflow audit/resume tests。
 
 ## AGENTS.md 與 Skills 分工
 
@@ -124,3 +136,4 @@ Redmine description 或 comment 應包含 TestLink project、plan、platform、b
 4. 檢查 target environment、dedupe/reuse decision 與 planned writes。
 5. 使用者明確確認後才寫入。
 6. 寫入後檢查 `local/audit/` 產生的 JSON 紀錄。
+7. 若為跨系統匯入，優先使用 `qa_preview_report_import`／`qa_execute_report_import`；partial failure 使用相同 operation identity 執行 `qa_resume_report_import`。

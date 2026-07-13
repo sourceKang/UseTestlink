@@ -5,6 +5,15 @@ operations and controlled Redmine/eITS integration. It is designed for Codex/age
 use and for engineers who need a repeatable way to preview and upload automation
 results.
 
+The repository now contains three ownership boundaries: pure `testlink-mcp`, standalone
+`redmine-mcp`, and the credential-free `qa-integration-agent` coordinator. See
+`docs/multi-agent-migration.md` for the architecture, `docs/cutover-runbook.md` for
+deployment gates, and `docs/redmine-mcp.md` for Redmine-only configuration and tools.
+
+The `testlink-mcp` console entrypoint now targets the pure v2 adapter documented in
+`docs/testlink-mcp-v2.md`. The `testlink-agent-mcp` entrypoint remains the legacy
+combined compatibility server during migration.
+
 This project is a QA integration layer. TestLink remains the test record system, and
 the corporate Redmine/eITS remains the formal defect workflow. A local Redmine, if
 used, is a sandbox only.
@@ -104,10 +113,24 @@ $env:TESTLINK_AGENT_ENV_FILE="D:\UseTestlink\local\testlink_agent.env"
 
 ## Agent and MCP Usage
 
-This project can be used by agents in two layers:
+This project can be used by agents through three MCP boundaries:
 
-- Primary: MCP server tools from `testlink-agent-mcp`
-- Secondary: Codex skill instructions in `.agents/skills/testlink-agent/SKILL.md`
+- `qa-integration-agent-mcp` for integrated automation-report preview, execute, audit, traceability, and resume.
+- `testlink-mcp` for TestLink-only discovery and protected execution operations.
+- `redmine-mcp` for Redmine/eITS-only metadata, template, issue, and comment operations.
+
+Codex routing instructions live in `.agents/skills/testlink-agent/SKILL.md`. The old
+`testlink-agent-mcp` combined server is a compatibility and rollback path only.
+
+When another repository needs the same three MCP boundaries, copy the entries from
+`docs/codex-mcp-config.example.toml` into that repository's `.codex/config.toml`. The
+configuration points back to this checkout and its ignored split env files; it contains
+no credential values.
+
+The migration-stage `redmine-mcp` entrypoint is intentionally separate from
+`testlink-mcp`. It requires `REDMINE_ENV` plus Redmine credentials and does not accept
+API keys in MCP tool arguments. Bug and comment writes require a matching preview
+digest and create redacted operation audits.
 
 Install the package locally when you want console entrypoints:
 

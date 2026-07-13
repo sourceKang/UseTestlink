@@ -156,7 +156,7 @@ class RedmineTests(unittest.TestCase):
             ],
         )
 
-    def test_redmine_template_can_clear_fixed_version(self):
+    def test_redmine_template_blank_fixed_version_is_omitted(self):
         with TemporaryDirectory() as tmpdir:
             template_path = Path(tmpdir) / "redmine-template.json"
             template_path.write_text(
@@ -198,7 +198,7 @@ class RedmineTests(unittest.TestCase):
 
             payload = build_redmine_issue_payload(args, {}, Path("report.txt"), result, context)
 
-        self.assertEqual(payload["fixed_version_id"], "")
+        self.assertNotIn("fixed_version_id", payload)
 
     def test_redmine_template_nonempty_fixed_version_requires_manager_switch(self):
         with TemporaryDirectory() as tmpdir:

@@ -407,7 +407,30 @@ def _template_has_field(template: dict[str, Any], issue_field: str) -> bool:
     return issue_field in template
 
 
-def build_redmine_subject(header: dict[str, str], result: ParsedResult, context: dict[str, Any]) -> str:
+def _redmine_text_override(args: argparse.Namespace, value_attr: str, file_attr: str) -> str:
+    direct = getattr(args, value_attr, None)
+    file_value = getattr(args, file_attr, None)
+    if direct not in (None, "") and file_value not in (None, ""):
+        raise RedmineError(
+            f"--{value_attr.replace('_', '-')} and --{file_attr.replace('_', '-')} cannot be used together."
+        )
+    if file_value not in (None, ""):
+        path = Path(str(file_value))
+        if not path.exists():
+            raise RedmineError(f"Redmine text file does not exist: {path}")
+        return path.read_text(encoding="utf-8").strip()
+    return str(direct or "").strip()
+
+
+def build_redmine_subject(
+    args: argparse.Namespace,
+    header: dict[str, str],
+    result: ParsedResult,
+    context: dict[str, Any],
+) -> str:
+    override = _redmine_text_override(args, "redmine_subject", "redmine_subject_file")
+    if override:
+        return truncate_text(override, 255)
     build_name = str(context["build"].get("name") or header.get("EMS Version") or "")
     suffix = f" - {build_name}" if build_name else ""
     return truncate_text(f"[{result.external_id}] {result.test_name} Result {result.raw_status}{suffix}", 255)
@@ -430,13 +453,51 @@ def build_redmine_dedupe(
         "marker": dedupe_marker(digest),
     }
 
+def build_redmine_group_dedupe(
+    redmine_project_id: str,
+    results: list[ParsedResult],
+    context: dict[str, Any],
+) -> dict[str, str]:
+    if not results:
+        raise RedmineError("Grouped Redmine dedupe requires at least one failed result.")
+    ordered = sorted(results, key=lambda item: item.external_id)
+    members = "|".join(f"{item.external_id}:{item.test_name}:{item.raw_status}" for item in ordered)
+    key = build_dedupe_key(
+        redmine_project_id=redmine_project_id,
+        context=context,
+        result=ordered[0],
+        failure_summary=f"Grouped failures: {members}",
+    )
+    key = f"{key}\ngroup_members={members}"
+    digest = dedupe_digest(key)
+    return {
+        "key": key,
+        "digest": digest,
+        "marker": dedupe_marker(digest),
+    }
+
+
 def build_redmine_description(
+    args: argparse.Namespace,
     header: dict[str, str],
     report_path: Path,
     result: ParsedResult,
     context: dict[str, Any],
     dedupe: dict[str, str] | None = None,
 ) -> str:
+    override = _redmine_text_override(args, "redmine_description", "redmine_description_file")
+    if override:
+        if dedupe is None:
+            return override
+        return "\n".join(
+            [
+                override,
+                "",
+                "Traceability:",
+                f"- Dedupe Key: {dedupe['marker']}",
+                f"- Dedupe Digest: {dedupe['digest']}",
+            ]
+        )
     lines = [
         "Automation failure created from TestLink Agent CLI.",
         "",
@@ -539,6 +600,8 @@ def build_redmine_issue_payload(
     report_path: Path,
     result: ParsedResult,
     context: dict[str, Any],
+    *,
+    group_results: list[ParsedResult] | None = None,
 ) -> dict[str, Any]:
     reject_restricted_issue_fields(args)
     template = load_redmine_template(args)
@@ -555,15 +618,21 @@ def build_redmine_issue_payload(
     if not project_id:
         raise RedmineError("REDMINE_PROJECT_ID or --redmine-project is required when --redmine-create-bugs is used.")
 
+    issue_dedupe = (
+        build_redmine_group_dedupe(str(project_id), group_results, context)
+        if group_results
+        else build_redmine_dedupe(str(project_id), result, context)
+    )
     issue: dict[str, Any] = {
         "project_id": project_id,
-        "subject": build_redmine_subject(header, result, context),
+        "subject": build_redmine_subject(args, header, result, context),
         "description": build_redmine_description(
+            args,
             header,
             report_path,
             result,
             context,
-            build_redmine_dedupe(str(project_id), result, context),
+            issue_dedupe,
         ),
     }
     optional_fields = {
@@ -600,8 +669,6 @@ def build_redmine_issue_payload(
                     "Set REDMINE_ALLOW_MANAGER_FIELDS=true only on a manager-owned machine to allow it."
                 )
             optional_fields["fixed_version_id"] = fixed_version_id
-        else:
-            issue["fixed_version_id"] = ""
     for field, value in optional_fields.items():
         coerced = redmine_optional_id(value)
         if coerced is not None:

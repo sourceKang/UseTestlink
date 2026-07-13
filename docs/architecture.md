@@ -1,5 +1,46 @@
 # TestLink Agent 架構
 
+## 目標架構（v2）
+
+```mermaid
+flowchart LR
+    R["Automation Report"] --> Q["qa-integration-agent"]
+    Q --> C["qa-mcp-contracts v1"]
+    Q --> T["testlink-mcp"]
+    Q --> M["redmine-mcp"]
+    T --> TL["TestLink"]
+    M --> RM["Corporate Redmine / eITS"]
+    Q --> A["Workflow audit"]
+    T --> AT["TestLink operation audit"]
+    M --> AR["Redmine operation audit"]
+```
+
+| 元件 | 唯一責任 | 可持有的認證 |
+|---|---|---|
+| `testlink-mcp` | TestLink discovery、精確 target resolution、execution preview/write、operation idempotency | TestLink only |
+| `redmine-mcp` | Redmine metadata/template、dedupe、issue/comment preview/write、operation idempotency | Redmine only |
+| `qa-integration-agent` | report parsing、跨系統規劃、aggregate preview、traceability、workflow audit/resume | 不持有上游 API key |
+| `qa-mcp-contracts` | 版本化 schema、canonical payload、digest 與安全驗證 | 無 |
+
+這是「分開 MCP、集中協調」，不是拆成互不相干的兩個 Agent。不同維護團隊可以獨立發版與處理認證；跨系統規則仍由 coordinator 保持一致。舊 `testlink-agent-mcp` 是相容層，僅用於 shadow 與回退，不新增正式整合能力。
+
+## 信任與失敗邊界
+
+- TestLink 與 Redmine 憑證不得交叉放入另一個 MCP，也不得出現在 coordinator tool arguments。
+- coordinator 只持有 `QA_TESTLINK_MCP_ENV_FILE`／`QA_REDMINE_MCP_ENV_FILE` 路徑，透過隔離的 stdio child process 呼叫 ownership-specific MCP；child environment 會移除另一系統與 parent 中的 credential variables。
+- 三個服務各自 health check、audit 與 release；單一服務故障不得造成另一系統重複寫入。
+- coordinator 只交換 contracts 定義的資料，不依賴自然語言 handoff。
+- 每筆操作以 `operation_id`、`correlation_id`、payload digest 與 dedupe key 串起三層 audit。
+- `corp`／`sandbox` 必須在每個寫入邊界重新驗證，不能只相信呼叫端。
+
+## 相容與演進
+
+- `testlink-mcp` console entrypoint 指向純 TestLink v2 adapter。
+- `redmine-mcp` 是獨立 Redmine/eITS adapter。
+- `qa-integration-agent-mcp` 是跨系統唯一推薦入口。
+- `testlink-agent-mcp` 與舊 CLI 保留一個主要版本作為相容／rollback 路徑。
+- contracts 以 major version 演進；v1 欄位語意凍結，破壞性變更建立 v2 而非靜默修改。
+
 `testlink-agent` 提供 `testlink-mcp` server，讓 agent 能安全操作 TestLink，並受控地整合公司 Redmine/eITS 流程。
 
 本專案是 QA 整合層。它不取代 TestLink，也不建立第二套正式 Redmine 流程。
