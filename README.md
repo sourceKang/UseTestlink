@@ -1,260 +1,226 @@
-# TestLink Agent CLI
+# TestLink + Redmine QA Integration Agent
 
-TestLink Agent provides the `testlink-mcp` server and CLI for agent-safe TestLink
-operations and controlled Redmine/eITS integration. It is designed for Codex/agent
-use and for engineers who need a repeatable way to preview and upload automation
-results.
+`testlink-agent` is the QA integration layer between automation reports, TestLink, and
+the corporate Redmine/eITS workflow. It is not TestLink itself and it is not a second
+formal Redmine instance.
 
-The repository now contains three ownership boundaries: pure `testlink-mcp`, standalone
-`redmine-mcp`, and the credential-free `qa-integration-agent` coordinator. See
-`docs/multi-agent-migration.md` for the architecture, `docs/cutover-runbook.md` for
-deployment gates, and `docs/redmine-mcp.md` for Redmine-only configuration and tools.
+The supported architecture has three MCP ownership boundaries:
 
-The `testlink-mcp` console entrypoint now targets the pure v2 adapter documented in
-`docs/testlink-mcp-v2.md`. The `testlink-agent-mcp` entrypoint remains the legacy
-combined compatibility server during migration.
+| Boundary | Responsibility | Credential ownership |
+|---|---|---|
+| `testlink-mcp` | TestLink discovery and protected execution | TestLink only |
+| `redmine-mcp` | Redmine/eITS metadata, dedupe, issue, and evidence comments | Redmine only |
+| `qa-integration-agent` | Report validation, orchestration, preview, traceability, audit, and resume | No upstream API keys |
 
-This project is a QA integration layer. TestLink remains the test record system, and
-the corporate Redmine/eITS remains the formal defect workflow. A local Redmine, if
-used, is a sandbox only.
+Versioned handoff schemas and preview digests live in `qa-mcp-contracts`. The legacy
+`testlink-agent-mcp` combined server and CLI remain available only for migration and
+rollback compatibility.
 
-Authoritative project instructions live in `AGENTS.md`. Repo-scoped Codex skills
-live in `.agents/skills/`. Architecture and workflow rules live in
-`docs/architecture.md`, `docs/workflow.md`, and `docs/redmine-fields.md`.
+See `docs/architecture.md` for system boundaries, `docs/workflow.md` for the write and
+resume flow, `docs/multi-agent-migration.md` for migration status, and
+`docs/cutover-runbook.md` for deployment gates. Authoritative assistant instructions
+live in `AGENTS.md` and `.agents/skills/testlink-agent/SKILL.md`.
 
-## Safety Rules
+## Safety Invariants
 
-- Do not commit personal API keys.
-- Each user must use their own TestLink `Personal API access key`.
-- Use `TESTLINK_AGENT_PROFILE=corp` and `REDMINE_ENV=corp` for the corporate workflow.
-- Use sandbox profiles only for development; sandbox Redmine is not a formal defect system.
-- The default `upload-report` mode is preview only. Add `--write` only after reviewing the preview.
-- Redmine bug creation is opt-in. Add `--redmine-create-bugs` and `--write` only after reviewing the preview.
-- Result upload appends execution records by default; it does not use overwrite.
-- When Redmine bug creation is enabled, the CLI records the Redmine ID/URL in execution notes by default. It does not link `bugid` to the TestLink testcase unless explicitly requested.
-- Custom release-note pages may not be available through the native TestLink XML-RPC API used by this CLI. Update this tool only after the TestLink owner provides the supported API, database table, or access method.
-- Destructive actions such as deletion or overwrite are intentionally not implemented in this CLI.
+- Every external write defaults to preview and must match the reviewed `preview_digest`.
+- `corp` and `sandbox` are explicit; the coordinator rejects mixed environments.
+- Redmine bug creation is opt-in with `redmine_create_bugs: true`.
+- Fail/Error issues are deduplicated. Open matches are reused; closed matches block
+  automatic creation or reopening.
+- Result upload appends TestLink execution records by default.
+- The agent never automatically closes an issue or changes status, assignee, or fixed
+  version.
+- Destructive TestLink operations require a separate explicit confirmation and are not
+  part of the coordinator report-import path.
+- Unknown report formats, unresolved platforms, and unresolved builds fail before any
+  write. The coordinator never substitutes another platform or build.
+- MCP responses, errors, and audit files redact devKeys, API keys, tokens, passwords,
+  and known secret values.
+- Formal Redmine work never silently falls back to Chrome when the Redmine MCP or its
+  credential path is missing.
+- Automated tests run offline and never call corporate TestLink or Redmine/eITS.
 
-## Current Integration Guarantees
+## Requirements And Installation
 
-- TestLink and Redmine/eITS remain separate systems with separate data ownership.
-- `TESTLINK_AGENT_PROFILE` and `REDMINE_ENV` must match before write operations.
-- Automation reports are parsed as `legacy-web-ems-report-v1`; unknown formats fail fast.
-- Report files must be valid UTF-8 and contain `Test Results:` plus at least one recognized result row.
-- Fail/Error Redmine handling uses a stable `testlink-agent:<digest>` dedupe marker.
-- Existing open Redmine issues are reused before new issues are created.
-- Reused Redmine issues receive evidence comments only after TestLink execution write succeeds.
-- The agent does not close Redmine issues, change issue status, assign owners, or set fixed versions.
-- All write paths create local audit JSON under `local/audit` by default.
-- `upload-report --resume-audit <audit.json>` skips TestLink execution rows that were already written successfully in a matching prior audit.
-- MCP content, errors, structured results, and audit logs redact devKeys, API keys, passwords, tokens, and known secret values.
-
-## Setup
-
-Requires Python 3.10+ and only the Python standard library.
-
-Create environment variables:
-
-```powershell
-$env:TESTLINK_URL="https://your-testlink.example.com/testlink"
-$env:TESTLINK_DEVKEY="your-personal-api-access-key"
-```
-
-Optional Redmine variables for automatic bug creation:
-
-```powershell
-$env:REDMINE_URL="https://your-redmine.example.com"
-$env:REDMINE_API_KEY="your-redmine-api-key"
-$env:REDMINE_PROJECT_ID="redmine-project-identifier"
-$env:REDMINE_TEMPLATE="local/redmine_templates/your-redmine-project.json"
-$env:REDMINE_TRACKER_ID="1"
-$env:REDMINE_PRIORITY_ID="5"
-```
-
-Manager-only Redmine fields are blocked by default. A manager can enable them only on
-their own machine:
-
-```powershell
-$env:REDMINE_ALLOW_MANAGER_FIELDS="true"
-$env:REDMINE_ASSIGNED_TO_ID="123"
-$env:REDMINE_FIXED_VERSION_ID="9"
-```
-
-Do not put `REDMINE_ALLOW_MANAGER_FIELDS` in shared env files.
-
-For repeated local use, create a shared local record file instead:
-
-```powershell
-New-Item -ItemType Directory -Force local
-Copy-Item .\.env.example local\testlink_agent.env
-```
-
-`.env.example` is the TestLink agent credential template. Edit
-`local\testlink_agent.env` with your `TESTLINK_URL`, `TESTLINK_DEVKEY`,
-`TESTLINK_AUTHOR_LOGIN`, and optional Redmine settings.
-
-You can point any command at a specific file with `--env-file <path>`. When
-`--env-file` is not given, the CLI loads credentials in this order: the file named in
-`TESTLINK_AGENT_ENV_FILE`, then the current working directory's `.env`, then the
-current working directory's `local/testlink_agent.env`.
-
-If neither default file exists in the current working directory, the agent also checks
-the UseTestlink project root for `.env` and `local/testlink_agent.env`. This lets an
-MCP server started from another project still reuse the Redmine/TestLink settings kept
-beside this agent checkout. Existing non-empty environment variables still win over
-file values, but empty environment variables are treated as unset so the env file can
-fill them in.
-
-If another project keeps the record file elsewhere, set one environment variable once:
-
-```powershell
-$env:TESTLINK_AGENT_ENV_FILE="D:\UseTestlink\local\testlink_agent.env"
-```
-
-## Agent and MCP Usage
-
-This project can be used by agents through three MCP boundaries:
-
-- `qa-integration-agent-mcp` for integrated automation-report preview, execute, audit, traceability, and resume.
-- `testlink-mcp` for TestLink-only discovery and protected execution operations.
-- `redmine-mcp` for Redmine/eITS-only metadata, template, issue, and comment operations.
-
-Codex routing instructions live in `.agents/skills/testlink-agent/SKILL.md`. The old
-`testlink-agent-mcp` combined server is a compatibility and rollback path only.
-
-When another repository needs the same three MCP boundaries, copy the entries from
-`docs/codex-mcp-config.example.toml` into that repository's `.codex/config.toml`. The
-configuration points back to this checkout and its ignored split env files; it contains
-no credential values.
-
-The migration-stage `redmine-mcp` entrypoint is intentionally separate from
-`testlink-mcp`. It requires `REDMINE_ENV` plus Redmine credentials and does not accept
-API keys in MCP tool arguments. Bug and comment writes require a matching preview
-digest and create redacted operation audits.
-
-Install the package locally when you want console entrypoints:
+Requires Python 3.10+ and the Python standard library.
 
 ```powershell
 python -m pip install -e .
 ```
 
-Install directly from git with `pipx`:
+This installs the following console entrypoints:
+
+- `testlink-mcp`
+- `redmine-mcp`
+- `qa-integration-agent-mcp`
+- `testlink-agent` and `testlink-agent-mcp` for legacy compatibility
+
+## Credential Separation
+
+Keep credentials in ignored local files. Do not pass credentials in MCP tool arguments
+and do not commit these files.
+
+Create `local\testlink_mcp.env`:
+
+```text
+TESTLINK_AGENT_PROFILE=corp
+TESTLINK_URL=https://your-testlink.example.com/testlink
+TESTLINK_DEVKEY=<personal TestLink API key>
+TESTLINK_AUTHOR_LOGIN=<TestLink login>
+```
+
+Create `local\redmine_mcp.env`:
+
+```text
+REDMINE_ENV=corp
+REDMINE_URL=https://your-redmine.example.com
+REDMINE_API_KEY=<personal Redmine API key>
+REDMINE_PROJECT_ID=<project identifier>
+REDMINE_TEMPLATE=local/redmine_templates/<project>.json
+REDMINE_TRACKER_ID=<tracker ID>
+REDMINE_PRIORITY_ID=<priority ID>
+```
+
+Use `sandbox` instead of `corp` only for development systems. A self-hosted Redmine is
+a sandbox and must never be treated as the corporate defect workflow.
+
+If credentials still exist in the old combined files, split only the allowlisted values
+after reviewing the sources and destination paths:
 
 ```powershell
-pipx install "git+https://your-git.example.com/department/testlink-agent.git"
+powershell -ExecutionPolicy Bypass -File .\tools\split_mcp_env.ps1 `
+  -TestLinkSource local\testlink_agent.env `
+  -RedmineSource .env `
+  -Environment corp
 ```
 
-Or run the MCP server from git with `uvx`:
+The script writes `local\testlink_mcp.env` and `local\redmine_mcp.env` and refuses to
+overwrite existing output unless `-Force` is explicitly supplied.
 
-```powershell
-uvx --from "git+https://your-git.example.com/department/testlink-agent.git" testlink-mcp
+Manager-only Redmine fields remain blocked by default. Never put
+`REDMINE_ALLOW_MANAGER_FIELDS=true` in a shared environment file; it is allowed only on
+an approved manager-owned machine.
+
+## Codex MCP Registration
+
+Copy `docs/codex-mcp-config.example.toml` into the consuming repository's
+`.codex/config.toml`, adjusting `cwd` and file paths when this checkout is not
+`D:\UseTestlink`:
+
+```toml
+[mcp_servers.testlink-mcp]
+command = "python"
+args = ["-m", "testlink_mcp.server"]
+cwd = "D:\\UseTestlink"
+
+[mcp_servers.testlink-mcp.env]
+TESTLINK_MCP_ENV_FILE = "D:\\UseTestlink\\local\\testlink_mcp.env"
+
+[mcp_servers.redmine-mcp]
+command = "python"
+args = ["-m", "redmine_mcp.server"]
+cwd = "D:\\UseTestlink"
+
+[mcp_servers.redmine-mcp.env]
+REDMINE_MCP_ENV_FILE = "D:\\UseTestlink\\local\\redmine_mcp.env"
+
+[mcp_servers.qa-integration-agent]
+command = "python"
+args = ["-m", "qa_integration_agent.server"]
+cwd = "D:\\UseTestlink"
+
+[mcp_servers.qa-integration-agent.env]
+QA_TESTLINK_MCP_ENV_FILE = "D:\\UseTestlink\\local\\testlink_mcp.env"
+QA_REDMINE_MCP_ENV_FILE = "D:\\UseTestlink\\local\\redmine_mcp.env"
 ```
 
-Add the MCP server to Codex after setting `TESTLINK_URL` and `TESTLINK_DEVKEY` in your shell or in the Codex MCP env:
+The coordinator receives only the credential-file locations needed to start isolated
+ownership-specific child MCP processes. It scrubs inherited TestLink and Redmine secret
+variables and never accepts API keys through tool arguments.
 
-```powershell
-codex mcp add testlink-mcp -- testlink-mcp
-```
+Restart the Codex task after changing MCP registration so the available tool snapshot is
+refreshed.
 
-The MCP server runs a startup health check before serving tools:
+## Recommended Integrated Workflow
 
-- `tl.checkDevKey`
-- `tl.about`
+1. Use read-only `testlink-mcp` discovery tools to confirm the exact project, plan,
+   platform, build, and test cases.
+2. Call `qa_preview_report_import` with a stable `operation_id`, explicit environment,
+   exact target, and report path. Preview performs zero external writes.
+3. Review the resolved target, parsed counts, ignored rows, missing cases, Redmine
+   create/reuse decisions, warnings, and returned `preview_digest`.
+4. Only after explicit confirmation, call `qa_execute_report_import` with unchanged
+   inputs, `write: true`, and the matching digest.
+5. Validate TestLink/Redmine traceability and the item-level workflow audit.
+6. For partial failure, call `qa_resume_report_import` with the same operation identity
+   and matching audit; do not rerun the entire import as a new operation.
 
-Health output is written to stderr as `testlink-mcp vX.Y.Z`, so stdio JSON-RPC on stdout stays clean.
+Changes to the report, target, environment, template, custom fields, or Redmine opt-in
+invalidate the old digest and require a new preview.
 
-Example MCP server config:
+## MCP Tool Boundaries
 
-```json
-{
-  "mcpServers": {
-    "testlink-agent": {
-      "command": "python",
-      "args": ["-m", "testlink_agent_core.server"],
-      "cwd": "D:\\UseTestlink",
-      "env": {
-        "TESTLINK_AGENT_ENV_FILE": "D:\\UseTestlink\\local\\testlink_agent.env"
-      }
-    }
-  }
-}
-```
+### `testlink-mcp`
 
-If you installed the package, the command can be shortened:
+Use for TestLink-only discovery, testcase maintenance, and protected execution. The
+recommended execution tool is `testlink_report_execution`, which previews or appends one
+execution using an exact target and confirmed digest. Read-only discovery includes
+`testlink_list_projects`, `testlink_list_plans`, `testlink_list_platforms`,
+`testlink_list_builds`, `testlink_list_suites`, and `testlink_find_suites`.
 
-```json
-{
-  "mcpServers": {
-    "testlink-agent": {
-      "command": "testlink-mcp",
-      "cwd": "D:\\UseTestlink"
-    }
-  }
-}
-```
+The pure server does not expose the integrated `testlink_upload_report`, legacy
+`report_result`/`report_results_batch`, `link_bug`, or `overwrite_result` paths. See
+`docs/testlink-mcp-v2.md` for the complete boundary and configuration.
 
-MCP tools exposed by this server:
+### `redmine-mcp`
 
-- `find_project`
-- `find_test_plan`
-- `list_test_suites`
-- `list_test_cases`
-- `get_test_case`
-- `get_last_result`
-- `get_builds`
-- `report_result`
-- `report_results_batch`
-- `create_build`
-- `create_test_case`
-- `update_test_case`
-- `add_case_to_plan`
-- `upload_attachment`
-- `overwrite_result`
-- `delete_execution`
-- `link_bug`
-- `testlink_about`
-- `testlink_list_projects`
-- `testlink_list_plans`
-- `testlink_list_platforms`
-- `testlink_list_builds`
-- `testlink_list_suites`
-- `testlink_find_suites`
-- `testlink_refresh_catalog`
-- `testlink_download_testcases`
-- `testlink_list_profiles`
-- `testlink_save_profile`
-- `testlink_delete_profile`
-- `testlink_create_testcase`
-- `testlink_update_testcase`
-- `testlink_upload_report`
+Use for Redmine/eITS-only operations:
 
-Write-capable tools default to preview mode. Agents should call `testlink_create_testcase`,
-`testlink_update_testcase`, and `testlink_upload_report` with `write: false`, summarize the
-preview, and call again with `write: true` only after explicit user confirmation.
+- `redmine_health`
+- `redmine_search_issues`
+- `redmine_get_project_metadata`
+- `redmine_validate_template`
+- `redmine_preview_bug` / `redmine_create_bug`
+- `redmine_preview_comment` / `redmine_add_comment`
 
-The Phase 1 tools above are read-only and prefer names over internal IDs. When a project,
-plan, suite, platform, or build name cannot be matched exactly, the server returns close
-suggestions instead of guessing.
+Bug and comment writes require `write: true` and the matching preview digest. The server
+rechecks dedupe immediately before creation. See `docs/redmine-mcp.md` and
+`docs/redmine-fields.md`.
 
-Phase 2 and Phase 3 write-capable tools default to `write: false`. They return the payload
-that would be sent to TestLink and only write when `write: true` is passed after review.
-Create tools check for existing builds or test cases before writing and return the existing
-matches instead of creating duplicates.
-`delete_execution` and `overwrite_result` are destructive Phase 4 tools. They require MCP destructive annotations plus explicit `confirm: true` before a write. `link_bug` records bug IDs in execution notes as `BUG-ID: ...`; it does not call native TestLink `bugid`.
+### `qa-integration-agent`
+
+Use for cross-system automation-report workflows:
+
+- `qa_preview_report_import`
+- `qa_execute_report_import`
+- `qa_resume_report_import`
+- `qa_get_operation`
+- `qa_validate_traceability`
+- `qa_compare_shadow_previews`
+
+The coordinator uses versioned contracts, aggregates previews, preserves item-level
+state for resume, and verifies bidirectional traceability. It does not own TestLink or
+Redmine credentials.
 
 ## File Separation
 
-Files that are safe to share or upload with this tool:
+Tracked source and documentation include:
 
-- `testlink_agent.py`
+- `qa_integration_agent/`
+- `qa_mcp_contracts/`
+- `redmine_mcp/`
+- `testlink_mcp/`
 - `testlink_agent_core/`
-- `README.md`
-- `AGENTS.md`
-- `.agents/`
-- `.gitignore`
-- `.env.example`
+- `contracts/`
+- `docs/`
 - `tests/`
 - `tools/`
+- `.agents/`
+- `AGENTS.md`
+- `README.md`
+- `.env.example`
+- `testlink_agent.py`
 
 Files for local use only are ignored by git:
 
@@ -267,13 +233,20 @@ Files for local use only are ignored by git:
 - `github_upload/` local GitHub upload staging folder; keep it locally, but do not commit it.
 - downloaded testcase JSON files such as `testcases.json` or `ems_testcases.json`
 - downloaded testcase Excel files such as `testcases.xlsx` or `ems_testcases.xlsx`
-- shared local record files such as `local/testlink_agent.env`
+- credential files such as `local/testlink_mcp.env`, `local/redmine_mcp.env`, and
+  legacy `local/testlink_agent.env`
 
 Recommended local layout:
 
 ```text
 D:\UseTestlink
-  .env
+  local\
+    testlink_mcp.env
+    redmine_mcp.env
+    redmine_templates\
+    testlink_audit\
+    redmine_audit\
+    qa_audit\
   downloads\
     ems_testcases.json
   reports\
@@ -301,25 +274,44 @@ folder.
 
 ## Project Structure
 
-`testlink_agent.py` is a compatibility entrypoint. It keeps the direct command style:
+- `qa_integration_agent/`: credential-free coordinator, stdio MCP ports, workflow
+  audit, resume, traceability, and shadow comparison.
+- `qa_mcp_contracts/`: canonical payload digests, operation identity, validation, and
+  shared atomic file replacement.
+- `redmine_mcp/`: Redmine-only REST client, policy, templates, dedupe, protected writes,
+  redaction, and audit.
+- `testlink_mcp/`: TestLink-only MCP adapter and protected execution path.
+- `testlink_agent_core/`: shared TestLink/report domain code plus the legacy combined
+  CLI and MCP compatibility implementation.
+- `contracts/v1/`: versioned JSON schemas for previews, results, errors, operation
+  context, and workflow audit.
+- `docs/`: architecture, workflow, MCP registration, migration, field policy, and
+  cutover guidance.
+- `tests/`: offline unit, contract, server, coordinator, resume, and safety tests.
+
+## Validation
+
+Run the complete offline suite before publishing changes:
+
+```powershell
+python -m unittest discover -s tests
+```
+
+The Definition of Done also requires synchronized documentation, secret/repository
+hygiene checks, and confirmation that no `.env`, `local/`, API key, devKey, or downloaded
+report is staged.
+
+## Legacy CLI Reference
+
+The following CLI workflow remains available for migration, rollback, or environments
+where MCP is unavailable. It uses the combined `TESTLINK_AGENT_ENV_FILE` /
+`local/testlink_agent.env` configuration and is not the preferred new integration path.
+
+`testlink_agent.py` keeps the direct command style:
 
 ```powershell
 python .\testlink_agent.py list-projects
 ```
-
-Core behavior lives in `testlink_agent_core/`:
-
-- `cli.py` builds argparse commands and handles top-level errors.
-- `commands.py` contains command handlers.
-- `server.py` registers MCP tools, runs startup health checks, and serves stdio JSON-RPC.
-- `client.py` contains the TestLink XML-RPC client.
-- `clients.py` is a compatibility import wrapper for older code.
-- `resolver.py` contains the name-to-id resolver cache used by newer tools.
-- `tools/` contains MCP tool schemas split into query, report, and mutate groups.
-- `errors.py` contains structured TestLink errors and secret masking helpers.
-- `redmine.py` contains Redmine integration helpers.
-- `reports.py`, `testcases.py`, `suites.py`, and `catalog.py` contain domain logic.
-- `output.py` writes JSON and XLSX output.
 
 ## List Projects
 
