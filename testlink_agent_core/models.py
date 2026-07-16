@@ -22,3 +22,4 @@ class RedmineIssue:
     url: str
     subject: str
     reused: bool = False
+    dedupe_marker: str | None = None

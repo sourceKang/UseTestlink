@@ -9,12 +9,25 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from .audit import (
+    append_audit_error,
+    append_audit_result,
+    build_audit_record,
+    finalize_audit_record,
+    read_audit_record,
+    resume_item_has_testlink_success,
+    resume_item_needs_redmine_comment,
+    resume_items_by_external_id,
+    validate_resume_audit,
+    write_audit_record,
+)
 from .catalog import build_catalog, find_suites_in_catalog, read_catalog, write_catalog
 from .client import TestLinkClient
 from .config import DEFAULT_CATALOG_PATH, catalog_path, load_testlink_settings
 from .errors import TestLinkError
 from .models import RedmineIssue
 from .output import write_json_output, write_xlsx_output
+from .policy import current_redmine_environment, current_testlink_profile, validate_environment_pair
 from .profiles import (
     apply_create_profile,
     delete_profile,
@@ -28,12 +41,16 @@ from .redmine import (
     RedmineClient,
     build_existing_redmine_issue,
     build_notes,
+    build_redmine_dedupe,
+    build_redmine_evidence_comment,
+    build_redmine_group_dedupe,
     build_redmine_issue_payload,
     manager_fields_enabled,
     redmine_arg,
+    redmine_issue_from_dict,
     redmine_issue_to_dict,
 )
-from .reports import map_results_to_plan, parse_report, result_to_dict
+from .reports import SCHEMA_HEADER_KEY, map_results_to_plan, parse_report, result_to_dict
 from .suites import collect_test_suites, resolve_suite_by_name
 from .testcases import create_testcase_payload, flatten_plan_cases, normalize_testcase, update_testcase_payload
 
@@ -101,40 +118,68 @@ def command_upload_report(args: argparse.Namespace) -> int:
     if missing:
         raise TestLinkError(f"Test cases not found in plan/platform: {', '.join(sorted(missing))}")
 
+    failed_results = [result for result in writable if result.status == "f"]
+    group_failures = bool(getattr(args, "redmine_group_failures", False))
     redmine_bug_preview: list[dict[str, Any]] = []
     if args.redmine_create_bugs or args.redmine_issue_id:
-        for result in writable:
-            if result.status != "f":
-                continue
+        issue_groups = [failed_results] if group_failures and failed_results else [[result] for result in failed_results]
+        for issue_group in issue_groups:
+            result = issue_group[0]
             existing_issue = build_existing_redmine_issue(args, result)
             if existing_issue is not None:
                 redmine_bug_preview.append(
                     {
                         "external_id": result.external_id,
+                        "external_ids": [item.external_id for item in issue_group],
                         "test_name": result.test_name,
+                        "test_names": [item.test_name for item in issue_group],
                         "issue_id": existing_issue.id,
                         "issue_url": existing_issue.url,
                         "action": "link-existing",
                     }
                 )
             else:
-                issue_payload = build_redmine_issue_payload(args, header, report_path, result, context)
-                redmine_bug_preview.append(
-                    {
-                        "external_id": result.external_id,
-                        "test_name": result.test_name,
-                        "subject": issue_payload["subject"],
-                        "project_id": issue_payload["project_id"],
-                        "tracker_id": issue_payload.get("tracker_id"),
-                        "priority_id": issue_payload.get("priority_id"),
-                        "custom_fields": issue_payload.get("custom_fields", []),
-                        "action": "create-or-reuse",
-                    }
+                issue_payload = build_redmine_issue_payload(
+                    args,
+                    header,
+                    report_path,
+                    result,
+                    context,
+                    group_results=issue_group if group_failures else None,
                 )
+                dedupe = (
+                    build_redmine_group_dedupe(str(issue_payload["project_id"]), issue_group, context)
+                    if group_failures
+                    else build_redmine_dedupe(str(issue_payload["project_id"]), result, context)
+                )
+                issue_preview = {
+                    "external_id": result.external_id,
+                    "external_ids": [item.external_id for item in issue_group],
+                    "test_name": result.test_name,
+                    "test_names": [item.test_name for item in issue_group],
+                    "subject": issue_payload["subject"],
+                    "description": issue_payload["description"],
+                    "project_id": issue_payload["project_id"],
+                    "tracker_id": issue_payload.get("tracker_id"),
+                    "priority_id": issue_payload.get("priority_id"),
+                    "custom_fields": issue_payload.get("custom_fields", []),
+                    "dedupe_digest": dedupe["digest"],
+                    "dedupe_marker": dedupe["marker"],
+                    "action": "create-or-reuse",
+                }
+                for field in ("status_id", "category_id", "fixed_version_id"):
+                    if field in issue_payload:
+                        issue_preview[field] = issue_payload[field]
+                redmine_bug_preview.append(issue_preview)
 
     preview = {
         "mode": "write" if args.write else "preview",
+        "profile": {
+            "testlink": current_testlink_profile(),
+            "redmine": current_redmine_environment(),
+        },
         "report": str(report_path),
+        "report_schema": header.get(SCHEMA_HEADER_KEY),
         "target": {
             "project": args.project,
             "testplan": context["plan"].get("name"),
@@ -144,6 +189,7 @@ def command_upload_report(args: argparse.Namespace) -> int:
             "build": context["build"].get("name"),
             "buildid": build_id,
         },
+        "resume_audit": getattr(args, "resume_audit", None),
         "parsed_count": len(parsed),
         "write_count": len(writable),
         "ignored_count": len(ignored),
@@ -154,6 +200,7 @@ def command_upload_report(args: argparse.Namespace) -> int:
         "redmine": {
             "enabled": args.redmine_create_bugs or bool(args.redmine_issue_id),
             "dedupe": args.redmine_dedupe,
+            "group_failures": group_failures,
             "testlink_bug_link": args.testlink_bug_link,
             "manager_fields_enabled": manager_fields_enabled(),
             "issues_to_create_or_reuse": redmine_bug_preview,
@@ -164,17 +211,131 @@ def command_upload_report(args: argparse.Namespace) -> int:
         print(json.dumps(preview, indent=2, ensure_ascii=False))
         return 0
 
+    validate_environment_pair()
+    audit_record = build_audit_record(
+        operation="upload-report",
+        mode="write",
+        report_path=report_path,
+        profile=preview["profile"],
+        testlink_target=preview["target"],
+        redmine_target={
+            "enabled": preview["redmine"]["enabled"],
+            "dedupe": preview["redmine"]["dedupe"],
+            "group_failures": preview["redmine"]["group_failures"],
+            "testlink_bug_link": preview["redmine"]["testlink_bug_link"],
+            "manager_fields_enabled": preview["redmine"]["manager_fields_enabled"],
+        },
+        report_schema=str(preview.get("report_schema") or ""),
+        parsed_count=len(parsed),
+        write_count=len(writable),
+    )
+
     redmine_client = parse_redmine_client(args) if args.redmine_create_bugs else None
     successes: list[dict[str, Any]] = []
+    resumed: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    resume_items: dict[str, dict[str, Any]] = {}
+    if getattr(args, "resume_audit", None):
+        resume_record = read_audit_record(args.resume_audit)
+        validate_resume_audit(resume_record, audit_record)
+        resume_items = resume_items_by_external_id(resume_record)
+
+    shared_redmine_issue: RedmineIssue | None = None
     for index, result in enumerate(writable, start=1):
+        resume_item = resume_items.get(result.external_id)
         redmine_issue: RedmineIssue | None = None
+        if resume_item_has_testlink_success(resume_item):
+            redmine_issue = redmine_issue_from_dict(resume_item.get("redmine_issue") if resume_item else None)
+            if redmine_issue is not None:
+                redmine_issue.reused = True
+            redmine_comment: dict[str, Any] | None = None
+            redmine_comment_error: dict[str, Any] | None = None
+            if (
+                redmine_client is not None
+                and redmine_issue is not None
+                and resume_item_needs_redmine_comment(resume_item)
+            ):
+                try:
+                    redmine_comment = redmine_client.add_issue_comment(
+                        redmine_issue.id,
+                        build_redmine_evidence_comment(
+                            header,
+                            report_path,
+                            result,
+                            context,
+                            dedupe_marker_value=redmine_issue.dedupe_marker,
+                            testlink_response=resume_item.get("testlink_response")
+                            if isinstance(resume_item.get("testlink_response"), dict)
+                            else None,
+                        ),
+                    )
+                except Exception as exc:
+                    redmine_comment_error = {
+                        "external_id": result.external_id,
+                        "status": result.status,
+                        "stage": "redmine-comment",
+                        "redmine_issue": redmine_issue_to_dict(redmine_issue),
+                        "error": str(exc),
+                    }
+                    failures.append(redmine_comment_error)
+                    append_audit_error(audit_record, redmine_comment_error)
+            resume_result = {
+                "external_id": result.external_id,
+                "status": result.status,
+                "redmine_issue": redmine_issue_to_dict(redmine_issue),
+                "redmine_comment": redmine_comment,
+                "response": resume_item.get("testlink_response") if resume_item else None,
+                "resume_audit": args.resume_audit,
+            }
+            resumed.append(resume_result)
+            append_audit_result(
+                audit_record,
+                {
+                    "external_id": result.external_id,
+                    "status": result.status,
+                    "redmine_action": resume_item.get("redmine_action") if resume_item else "none",
+                    "redmine_issue": redmine_issue_to_dict(redmine_issue),
+                    "redmine_comment": (
+                        "failed" if redmine_comment_error else "added" if redmine_comment is not None else "skipped"
+                    ),
+                    "testlink_write": "skipped-resume",
+                    "testlink_response": resume_item.get("testlink_response") if resume_item else None,
+                    "resume_audit": args.resume_audit,
+                    "errors": [redmine_comment_error] if redmine_comment_error else [],
+                },
+            )
+            continue
+
         if result.status == "f":
-            redmine_issue = build_existing_redmine_issue(args, result)
+            redmine_issue = shared_redmine_issue if group_failures else build_existing_redmine_issue(args, result)
+            if redmine_issue is None:
+                redmine_issue = build_existing_redmine_issue(args, result)
+        if redmine_issue is None and resume_item:
+            redmine_issue = redmine_issue_from_dict(resume_item.get("redmine_issue"))
+            if redmine_issue is not None:
+                redmine_issue.reused = True
         if redmine_client is not None and result.status == "f" and redmine_issue is None:
             try:
-                issue_payload = build_redmine_issue_payload(args, header, report_path, result, context)
+                issue_payload = build_redmine_issue_payload(
+                    args,
+                    header,
+                    report_path,
+                    result,
+                    context,
+                    group_results=failed_results if group_failures else None,
+                )
+                dedupe = (
+                    build_redmine_group_dedupe(str(issue_payload["project_id"]), failed_results, context)
+                    if group_failures
+                    else build_redmine_dedupe(str(issue_payload["project_id"]), result, context)
+                )
                 if args.redmine_dedupe == "open":
+                    redmine_issue = redmine_client.find_open_issue_by_dedupe_marker(
+                        str(issue_payload["project_id"]),
+                        dedupe["marker"],
+                        str(issue_payload.get("tracker_id") or ""),
+                    )
+                if redmine_issue is None and args.redmine_dedupe == "open":
                     redmine_issue = redmine_client.find_open_issue_by_subject(
                         str(issue_payload["project_id"]),
                         str(issue_payload["subject"]),
@@ -182,16 +343,30 @@ def command_upload_report(args: argparse.Namespace) -> int:
                     )
                 if redmine_issue is None:
                     redmine_issue = redmine_client.create_issue(issue_payload)
+                redmine_issue.dedupe_marker = dedupe["marker"]
             except Exception as exc:
-                failures.append(
+                failure = {
+                    "external_id": result.external_id,
+                    "status": result.status,
+                    "stage": "redmine",
+                    "error": str(exc),
+                }
+                failures.append(failure)
+                append_audit_error(audit_record, failure)
+                append_audit_result(
+                    audit_record,
                     {
                         "external_id": result.external_id,
                         "status": result.status,
-                        "stage": "redmine",
-                        "error": str(exc),
-                    }
+                        "redmine_action": "failed",
+                        "testlink_write": "skipped",
+                        "errors": [failure],
+                    },
                 )
                 continue
+
+        if group_failures and result.status == "f" and redmine_issue is not None:
+            shared_redmine_issue = redmine_issue
 
         params: dict[str, Any] = {
             "testcaseexternalid": result.external_id,
@@ -200,7 +375,13 @@ def command_upload_report(args: argparse.Namespace) -> int:
             "platformid": platform_id,
             "platformname": context["platform"].get("name"),
             "status": result.status,
-            "notes": build_notes(header, report_path, result, redmine_issue),
+            "notes": build_notes(
+                header,
+                report_path,
+                result,
+                redmine_issue,
+                redmine_issue.dedupe_marker if redmine_issue else None,
+            ),
         }
         if redmine_issue is not None and args.testlink_bug_link in ("bugid", "both"):
             params["bugid"] = redmine_issue.id
@@ -209,34 +390,102 @@ def command_upload_report(args: argparse.Namespace) -> int:
 
         try:
             response = client.report_result(params)
-            successes.append(
+            redmine_comment: dict[str, Any] | None = None
+            redmine_comment_error: dict[str, Any] | None = None
+            if redmine_client is not None and redmine_issue is not None and redmine_issue.reused:
+                try:
+                    redmine_comment = redmine_client.add_issue_comment(
+                        redmine_issue.id,
+                        build_redmine_evidence_comment(
+                            header,
+                            report_path,
+                            result,
+                            context,
+                            dedupe_marker_value=redmine_issue.dedupe_marker,
+                            testlink_response=response if isinstance(response, dict) else None,
+                        ),
+                    )
+                except Exception as exc:
+                    redmine_comment_error = {
+                        "external_id": result.external_id,
+                        "status": result.status,
+                        "stage": "redmine-comment",
+                        "redmine_issue": redmine_issue_to_dict(redmine_issue),
+                        "error": str(exc),
+                    }
+                    failures.append(redmine_comment_error)
+                    append_audit_error(audit_record, redmine_comment_error)
+            success = {
+                "external_id": result.external_id,
+                "status": result.status,
+                "redmine_issue": redmine_issue_to_dict(redmine_issue),
+                "redmine_comment": redmine_comment,
+                "response": response,
+            }
+            successes.append(success)
+            append_audit_result(
+                audit_record,
                 {
                     "external_id": result.external_id,
                     "status": result.status,
+                    "redmine_action": (
+                        "reused" if redmine_issue and redmine_issue.reused else "created" if redmine_issue else "none"
+                    ),
                     "redmine_issue": redmine_issue_to_dict(redmine_issue),
-                    "response": response,
-                }
+                    "redmine_comment": (
+                        "failed" if redmine_comment_error else "added" if redmine_comment is not None else "skipped"
+                    ),
+                    "testlink_write": "success",
+                    "testlink_response": response,
+                    "errors": [redmine_comment_error] if redmine_comment_error else [],
+                },
             )
         except xmlrpc.client.Fault as fault:
-            failures.append(
+            failure = {
+                "external_id": result.external_id,
+                "status": result.status,
+                "stage": "testlink",
+                "redmine_issue": redmine_issue_to_dict(redmine_issue),
+                "fault_code": fault.faultCode,
+                "fault_message": fault.faultString,
+            }
+            failures.append(failure)
+            append_audit_error(audit_record, failure)
+            append_audit_result(
+                audit_record,
                 {
                     "external_id": result.external_id,
                     "status": result.status,
-                    "stage": "testlink",
+                    "redmine_action": (
+                        "reused" if redmine_issue and redmine_issue.reused else "created" if redmine_issue else "none"
+                    ),
                     "redmine_issue": redmine_issue_to_dict(redmine_issue),
-                    "fault_code": fault.faultCode,
-                    "fault_message": fault.faultString,
-                }
+                    "testlink_write": "failed",
+                    "errors": [failure],
+                },
             )
         except Exception as exc:
-            failures.append(
+            failure = {
+                "external_id": result.external_id,
+                "status": result.status,
+                "stage": "testlink",
+                "redmine_issue": redmine_issue_to_dict(redmine_issue),
+                "error": str(exc),
+            }
+            failures.append(failure)
+            append_audit_error(audit_record, failure)
+            append_audit_result(
+                audit_record,
                 {
                     "external_id": result.external_id,
                     "status": result.status,
-                    "stage": "testlink",
+                    "redmine_action": (
+                        "reused" if redmine_issue and redmine_issue.reused else "created" if redmine_issue else "none"
+                    ),
                     "redmine_issue": redmine_issue_to_dict(redmine_issue),
-                    "error": str(exc),
-                }
+                    "testlink_write": "failed",
+                    "errors": [failure],
+                },
             )
 
         if args.progress and index % args.progress == 0:
@@ -249,12 +498,18 @@ def command_upload_report(args: argparse.Namespace) -> int:
             )
         time.sleep(args.throttle)
 
+    finalize_audit_record(audit_record, status="failed" if failures else "success")
+    audit_path = write_audit_record(audit_record, getattr(args, "audit_dir", None) or None)
+
     output = {
         **preview,
+        "audit_log": str(audit_path),
         "success_count": len(successes),
+        "resumed_count": len(resumed),
         "failure_count": len(failures),
         "success_status_counts": dict(Counter(item["status"] for item in successes)),
         "failure_status_counts": dict(Counter(item["status"] for item in failures)),
+        "resumed": resumed,
         "failures": failures,
     }
     print(json.dumps(output, indent=2, ensure_ascii=False, default=str))

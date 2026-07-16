@@ -156,7 +156,7 @@ def parse_create_steps(args: argparse.Namespace) -> list[dict[str, Any]]:
     if not raw_steps:
         raise TestLinkError("At least one --step or --steps-file entry is required.")
 
-    if getattr(args, "single_step", False):
+    if getattr(args, "single_step", True):
         raw_steps = collapse_raw_steps(raw_steps)
 
     default_execution_type = coerce_testlink_enum(

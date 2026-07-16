@@ -12,6 +12,7 @@ DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_CATALOG_PATH = "local/testlink_catalog.json"
 DEFAULT_ENV_FILE_PATH = "local/testlink_agent.env"
 DEFAULT_PROFILES_PATH = "local/testlink_profiles.json"
+DEFAULT_AUDIT_DIR = "local/audit"
 ENV_FILE_POINTER = "TESTLINK_AGENT_ENV_FILE"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -57,7 +58,7 @@ def parse_env_file(path: str | None) -> None:
     env_path = Path(path)
     if not env_path.exists():
         raise TestLinkError(f"Env file does not exist: {env_path}")
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+    for raw_line in env_path.read_text(encoding="utf-8-sig").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -144,3 +145,7 @@ def load_testlink_settings(
 
 def catalog_path(value: str | None = None) -> Path:
     return Path(value or DEFAULT_CATALOG_PATH)
+
+
+def audit_dir_path(value: str | None = None) -> Path:
+    return Path(value or DEFAULT_AUDIT_DIR)

@@ -71,9 +71,13 @@ class TestcaseTests(unittest.TestCase):
         self.assertEqual(payload["importance"], 3)
         self.assertEqual(payload["executiontype"], 2)
         self.assertEqual(payload["actiononduplicatedname"], "block")
+        self.assertEqual(len(payload["steps"]), 1)
         self.assertEqual(payload["steps"][0]["step_number"], 1)
-        self.assertEqual(payload["steps"][0]["actions"], "Open login page")
-        self.assertEqual(payload["steps"][0]["expected_results"], "Login page is shown")
+        self.assertEqual(payload["steps"][0]["actions"], "1. Open login page<br />\n2. Submit valid credentials")
+        self.assertEqual(
+            payload["steps"][0]["expected_results"],
+            "1. Login page is shown<br />\n2. Dashboard is shown",
+        )
         self.assertEqual(payload["steps"][0]["execution_type"], 2)
 
     def test_builds_create_testcase_payload_from_steps_file(self):
@@ -108,11 +112,15 @@ class TestcaseTests(unittest.TestCase):
             payload = create_testcase_payload(args, {"id": "10", "name": "EMS"})
 
         self.assertEqual(payload["actiononduplicatedname"], "generate_new")
-        self.assertEqual(len(payload["steps"]), 2)
+        self.assertEqual(len(payload["steps"]), 1)
         self.assertEqual(payload["steps"][0]["execution_type"], 1)
-        self.assertEqual(payload["steps"][1]["expected_results"], "Success message is shown")
+        self.assertEqual(payload["steps"][0]["actions"], "1. Open settings<br />\n2. Save changes")
+        self.assertEqual(
+            payload["steps"][0]["expected_results"],
+            "1. Settings page is shown<br />\n2. Success message is shown",
+        )
 
-    def test_create_testcase_can_collapse_steps_into_one_testlink_row(self):
+    def test_create_testcase_collapses_steps_into_one_testlink_row_by_default(self):
         parser = build_parser()
         args = parser.parse_args(
             [
@@ -129,7 +137,6 @@ class TestcaseTests(unittest.TestCase):
                 "Login => Login succeeds",
                 "--step",
                 "Configure port => Port config is accepted",
-                "--single-step",
                 "--execution-type",
                 "automated",
             ]
@@ -145,6 +152,35 @@ class TestcaseTests(unittest.TestCase):
             "1. Login succeeds<br />\n2. Port config is accepted",
         )
         self.assertEqual(payload["steps"][0]["execution_type"], 2)
+
+    def test_create_testcase_can_opt_out_of_single_step_rows(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "create-testcase",
+                "--project",
+                "EMS",
+                "--suite-id",
+                "55",
+                "--name",
+                "multi_row_case",
+                "--author-login",
+                "alice",
+                "--step",
+                "Login => Login succeeds",
+                "--step",
+                "Configure port => Port config is accepted",
+                "--no-single-step",
+            ]
+        )
+
+        payload = create_testcase_payload(args, {"id": "10", "name": "EMS"})
+
+        self.assertEqual(len(payload["steps"]), 2)
+        self.assertEqual(payload["steps"][0]["actions"], "Login")
+        self.assertEqual(payload["steps"][0]["expected_results"], "Login succeeds")
+        self.assertEqual(payload["steps"][1]["actions"], "Configure port")
+        self.assertEqual(payload["steps"][1]["expected_results"], "Port config is accepted")
 
     def test_create_testcase_accepts_suite_name_with_resolved_id(self):
         parser = build_parser()
@@ -249,7 +285,7 @@ class TestcaseTests(unittest.TestCase):
         self.assertEqual(payload["steps"][0]["expected_results"], "VPN page is shown")
         self.assertEqual(payload["steps"][0]["execution_type"], 1)
 
-    def test_update_testcase_can_collapse_steps_into_one_testlink_row(self):
+    def test_update_testcase_collapses_steps_into_one_testlink_row_by_default(self):
         parser = build_parser()
         args = parser.parse_args(
             [
@@ -260,7 +296,6 @@ class TestcaseTests(unittest.TestCase):
                 "Action A => Expected A",
                 "--step",
                 "Action B => Expected B",
-                "--single-step",
             ]
         )
 
@@ -269,6 +304,29 @@ class TestcaseTests(unittest.TestCase):
         self.assertEqual(len(payload["steps"]), 1)
         self.assertEqual(payload["steps"][0]["actions"], "1. Action A<br />\n2. Action B")
         self.assertEqual(payload["steps"][0]["expected_results"], "1. Expected A<br />\n2. Expected B")
+
+    def test_update_testcase_can_opt_out_of_single_step_rows(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "update-testcase",
+                "--testcase-id",
+                "123",
+                "--step",
+                "Action A => Expected A",
+                "--step",
+                "Action B => Expected B",
+                "--no-single-step",
+            ]
+        )
+
+        payload = update_testcase_payload(args)
+
+        self.assertEqual(len(payload["steps"]), 2)
+        self.assertEqual(payload["steps"][0]["actions"], "Action A")
+        self.assertEqual(payload["steps"][0]["expected_results"], "Expected A")
+        self.assertEqual(payload["steps"][1]["actions"], "Action B")
+        self.assertEqual(payload["steps"][1]["expected_results"], "Expected B")
 
     def test_update_testcase_preserves_multiline_rich_text_fields(self):
         parser = build_parser()

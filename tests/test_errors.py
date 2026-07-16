@@ -20,10 +20,19 @@ class ErrorTests(unittest.TestCase):
         self.assertIn(MASK, masked)
 
     def test_redacts_secret_keys_in_structures(self):
-        payload = redact_secrets({"devKey": "abc", "nested": [{"api_key": "def"}]})
+        payload = redact_secrets(
+            {
+                "devKey": "abc",
+                "nested": [{"api_key": "def"}],
+                "password": "ghi",
+                "token": "jkl",
+            }
+        )
 
         self.assertEqual(payload["devKey"], MASK)
         self.assertEqual(payload["nested"][0]["api_key"], MASK)
+        self.assertEqual(payload["password"], MASK)
+        self.assertEqual(payload["token"], MASK)
 
     def test_testlink_error_masks_message(self):
         old_value = os.environ.get("TESTLINK_DEVKEY")

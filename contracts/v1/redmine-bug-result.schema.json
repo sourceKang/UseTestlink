@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qa-mcp-contracts:v1:redmine-bug-result",
+  "title": "Redmine bug write result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "environment",
+    "preview_digest",
+    "status",
+    "action",
+    "issue",
+    "audit_id"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "operation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "environment": {"enum": ["corp", "sandbox"]},
+    "preview_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "status": {"enum": ["success", "skipped-resume", "failed"]},
+    "action": {"enum": ["created", "reused", "blocked", "failed"]},
+    "issue": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["id", "url", "subject", "reused"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "url": {"type": "string", "minLength": 1},
+        "subject": {"type": "string"},
+        "reused": {"type": "boolean"}
+      }
+    },
+    "comment_status": {"enum": ["not-required", "added", "failed"]},
+    "audit_id": {"type": "string", "minLength": 1}
+  }
+}

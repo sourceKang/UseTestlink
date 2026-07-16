@@ -26,12 +26,12 @@ if (Test-Path -LiteralPath $outputFullPath) {
 New-Item -ItemType Directory -Path $outputFullPath | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $outputFullPath "tests") | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $outputFullPath "testlink_agent_core") | Out-Null
-New-Item -ItemType Directory -Path (Join-Path $outputFullPath "skills") | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $outputFullPath ".agents") | Out-Null
 
 $copies = @(
     @{ Source = "testlink_agent.py"; Destination = "testlink_agent.py" },
     @{ Source = "pyproject.toml"; Destination = "pyproject.toml" },
-    @{ Source = "AGENT.md"; Destination = "AGENT.md" },
+    @{ Source = "AGENTS.md"; Destination = "AGENTS.md" },
     @{ Source = ".env.example"; Destination = ".env.example" },
     @{ Source = "README.md"; Destination = "README.md" },
     @{ Source = ".gitignore"; Destination = ".gitignore" }
@@ -79,7 +79,7 @@ function Copy-FilteredDirectory {
 
 Copy-FilteredDirectory -SourceDirectory "testlink_agent_core" -DestinationDirectory "testlink_agent_core"
 Copy-FilteredDirectory -SourceDirectory "tests" -DestinationDirectory "tests"
-Copy-FilteredDirectory -SourceDirectory "skills" -DestinationDirectory "skills"
+Copy-FilteredDirectory -SourceDirectory ".agents" -DestinationDirectory ".agents"
 
 $forbiddenRelativePaths = @(
     ".env",

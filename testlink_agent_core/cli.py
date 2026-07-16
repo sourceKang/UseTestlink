@@ -21,7 +21,7 @@ from .commands import (
     command_update_testcase,
     command_upload_report,
 )
-from .config import DEFAULT_CATALOG_PATH, DEFAULT_PROFILES_PATH, DEFAULT_TIMEOUT_SECONDS
+from .config import DEFAULT_AUDIT_DIR, DEFAULT_CATALOG_PATH, DEFAULT_PROFILES_PATH, DEFAULT_TIMEOUT_SECONDS
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -193,8 +193,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     create.add_argument(
         "--single-step",
-        action="store_true",
-        help="Collapse all supplied steps into one TestLink step row with numbered action/result lines.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Collapse all supplied steps into one TestLink step row with numbered action/result lines. "
+            "Defaults to true; use --no-single-step to create one TestLink row per step."
+        ),
     )
     create.add_argument("--importance", default="medium", help="low, medium, high, or a numeric TestLink value.")
     create.add_argument("--execution-type", default="manual", help="manual, automated, or a numeric TestLink value.")
@@ -237,8 +241,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     update.add_argument(
         "--single-step",
-        action="store_true",
-        help="Collapse all supplied replacement steps into one TestLink step row with numbered action/result lines.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Collapse all supplied replacement steps into one TestLink step row with numbered action/result lines. "
+            "Defaults to true; use --no-single-step to create one TestLink row per step."
+        ),
     )
     update.add_argument("--importance", help="low, medium, high, or a numeric TestLink value.")
     update.add_argument("--execution-type", help="manual, automated, or a numeric TestLink value.")
@@ -258,7 +266,20 @@ def build_parser() -> argparse.ArgumentParser:
     upload.add_argument("--require-open-build", action="store_true", default=True)
     upload.add_argument("--progress", type=int, default=25)
     upload.add_argument("--throttle", type=float, default=0.03)
+    upload.add_argument("--audit-dir", default=DEFAULT_AUDIT_DIR, help="Write audit JSON files to this directory.")
+    upload.add_argument("--resume-audit", help="Resume a previous upload-report audit JSON and skip completed TestLink writes.")
     upload.add_argument("--redmine-create-bugs", action="store_true", help="Create or reuse Redmine issues for failed results.")
+    upload.add_argument(
+        "--redmine-group-failures",
+        action="store_true",
+        help="Create or reuse one shared Redmine issue for all failed results in this report.",
+    )
+    subject_group = upload.add_mutually_exclusive_group(required=False)
+    subject_group.add_argument("--redmine-subject", help="Override the generated Redmine subject.")
+    subject_group.add_argument("--redmine-subject-file", help="Read the Redmine subject from a UTF-8 file.")
+    description_group = upload.add_mutually_exclusive_group(required=False)
+    description_group.add_argument("--redmine-description", help="Override the generated Redmine description.")
+    description_group.add_argument("--redmine-description-file", help="Read the Redmine description from a UTF-8 file.")
     upload.add_argument("--redmine-url", help="Redmine base URL. Defaults to REDMINE_URL.")
     upload.add_argument("--redmine-api-key", help="Redmine API key. Prefer REDMINE_API_KEY.")
     upload.add_argument("--redmine-project", help="Redmine project identifier or ID. Defaults to REDMINE_PROJECT_ID.")

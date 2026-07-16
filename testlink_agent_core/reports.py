@@ -5,8 +5,13 @@ from pathlib import Path
 from typing import Any
 
 from .config import STATUS_TO_TESTLINK
+from .errors import TestLinkError
 from .models import ParsedResult
 
+
+LEGACY_WEB_EMS_SCHEMA = "legacy-web-ems-report-v1"
+SCHEMA_HEADER_KEY = "_schema_version"
+TEST_RESULTS_MARKER = "Test Results:"
 
 REPORT_LINE_RE = re.compile(
     r"^\[(?P<external_id>[A-Za-z0-9]+-\d+)\]\[(?P<test_name>.*)\]\s+"
@@ -14,6 +19,22 @@ REPORT_LINE_RE = re.compile(
     r"\((?P<duration>[^)]*)\)",
     re.IGNORECASE,
 )
+
+
+def read_report_text(path: Path) -> str:
+    try:
+        return path.read_bytes().decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise TestLinkError(f"Report file must be UTF-8 encoded: {path}: {exc}") from exc
+
+
+def detect_report_schema(text: str) -> str:
+    lines = text.splitlines()
+    if TEST_RESULTS_MARKER not in [line.strip() for line in lines]:
+        raise TestLinkError(f"Unsupported report schema: missing '{TEST_RESULTS_MARKER}' marker.")
+    if not any(REPORT_LINE_RE.match(line.strip()) for line in lines):
+        raise TestLinkError("Unsupported report schema: no TestLink result rows were found.")
+    return LEGACY_WEB_EMS_SCHEMA
 
 
 def parse_duration_seconds(value: str) -> float | None:
@@ -26,8 +47,9 @@ def parse_duration_seconds(value: str) -> float | None:
         return None
 
 def parse_report(path: Path) -> tuple[dict[str, str], list[ParsedResult]]:
-    text = path.read_text(encoding="utf-8", errors="replace")
-    header: dict[str, str] = {}
+    text = read_report_text(path)
+    schema_version = detect_report_schema(text)
+    header: dict[str, str] = {SCHEMA_HEADER_KEY: schema_version}
     for line in text.splitlines():
         if ": " in line:
             key, value = line.split(": ", 1)
@@ -42,8 +64,8 @@ def parse_report(path: Path) -> tuple[dict[str, str], list[ParsedResult]]:
                 "Node Chassis",
                 "Test Target Source",
             }:
-                header[key] = value.strip()
-        if line.strip() == "Test Results:":
+                    header[key] = value.strip()
+        if line.strip() == TEST_RESULTS_MARKER:
             break
 
     results: list[ParsedResult] = []

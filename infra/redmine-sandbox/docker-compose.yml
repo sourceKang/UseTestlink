@@ -1,0 +1,29 @@
+services:
+  redmine:
+    image: ${REDMINE_IMAGE:-redmine:latest}
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "${REDMINE_HTTP_PORT:-3001}:3000"
+    environment:
+      REDMINE_DB_POSTGRES: db
+      REDMINE_DB_DATABASE: ${REDMINE_DB_NAME:-redmine_sandbox}
+      REDMINE_DB_USERNAME: ${REDMINE_DB_USER:-redmine}
+      REDMINE_DB_PASSWORD: ${REDMINE_DB_PASSWORD:-change-me-sandbox-only}
+    volumes:
+      - redmine_sandbox_files:/usr/src/redmine/files
+
+  db:
+    image: ${POSTGRES_IMAGE:-postgres:16}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${REDMINE_DB_NAME:-redmine_sandbox}
+      POSTGRES_USER: ${REDMINE_DB_USER:-redmine}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-sandbox-only}
+    volumes:
+      - redmine_sandbox_db:/var/lib/postgresql/data
+
+volumes:
+  redmine_sandbox_files:
+  redmine_sandbox_db:

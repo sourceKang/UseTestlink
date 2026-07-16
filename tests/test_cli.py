@@ -22,6 +22,8 @@ class CliTests(unittest.TestCase):
         )
 
         self.assertEqual(args.testlink_bug_link, "notes")
+        self.assertEqual(args.audit_dir, "local/audit")
+        self.assertIsNone(args.resume_audit)
 
     def test_find_suites_parser_defaults(self):
         parser = build_parser()

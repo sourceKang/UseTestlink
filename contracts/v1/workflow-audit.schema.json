@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qa-mcp-contracts:v1:workflow-audit",
+  "title": "Cross-system workflow audit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "correlation_id",
+    "environment",
+    "status",
+    "preview_digest",
+    "input_digest",
+    "created_at",
+    "updated_at",
+    "workflow",
+    "items",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "operation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "correlation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "environment": {"enum": ["corp", "sandbox"]},
+    "status": {
+      "enum": [
+        "received",
+        "input-validated",
+        "target-resolved",
+        "previewed",
+        "user-confirmed",
+        "partial-failure",
+        "failed",
+        "completed"
+      ]
+    },
+    "preview_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "input_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "workflow": {"$ref": "#/$defs/workflow"},
+    "items": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/item"}
+    },
+    "errors": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/safeError"}
+    },
+    "resolved_errors": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/safeError"}
+    }
+  },
+  "$defs": {
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "report_schema",
+        "project",
+        "plan",
+        "platform",
+        "build",
+        "redmine_create_bugs"
+      ],
+      "properties": {
+        "report_schema": {"const": "legacy-web-ems-report-v1"},
+        "project": {"type": "string", "minLength": 1},
+        "plan": {"type": "string", "minLength": 1},
+        "platform": {"type": "string", "minLength": 1},
+        "build": {"type": "string", "minLength": 1},
+        "redmine_create_bugs": {"type": "boolean"}
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "testcase_external_id",
+        "state",
+        "redmine_action",
+        "redmine_preview_digest",
+        "planned_redmine_action",
+        "testlink_write",
+        "testlink_target_digest",
+        "evidence_comment",
+        "errors"
+      ],
+      "properties": {
+        "testcase_external_id": {"type": "string", "minLength": 1},
+        "state": {
+          "enum": [
+            "previewed",
+            "redmine-resolved",
+            "testlink-written",
+            "evidence-written",
+            "partial-failure",
+            "completed"
+          ]
+        },
+        "redmine_action": {"enum": ["none", "created", "reused", "blocked", "failed"]},
+        "redmine_issue_id": {"type": ["string", "null"]},
+        "redmine_issue_url": {"type": ["string", "null"]},
+        "dedupe_digest": {"type": ["string", "null"]},
+        "redmine_preview_digest": {"type": ["string", "null"]},
+        "planned_redmine_action": {"enum": ["none", "create", "reuse", "blocked"]},
+        "redmine_audit_id": {"type": ["string", "null"]},
+        "testlink_write": {"enum": ["pending", "success", "skipped-resume", "failed"]},
+        "testlink_execution_id": {"type": ["string", "null"]},
+        "testlink_target_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "testlink_audit_id": {"type": ["string", "null"]},
+        "evidence_comment": {"enum": ["pending", "not-required", "added", "failed"]},
+        "evidence_audit_id": {"type": ["string", "null"]},
+        "errors": {"type": "array", "items": {"$ref": "#/$defs/safeError"}},
+        "resolved_errors": {"type": "array", "items": {"$ref": "#/$defs/safeError"}}
+      }
+    },
+    "safeError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "stage", "retryable"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "stage": {"type": "string", "minLength": 1},
+        "retryable": {"type": "boolean"},
+        "target": {"type": "string", "maxLength": 256}
+      }
+    }
+  }
+}
