@@ -52,6 +52,12 @@
 - 目前 repo-scoped TestLink skill 位於 `.agents/skills/testlink-agent/SKILL.md`。
 - 如果某段 SOP 變得很長、只在特定任務會用到，優先拆成 skill，不要塞進 `AGENTS.md`。
 
+## MCP 發佈與安裝原則
+
+- `D:\UseTestlink` 是開發 checkout；其他 Codex 專案不得透過 `cwd`、editable install 或原始碼路徑依賴這個目錄。
+- 共用 MCP 必須從 GitHub release tag 安裝成使用者層隔離工具；詳細安裝、升級、驗證與 rollback 流程以 `docs/deployment.md` 為準。
+- 憑證 env file 必須留在使用者本機且與安裝套件分離，不可提交到 GitHub 或包進 release。
+
 ## 寫入路徑要求
 
 新增或修改任何寫入路徑時，必須同時具備：

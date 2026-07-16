@@ -18,6 +18,8 @@ Never perform an external write first. Review the exact preview and its `preview
 
 ## Setup Check
 
+For MCPs shared across Codex projects, verify that the executables come from the GitHub-installed user tool environment rather than an editable `D:\UseTestlink` checkout. Follow `docs/deployment.md` for install, upgrade, source verification, and rollback. The repository-local `.codex/config.toml` is for development only.
+
 Verify the relevant server has its own credential path before calling live tools:
 
 - TestLink: `TESTLINK_URL` + `TESTLINK_DEVKEY`, normally through `TESTLINK_MCP_ENV_FILE`.

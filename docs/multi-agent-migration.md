@@ -25,7 +25,7 @@ The upstream TestLink and Redmine systems are maintained by different teams. The
 
 ## Baseline
 
-- Package version: `1.2.2`
+- Package version: `1.3.0`
 - Baseline commit: `9f05ce4`
 - MCP tools: 33
 - Offline tests: 104 passing

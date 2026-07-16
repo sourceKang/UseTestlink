@@ -17,9 +17,10 @@ Versioned handoff schemas and preview digests live in `qa-mcp-contracts`. The le
 rollback compatibility.
 
 See `docs/architecture.md` for system boundaries, `docs/workflow.md` for the write and
-resume flow, `docs/multi-agent-migration.md` for migration status, and
-`docs/cutover-runbook.md` for deployment gates. Authoritative assistant instructions
-live in `AGENTS.md` and `.agents/skills/testlink-agent/SKILL.md`.
+resume flow, `docs/multi-agent-migration.md` for migration status,
+`docs/cutover-runbook.md` for deployment gates, and `docs/deployment.md` for GitHub
+release installation and upgrades. Authoritative assistant instructions live in
+`AGENTS.md` and `.agents/skills/testlink-agent/SKILL.md`.
 
 ## Safety Invariants
 
@@ -45,8 +46,17 @@ live in `AGENTS.md` and `.agents/skills/testlink-agent/SKILL.md`.
 
 Requires Python 3.10+ and the Python standard library.
 
+For repository development, use an editable installation only inside this checkout:
+
 ```powershell
 python -m pip install -e .
+```
+
+For MCPs shared by other Codex projects, install a tagged GitHub release into an
+isolated user environment. Do not point those projects at `D:\UseTestlink`:
+
+```powershell
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.3.0"
 ```
 
 This installs the following console entrypoints:
@@ -104,43 +114,39 @@ an approved manager-owned machine.
 
 ## Codex MCP Registration
 
-Copy `docs/codex-mcp-config.example.toml` into the consuming repository's
-`.codex/config.toml`, adjusting `cwd` and file paths when this checkout is not
-`D:\UseTestlink`:
+For cross-project use, copy the entries from `docs/codex-mcp-config.example.toml` into
+the user-level Codex `config.toml`. The executable names are resolved from the pipx
+binary directory and no repository `cwd` is used:
 
 ```toml
-[mcp_servers.testlink-mcp]
-command = "python"
-args = ["-m", "testlink_mcp.server"]
-cwd = "D:\\UseTestlink"
+[mcp_servers."testlink-mcp"]
+command = "testlink-mcp"
 
-[mcp_servers.testlink-mcp.env]
-TESTLINK_MCP_ENV_FILE = "D:\\UseTestlink\\local\\testlink_mcp.env"
+[mcp_servers."testlink-mcp".env]
+TESTLINK_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\testlink_mcp.env"
 
-[mcp_servers.redmine-mcp]
-command = "python"
-args = ["-m", "redmine_mcp.server"]
-cwd = "D:\\UseTestlink"
+[mcp_servers."redmine-mcp"]
+command = "redmine-mcp"
 
-[mcp_servers.redmine-mcp.env]
-REDMINE_MCP_ENV_FILE = "D:\\UseTestlink\\local\\redmine_mcp.env"
+[mcp_servers."redmine-mcp".env]
+REDMINE_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\redmine_mcp.env"
 
-[mcp_servers.qa-integration-agent]
-command = "python"
-args = ["-m", "qa_integration_agent.server"]
-cwd = "D:\\UseTestlink"
+[mcp_servers."qa-integration-agent"]
+command = "qa-integration-agent-mcp"
 
-[mcp_servers.qa-integration-agent.env]
-QA_TESTLINK_MCP_ENV_FILE = "D:\\UseTestlink\\local\\testlink_mcp.env"
-QA_REDMINE_MCP_ENV_FILE = "D:\\UseTestlink\\local\\redmine_mcp.env"
+[mcp_servers."qa-integration-agent".env]
+QA_TESTLINK_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\testlink_mcp.env"
+QA_REDMINE_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\redmine_mcp.env"
 ```
 
 The coordinator receives only the credential-file locations needed to start isolated
 ownership-specific child MCP processes. It scrubs inherited TestLink and Redmine secret
 variables and never accepts API keys through tool arguments.
 
-Restart the Codex task after changing MCP registration so the available tool snapshot is
-refreshed.
+Keep the credential files outside the Git checkout and replace `<username>` with the
+local Windows account name. Restart Codex after changing MCP registration so the
+available tool snapshot is refreshed. See `docs/deployment.md` for source and version
+verification.
 
 ## Recommended Integrated Workflow
 
@@ -694,8 +700,6 @@ Useful options:
 
 ## Share with Teammates
 
-Publish this repository to the location your team uses for shared tooling. Teammates can clone it, set their own `TESTLINK_URL` and `TESTLINK_DEVKEY`, and run the same commands from their own agent or terminal.
+Publish a reviewed GitHub release tag. Teammates install that tag with pipx, keep their own credential env files outside the checkout, and register the installed executables in their user-level Codex configuration. They do not need a clone for normal MCP use.
 
 Before making a fork or copy public, make sure examples, docs, logs, and test fixtures do not contain internal URLs, project names, platform names, report paths, or credentials.
-
-
