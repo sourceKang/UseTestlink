@@ -34,6 +34,32 @@ Execution writes append records. The protected tool does not expose overwrite or
 
 Every attempted write creates a redacted `started` audit under `local/testlink_audit/` and updates the same record to success or failure.
 
+## Protected Testcase Maintenance
+
+The pure server exposes `testlink_create_testcase` and `testlink_update_testcase`. Both
+require a caller-generated `operation_id`, explicit `corp|sandbox` environment, preview
+first behavior, and a matching `preview_digest` for write.
+
+Logical steps default to one TestLink row:
+
+```text
+single_step=true,  allow_multi_row=false -> one row
+single_step=false, allow_multi_row=false -> reject
+single_step=false, allow_multi_row=true  -> explicitly authorized multiple rows
+single_step=true,  allow_multi_row=true  -> reject inconsistent policy
+```
+
+Before write, the server validates the final payload row count and matching non-empty
+Action/Expected numbering. After create/update, it resolves the testcase identity, calls
+`getTestCase`, normalizes TestLink rich-text line breaks, and compares every written field.
+Only an exact normalized match returns `verification_status=verified`.
+
+If TestLink accepted the XML-RPC write but readback differs, the tool returns an error and
+records `verification_failed` with redacted expected/readback digests and mismatch fields.
+It does not overwrite or delete content. A retry with the same operation identity reads the
+audited testcase first and refuses a possible duplicate write when the outcome cannot be
+proven.
+
 ## Tool Boundary
 
 The v2 server excludes:
@@ -43,6 +69,8 @@ The v2 server excludes:
 - legacy `report_results_batch`
 - `link_bug`
 - `overwrite_result`
+- legacy `create_test_case`
+- legacy `update_test_case`
 
 The compatibility server continues to expose the old tools until the Coordinator migration and shadow validation are complete.
 

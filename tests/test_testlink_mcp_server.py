@@ -17,6 +17,10 @@ class TestLinkMcpServerTests(unittest.TestCase):
     def test_tool_surface_excludes_redmine_and_upload_orchestration(self) -> None:
         tools = {tool["name"]: tool for tool in TOOLS}
         self.assertIn("testlink_report_execution", tools)
+        self.assertIn("testlink_create_testcase", tools)
+        self.assertIn("testlink_update_testcase", tools)
+        self.assertNotIn("create_test_case", tools)
+        self.assertNotIn("update_test_case", tools)
         self.assertNotIn("testlink_upload_report", tools)
         self.assertNotIn("report_result", tools)
         self.assertNotIn("report_results_batch", tools)
@@ -36,6 +40,16 @@ class TestLinkMcpServerTests(unittest.TestCase):
         result = call_tool("testlink_upload_report", {})
         self.assertFalse(result["ok"])
         self.assertEqual("UnknownTool", result["error"]["type"])
+
+    def test_testcase_tools_require_explicit_multi_row_authorization(self) -> None:
+        tools = {tool["name"]: tool for tool in TOOLS}
+        for name in ("testlink_create_testcase", "testlink_update_testcase"):
+            schema = tools[name]["inputSchema"]
+            self.assertTrue(schema["properties"]["single_step"]["default"])
+            self.assertFalse(schema["properties"]["allow_multi_row"]["default"])
+            self.assertIn("operation_id", schema["required"])
+            self.assertIn("environment", schema["required"])
+            self.assertGreaterEqual(len(schema["allOf"]), 2)
 
 
 if __name__ == "__main__":

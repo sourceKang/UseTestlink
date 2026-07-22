@@ -28,6 +28,33 @@ The platform and build are exact inputs. A missing requested platform is a targe
 - Any changed report, target, template, custom field, or Redmine opt-in invalidates the digest and requires a new preview.
 - Resume uses the prior audit identity and completed item states; it is not a fresh bulk retry.
 
+## Protected Testcase Maintenance
+
+Use `testlink_create_testcase` and `testlink_update_testcase` for formal MCP testcase
+maintenance. Do not call the legacy `create_test_case` or `update_test_case` names through
+the pure server.
+
+```text
+1. Discover the exact project, suite, testcase, and version
+2. Read the current testcase before an update
+3. Supply logical action/expected pairs
+4. Preview with single_step=true (default)
+5. Review the one-row payload, target, row counts, and preview_digest
+6. After explicit confirmation, write with unchanged inputs and digest
+7. Read the testcase back from TestLink
+8. Compare normalized row count and every written field
+9. Return success only when readback matches; otherwise record verification_failed
+```
+
+Multi-row output is exceptional and requires both `single_step=false` and
+`allow_multi_row=true`. Either value alone is rejected. The authorization is part of the
+preview digest and cannot be reused after steps, target, environment, or row policy change.
+
+For a default single-row write, Actions and Expected must contain the same non-empty,
+contiguous logical step numbers. A successful XML-RPC response without matching readback is
+an indeterminate/partial operation, not a success. Resume must inspect the prior audit and
+readback before any retry so testcase creation is not duplicated.
+
 This document defines the expected workflow for importing automation results into TestLink and linking Fail/Error results to corporate Redmine/eITS.
 
 ## Normal Upload Flow

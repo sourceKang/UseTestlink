@@ -13,6 +13,7 @@ FORMAL_ENVIRONMENT = "corp"
 SANDBOX_ENVIRONMENT = "sandbox"
 VALID_ENVIRONMENTS = {FORMAL_ENVIRONMENT, SANDBOX_ENVIRONMENT}
 MANAGER_ONLY_REDMINE_FIELDS = ("assigned_to_id", "fixed_version_id")
+MULTI_ROW_NOT_AUTHORIZED = "MULTI_ROW_NOT_AUTHORIZED"
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _NOISY_HEX_RE = re.compile(r"\b0x[0-9a-fA-F]+\b")
@@ -102,3 +103,23 @@ def blocked_manager_fields(fields: dict[str, Any]) -> list[str]:
     if redmine_manager_fields_allowed():
         return []
     return [field for field in MANAGER_ONLY_REDMINE_FIELDS if str(fields.get(field) or "").strip()]
+
+
+def validate_testcase_row_policy(
+    *,
+    single_step: bool = True,
+    allow_multi_row: bool = False,
+) -> str:
+    """Fail closed unless multi-row output is explicitly and consistently authorized."""
+
+    if single_step and allow_multi_row:
+        raise TestLinkError(
+            "allow_multi_row=true requires single_step=false; refusing an ambiguous testcase row policy.",
+            code=MULTI_ROW_NOT_AUTHORIZED,
+        )
+    if not single_step and not allow_multi_row:
+        raise TestLinkError(
+            "single_step=false requires allow_multi_row=true; multi-row testcase writes are not authorized.",
+            code=MULTI_ROW_NOT_AUTHORIZED,
+        )
+    return "single-row" if single_step else "multi-row-authorized"

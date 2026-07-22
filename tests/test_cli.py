@@ -76,6 +76,8 @@ class CliTests(unittest.TestCase):
         self.assertIsNone(args.project)
         self.assertIsNone(args.suite_id)
         self.assertEqual(args.profiles, "local/testlink_profiles.json")
+        self.assertTrue(args.single_step)
+        self.assertFalse(args.allow_multi_row)
 
     def test_save_profile_parser_defaults(self):
         parser = build_parser()
@@ -119,6 +121,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(args.summary, "Updated summary.")
         self.assertIsNone(args.execution_type)
         self.assertFalse(args.write)
+        self.assertTrue(args.single_step)
+        self.assertFalse(args.allow_multi_row)
 
 
 if __name__ == "__main__":

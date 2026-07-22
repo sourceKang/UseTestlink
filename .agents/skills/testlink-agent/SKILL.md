@@ -58,6 +58,12 @@ Do not pass credentials through MCP tool arguments. Do not silently switch forma
 
 For a TestLink-only write, use the protected `testlink-mcp` preview/result tools and a matching digest. For a Redmine-only write, use `redmine_preview_bug` or `redmine_preview_comment`, then the corresponding write tool only after confirmation.
 
+Before creating or updating a testcase, read
+[`references/testcase-maintenance.md`](references/testcase-maintenance.md) and follow its
+single-row preview, explicit multi-row authorization, readback verification, and reporting
+procedure. Use only `testlink_create_testcase` or `testlink_update_testcase` on the pure
+server; do not use legacy testcase write aliases as a bypass.
+
 ## CLI Fallback
 
 Use the legacy CLI only when MCP is unavailable or the user explicitly requests terminal commands:

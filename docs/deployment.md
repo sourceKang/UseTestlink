@@ -39,14 +39,14 @@ Do not publish a release tag from an unreviewed or partially merged branch.
 Install once per Windows user, not once per consuming project:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.3.0"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.3.1"
 ```
 
 If an editable or obsolete installation already exists, replace it explicitly:
 
 ```powershell
 pipx uninstall testlink-agent
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.3.0"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.3.1"
 ```
 
 Run `pipx ensurepath` once if the pipx binary directory is not already on `PATH`, then

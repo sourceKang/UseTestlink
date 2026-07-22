@@ -72,6 +72,7 @@ def create_test_case(
     execution_type: str = "manual",
     order: int | None = None,
     single_step: bool = True,
+    allow_multi_row: bool = False,
     write: bool = False,
 ) -> dict[str, Any]:
     if not name:
@@ -110,6 +111,7 @@ def create_test_case(
         execution_type=execution_type,
         order=order,
         single_step=single_step,
+        allow_multi_row=allow_multi_row,
         duplicate_action="block",
     )
     payload = create_testcase_payload(args, resolved_project, suite_id=str(resolved_suite_id))
@@ -138,6 +140,7 @@ def update_test_case(
     preconditions: str | None = None,
     steps: list[str] | None = None,
     single_step: bool = True,
+    allow_multi_row: bool = False,
     importance: str | None = None,
     execution_type: str | None = None,
     write: bool = False,
@@ -151,6 +154,7 @@ def update_test_case(
         preconditions=preconditions,
         steps=steps,
         single_step=single_step,
+        allow_multi_row=allow_multi_row,
         importance=importance,
         execution_type=execution_type,
     )

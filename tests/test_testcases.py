@@ -153,7 +153,63 @@ class TestcaseTests(unittest.TestCase):
         )
         self.assertEqual(payload["steps"][0]["execution_type"], 2)
 
-    def test_create_testcase_can_opt_out_of_single_step_rows(self):
+    def test_ems_filter_example_is_rendered_as_exactly_one_row(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "create-testcase",
+                "--project",
+                "EMS",
+                "--suite-id",
+                "55",
+                "--name",
+                "filter_devices",
+                "--author-login",
+                "alice",
+                "--step",
+                "Filter 頁面正常開啟 => 顯示所有篩選欄位",
+                "--step",
+                "展開 Submap Name => 顯示可選項目",
+                "--step",
+                "選擇條件並 Apply => Device 清單符合條件",
+            ]
+        )
+
+        payload = create_testcase_payload(args, {"id": "10", "name": "EMS"})
+
+        self.assertEqual(1, len(payload["steps"]))
+        self.assertEqual(
+            "1. Filter 頁面正常開啟<br />\n2. 展開 Submap Name<br />\n3. 選擇條件並 Apply",
+            payload["steps"][0]["actions"],
+        )
+        self.assertEqual(
+            "1. 顯示所有篩選欄位<br />\n2. 顯示可選項目<br />\n3. Device 清單符合條件",
+            payload["steps"][0]["expected_results"],
+        )
+
+    def test_create_testcase_requires_explicit_multi_row_authorization(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "create-testcase",
+                "--project",
+                "EMS",
+                "--suite-id",
+                "55",
+                "--name",
+                "multi_row_case",
+                "--author-login",
+                "alice",
+                "--step",
+                "Login => Login succeeds",
+                "--no-single-step",
+            ]
+        )
+
+        with self.assertRaisesRegex(TestLinkError, "allow_multi_row=true"):
+            create_testcase_payload(args, {"id": "10", "name": "EMS"})
+
+    def test_create_testcase_can_use_explicitly_authorized_multi_rows(self):
         parser = build_parser()
         args = parser.parse_args(
             [
@@ -171,6 +227,7 @@ class TestcaseTests(unittest.TestCase):
                 "--step",
                 "Configure port => Port config is accepted",
                 "--no-single-step",
+                "--allow-multi-row",
             ]
         )
 
@@ -244,6 +301,27 @@ class TestcaseTests(unittest.TestCase):
         self.assertEqual(payload["steps"][0]["actions"], "Action 1<br />\nAction 2")
         self.assertEqual(payload["steps"][0]["expected_results"], "Expected 1<br />\nExpected 2")
 
+    def test_create_testcase_requires_expected_result_for_every_action(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "create-testcase",
+                "--project",
+                "EMS",
+                "--suite-id",
+                "55",
+                "--name",
+                "missing_expected",
+                "--author-login",
+                "alice",
+                "--step",
+                "Open Filter page",
+            ]
+        )
+
+        with self.assertRaisesRegex(TestLinkError, "missing expected results"):
+            create_testcase_payload(args, {"id": "10", "name": "EMS"})
+
     def test_builds_update_testcase_payload_with_only_requested_fields(self):
         parser = build_parser()
         args = parser.parse_args(
@@ -305,7 +383,23 @@ class TestcaseTests(unittest.TestCase):
         self.assertEqual(payload["steps"][0]["actions"], "1. Action A<br />\n2. Action B")
         self.assertEqual(payload["steps"][0]["expected_results"], "1. Expected A<br />\n2. Expected B")
 
-    def test_update_testcase_can_opt_out_of_single_step_rows(self):
+    def test_update_testcase_requires_explicit_multi_row_authorization(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "update-testcase",
+                "--testcase-id",
+                "123",
+                "--step",
+                "Action A => Expected A",
+                "--no-single-step",
+            ]
+        )
+
+        with self.assertRaisesRegex(TestLinkError, "allow_multi_row=true"):
+            update_testcase_payload(args)
+
+    def test_update_testcase_can_use_explicitly_authorized_multi_rows(self):
         parser = build_parser()
         args = parser.parse_args(
             [
@@ -317,6 +411,7 @@ class TestcaseTests(unittest.TestCase):
                 "--step",
                 "Action B => Expected B",
                 "--no-single-step",
+                "--allow-multi-row",
             ]
         )
 
