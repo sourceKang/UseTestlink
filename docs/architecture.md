@@ -17,7 +17,7 @@ flowchart LR
 
 | 元件 | 唯一責任 | 可持有的認證 |
 |---|---|---|
-| `testlink-mcp` | TestLink discovery、精確 target resolution、execution preview/write、operation idempotency | TestLink only |
+| `testlink-mcp` | TestLink discovery、精確 target resolution、testcase/execution preview/write、readback verification、operation idempotency | TestLink only |
 | `redmine-mcp` | Redmine metadata/template、dedupe、issue/comment preview/write、operation idempotency | Redmine only |
 | `qa-integration-agent` | report parsing、跨系統規劃、aggregate preview、traceability、workflow audit/resume | 不持有上游 API key |
 | `qa-mcp-contracts` | 版本化 schema、canonical payload、digest 與安全驗證 | 無 |
@@ -112,8 +112,14 @@ parse input
   -> preview TestLink and Redmine actions
   -> wait for explicit confirmation
   -> write
+  -> read back and verify
   -> record audit log
 ```
+
+Testcase create/update 另有 row policy：預設將邏輯步驟合併成單一 TestLink row；
+`single_step=false` 只有在同一份已審閱 preview 明確包含 `allow_multi_row=true`
+時才可寫入。寫入後若 TestLink 讀回的 row 數或內容不同，操作必須記為
+`verification_failed`，不得宣告成功或自動覆寫。
 
 可寫入命令預設都是 preview。Redmine bug creation 也必須 opt-in。破壞性操作需要額外確認。
 

@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 from .config import EXECUTION_TYPE_TO_TESTLINK, IMPORTANCE_TO_TESTLINK
 from .errors import TestLinkError
+from .policy import validate_testcase_row_policy
+
+
+_BR_RE = re.compile(r"<br\s*/?>[ \t]*(?:\r?\n)?", flags=re.IGNORECASE)
+_NUMBERED_LINE_RE = re.compile(r"^\s*(\d+)\.\s*(.+?)\s*$")
 
 
 def flatten_plan_cases(raw: Any) -> list[dict[str, Any]]:
@@ -64,6 +71,165 @@ def preserve_testlink_line_breaks(value: str) -> str:
         return normalized
     return "<br />\n".join(normalized.split("\n"))
 
+
+def canonicalize_testlink_text(value: Any) -> str:
+    text = html.unescape(str(value or ""))
+    text = _BR_RE.sub("\n", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return "\n".join(line.rstrip() for line in text.split("\n")).strip()
+
+
+def _numbered_items(value: Any) -> list[tuple[int, str]] | None:
+    lines = [line for line in canonicalize_testlink_text(value).split("\n") if line.strip()]
+    matches = [_NUMBERED_LINE_RE.fullmatch(line) for line in lines]
+    if not any(matches):
+        return None
+    if not all(matches):
+        raise TestLinkError("Numbered testcase content must number every non-empty line.")
+    return [(int(match.group(1)), match.group(2).strip()) for match in matches if match is not None]
+
+
+def validate_testcase_steps(
+    steps: Any,
+    *,
+    single_step: bool = True,
+    allow_multi_row: bool = False,
+) -> dict[str, Any]:
+    row_policy = validate_testcase_row_policy(
+        single_step=single_step,
+        allow_multi_row=allow_multi_row,
+    )
+    if not isinstance(steps, list) or not steps:
+        raise TestLinkError("At least one testcase step row is required.")
+    for index, step in enumerate(steps, start=1):
+        if not isinstance(step, dict):
+            raise TestLinkError(f"Testcase step row {index} must be an object.")
+        if not canonicalize_testlink_text(step.get("actions") or step.get("action")):
+            raise TestLinkError(f"Testcase step row {index} is missing actions.")
+        if not canonicalize_testlink_text(
+            step.get("expected_results") or step.get("expected") or step.get("result")
+        ):
+            raise TestLinkError(f"Testcase step row {index} is missing expected results.")
+
+    logical_step_count = len(steps)
+    if single_step:
+        if len(steps) != 1:
+            raise TestLinkError("single_step=true requires exactly one TestLink step row.")
+        actions = _numbered_items(steps[0].get("actions"))
+        expected = _numbered_items(steps[0].get("expected_results"))
+        if (actions is None) != (expected is None):
+            raise TestLinkError("Actions and Expected must use matching numbering.")
+        if actions is not None and expected is not None:
+            action_numbers = [number for number, _ in actions]
+            expected_numbers = [number for number, _ in expected]
+            required_numbers = list(range(1, len(actions) + 1))
+            if action_numbers != expected_numbers or action_numbers != required_numbers:
+                raise TestLinkError("Actions and Expected numbering must match and be contiguous from 1.")
+            logical_step_count = len(actions)
+        else:
+            logical_step_count = 1
+
+    return {
+        "row_policy": row_policy,
+        "logical_step_count": logical_step_count,
+        "planned_row_count": len(steps),
+        "allow_multi_row": allow_multi_row,
+    }
+
+
+def _first_testcase_record(value: Any) -> dict[str, Any]:
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                try:
+                    return _first_testcase_record(item)
+                except TestLinkError:
+                    continue
+    if isinstance(value, dict):
+        record_keys = {
+            "testcaseid",
+            "testcase_id",
+            "tcase_id",
+            "testcasename",
+            "tcase_name",
+            "name",
+            "summary",
+            "steps",
+        }
+        if record_keys.intersection(value):
+            return value
+        for child in value.values():
+            if isinstance(child, (dict, list)):
+                try:
+                    return _first_testcase_record(child)
+                except TestLinkError:
+                    continue
+    raise TestLinkError("TestLink testcase readback did not contain a testcase record.")
+
+
+def _step_rows(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, dict):
+        if {"actions", "action", "expected_results", "expected"}.intersection(value):
+            return [value]
+        rows: list[dict[str, Any]] = []
+        for child in value.values():
+            rows.extend(_step_rows(child))
+        return rows
+    return []
+
+
+def canonical_testcase_content(value: Any, *, expected_payload: dict[str, Any]) -> dict[str, Any]:
+    record = _first_testcase_record(value) if value is not expected_payload else value
+    canonical: dict[str, Any] = {}
+    field_aliases = {
+        "testcasename": ("testcasename", "tcase_name", "name"),
+        "summary": ("summary",),
+        "preconditions": ("preconditions",),
+        "importance": ("importance",),
+        "executiontype": ("executiontype", "execution_type"),
+    }
+    for expected_key, aliases in field_aliases.items():
+        if expected_key not in expected_payload:
+            continue
+        raw = next((record.get(alias) for alias in aliases if alias in record), None)
+        if expected_key in {"summary", "preconditions", "testcasename"}:
+            canonical[expected_key] = canonicalize_testlink_text(raw)
+        else:
+            canonical[expected_key] = str(raw or "").strip()
+
+    if "steps" in expected_payload:
+        rows = _step_rows(record.get("steps"))
+        canonical["steps"] = [
+            {
+                "actions": canonicalize_testlink_text(row.get("actions") or row.get("action")),
+                "expected_results": canonicalize_testlink_text(
+                    row.get("expected_results") or row.get("expected") or row.get("result")
+                ),
+                "execution_type": str(
+                    row.get("execution_type") or row.get("executiontype") or ""
+                ).strip(),
+            }
+            for row in rows
+        ]
+    return canonical
+
+
+def compare_testcase_readback(
+    expected_payload: dict[str, Any],
+    readback: Any,
+) -> dict[str, Any]:
+    expected = canonical_testcase_content(expected_payload, expected_payload=expected_payload)
+    actual = canonical_testcase_content(readback, expected_payload=expected_payload)
+    mismatches = [key for key in expected if expected.get(key) != actual.get(key)]
+    return {
+        "matches": not mismatches,
+        "mismatches": mismatches,
+        "expected": expected,
+        "actual": actual,
+    }
+
 def coerce_testlink_enum(value: str | int, mapping: dict[str, int], label: str) -> int:
     text = str(value).strip()
     if text.isdigit():
@@ -94,6 +260,8 @@ def normalize_create_step(step: dict[str, Any], step_number: int, default_execut
     ).strip()
     if not actions:
         raise TestLinkError(f"Step {step_number} is missing actions.")
+    if not expected:
+        raise TestLinkError(f"Step {step_number} is missing expected results.")
     execution_type = step.get("execution_type") or step.get("executiontype") or default_execution_type
     return {
         "step_number": step_number,
@@ -156,7 +324,10 @@ def parse_create_steps(args: argparse.Namespace) -> list[dict[str, Any]]:
     if not raw_steps:
         raise TestLinkError("At least one --step or --steps-file entry is required.")
 
-    if getattr(args, "single_step", True):
+    single_step = bool(getattr(args, "single_step", True))
+    allow_multi_row = bool(getattr(args, "allow_multi_row", False))
+    validate_testcase_row_policy(single_step=single_step, allow_multi_row=allow_multi_row)
+    if single_step:
         raw_steps = collapse_raw_steps(raw_steps)
 
     default_execution_type = coerce_testlink_enum(
@@ -164,10 +335,16 @@ def parse_create_steps(args: argparse.Namespace) -> list[dict[str, Any]]:
         EXECUTION_TYPE_TO_TESTLINK,
         "execution type",
     )
-    return [
+    normalized = [
         normalize_create_step(step, index, default_execution_type)
         for index, step in enumerate(raw_steps, start=1)
     ]
+    validate_testcase_steps(
+        normalized,
+        single_step=single_step,
+        allow_multi_row=allow_multi_row,
+    )
+    return normalized
 
 def parse_optional_steps(args: argparse.Namespace) -> list[dict[str, Any]] | None:
     if not getattr(args, "step", None) and not getattr(args, "steps_file", None):

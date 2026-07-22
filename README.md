@@ -8,7 +8,7 @@ The supported architecture has three MCP ownership boundaries:
 
 | Boundary | Responsibility | Credential ownership |
 |---|---|---|
-| `testlink-mcp` | TestLink discovery and protected execution | TestLink only |
+| `testlink-mcp` | TestLink discovery, protected testcase maintenance, and protected execution | TestLink only |
 | `redmine-mcp` | Redmine/eITS metadata, dedupe, issue, and evidence comments | Redmine only |
 | `qa-integration-agent` | Report validation, orchestration, preview, traceability, audit, and resume | No upstream API keys |
 
@@ -25,6 +25,9 @@ release installation and upgrades. Authoritative assistant instructions live in
 ## Safety Invariants
 
 - Every external write defaults to preview and must match the reviewed `preview_digest`.
+- Testcase create/update defaults to one TestLink step row. Multi-row output requires
+  both `single_step: false` and `allow_multi_row: true` in the reviewed preview.
+- Testcase writes are successful only after TestLink readback matches the reviewed content.
 - `corp` and `sandbox` are explicit; the coordinator rejects mixed environments.
 - Redmine bug creation is opt-in with `redmine_create_bugs: true`.
 - Fail/Error issues are deduplicated. Open matches are reused; closed matches block
@@ -174,6 +177,12 @@ recommended execution tool is `testlink_report_execution`, which previews or app
 execution using an exact target and confirmed digest. Read-only discovery includes
 `testlink_list_projects`, `testlink_list_plans`, `testlink_list_platforms`,
 `testlink_list_builds`, `testlink_list_suites`, and `testlink_find_suites`.
+
+Use `testlink_create_testcase` and `testlink_update_testcase` for testcase maintenance.
+Both tools default to preview, require an explicit environment and operation ID, bind the
+row policy and payload into `preview_digest`, and verify the written testcase with
+`getTestCase` before reporting success. The pure server does not expose the legacy
+`create_test_case` or `update_test_case` bypass names.
 
 The pure server does not expose the integrated `testlink_upload_report`, legacy
 `report_result`/`report_results_batch`, `link_bug`, or `overwrite_result` paths. See
@@ -478,7 +487,8 @@ Useful options:
 - `--summary-file` and `--preconditions-file` read UTF-8 text from files.
 - `--steps-file` reads a JSON array of strings or objects with `actions`, `expected_results`, and optional `execution_type`.
 - Steps are collapsed into one TestLink step row by default, with numbered action and expected-result lines.
-- Use `--no-single-step` only when you intentionally want one TestLink row per supplied step.
+- Use `--no-single-step --allow-multi-row` together only when you intentionally want one
+  TestLink row per supplied step. Either flag alone is rejected.
 - Multi-line summary, preconditions, step actions, and expected results are converted to TestLink rich-text line breaks.
 - `--duplicate-action block` is the default; use `--duplicate-action generate-new` only when you intentionally want TestLink to create a renamed duplicate.
 
@@ -525,7 +535,8 @@ Useful options:
 - `--summary-file`, `--preconditions-file`, and `--steps-file` work the same way as `create-testcase`.
 - `--step` and `--steps-file` replace the testcase steps with the supplied steps.
 - Repeated `--step` entries are kept in one TestLink row by default.
-- Use `--no-single-step` only when you intentionally want one TestLink row per supplied step.
+- Use `--no-single-step --allow-multi-row` together only when you intentionally want one
+  TestLink row per supplied step. Either flag alone is rejected.
 - Multi-line preconditions and step text are converted to TestLink rich-text line breaks.
 
 ## Preview a Report Upload

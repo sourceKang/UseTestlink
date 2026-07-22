@@ -42,8 +42,13 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
                         "default": True,
                         "description": (
                             "Collapse all supplied steps into one TestLink step row. "
-                            "Defaults to true; set false to create one row per step."
+                            "Defaults to true; false also requires allow_multi_row=true."
                         ),
+                    },
+                    "allow_multi_row": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Explicit authorization for multiple rows; requires single_step=false.",
                     },
                     "importance": {"type": "string", "default": "medium"},
                     "execution_type": {"type": "string", "default": "manual"},
@@ -73,8 +78,13 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
                         "default": True,
                         "description": (
                             "Collapse all supplied replacement steps into one TestLink step row. "
-                            "Defaults to true; set false to create one row per step."
+                            "Defaults to true; false also requires allow_multi_row=true."
                         ),
+                    },
+                    "allow_multi_row": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Explicit authorization for multiple rows; requires single_step=false.",
                     },
                     "importance": string("low, medium, high, or numeric TestLink value."),
                     "execution_type": string("manual, automated, or numeric TestLink value."),
@@ -188,8 +198,13 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
                     "default": True,
                     "description": (
                         "Collapse all supplied steps into one TestLink step row. "
-                        "Defaults to true; set false to create one row per step."
+                        "Defaults to true; false also requires allow_multi_row=true."
                     ),
+                },
+                "allow_multi_row": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Explicit authorization for multiple rows; requires single_step=false.",
                 },
                 "importance": {"type": "string", "default": "medium"},
                 "execution_type": {"type": "string", "default": "manual"},
@@ -225,8 +240,13 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
                     "default": True,
                     "description": (
                         "Collapse all supplied replacement steps into one TestLink step row. "
-                        "Defaults to true; set false to create one row per step."
+                        "Defaults to true; false also requires allow_multi_row=true."
                     ),
+                },
+                "allow_multi_row": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Explicit authorization for multiple rows; requires single_step=false.",
                 },
                 "importance": string("low, medium, high, or numeric TestLink value."),
                 "execution_type": string("manual, automated, or numeric TestLink value."),

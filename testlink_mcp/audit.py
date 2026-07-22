@@ -40,17 +40,24 @@ def write_operation_audit(
 def find_operation_audits(
     operation_id: str,
     audit_dir: str | Path | None = None,
+    *,
+    action: str | None = None,
 ) -> list[tuple[Path, dict[str, Any]]]:
     directory = Path(audit_dir or DEFAULT_AUDIT_DIR)
     if not directory.exists():
         return []
     matches: list[tuple[Path, dict[str, Any]]] = []
-    for path in directory.glob(f"{operation_id}-append-execution-*.json"):
+    action_pattern = action or "*"
+    for path in directory.glob(f"{operation_id}-{action_pattern}-*.json"):
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if isinstance(record, dict) and record.get("operation_id") == operation_id:
+        if (
+            isinstance(record, dict)
+            and record.get("operation_id") == operation_id
+            and (action is None or record.get("action") == action)
+        ):
             matches.append((path, redact_secrets(record)))
     matches.sort(key=lambda item: item[0].stat().st_mtime, reverse=True)
     return matches

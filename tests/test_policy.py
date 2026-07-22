@@ -9,6 +9,7 @@ from testlink_agent_core.policy import (
     build_failure_signature,
     dedupe_digest,
     validate_environment_pair,
+    validate_testcase_row_policy,
 )
 
 
@@ -110,6 +111,23 @@ class PolicyTests(unittest.TestCase):
         os.environ["REDMINE_ALLOW_MANAGER_FIELDS"] = "true"
 
         self.assertEqual(blocked_manager_fields({"assigned_to_id": "123"}), [])
+
+    def test_testcase_row_policy_defaults_to_single_row(self):
+        self.assertEqual(validate_testcase_row_policy(), "single-row")
+
+    def test_testcase_row_policy_rejects_unapproved_multi_row(self):
+        with self.assertRaisesRegex(TestLinkError, "allow_multi_row=true") as context:
+            validate_testcase_row_policy(single_step=False)
+
+        self.assertEqual(context.exception.code, "MULTI_ROW_NOT_AUTHORIZED")
+
+    def test_testcase_row_policy_requires_consistent_explicit_authorization(self):
+        self.assertEqual(
+            validate_testcase_row_policy(single_step=False, allow_multi_row=True),
+            "multi-row-authorized",
+        )
+        with self.assertRaisesRegex(TestLinkError, "requires single_step=false"):
+            validate_testcase_row_policy(single_step=True, allow_multi_row=True)
 
 
 if __name__ == "__main__":
