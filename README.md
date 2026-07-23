@@ -59,7 +59,7 @@ For MCPs shared by other Codex projects, install a tagged GitHub release into an
 isolated user environment. Do not point those projects at `D:\UseTestlink`:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.3.1"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.4.0"
 ```
 
 This installs the following console entrypoints:
@@ -199,9 +199,10 @@ Use for Redmine/eITS-only operations:
 - `redmine_preview_bug` / `redmine_create_bug`
 - `redmine_preview_comment` / `redmine_add_comment`
 
-Bug and comment writes require `write: true` and the matching preview digest. The server
-rechecks dedupe immediately before creation. See `docs/redmine-mcp.md` and
-`docs/redmine-fields.md`.
+Bug and comment writes require `write: true` and the matching preview digest. Bug creation
+accepts optional local image attachments whose content hash, filename, MIME type, and size
+are bound into the preview. The server rechecks dedupe immediately before creation. See
+`docs/redmine-mcp.md` and `docs/redmine-fields.md`.
 
 ### `qa-integration-agent`
 

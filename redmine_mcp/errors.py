@@ -36,6 +36,12 @@ def mask_secrets(value: Any) -> str:
         text,
         flags=re.IGNORECASE,
     )
+    text = re.sub(
+        r"((?:['\"]?token['\"]?)\s*[:=]\s*['\"]?)([^,'\"\s}]+)",
+        rf"\1{MASK}",
+        text,
+        flags=re.IGNORECASE,
+    )
     return text
 
 

@@ -58,6 +58,16 @@ Do not pass credentials through MCP tool arguments. Do not silently switch forma
 
 For a TestLink-only write, use the protected `testlink-mcp` preview/result tools and a matching digest. For a Redmine-only write, use `redmine_preview_bug` or `redmine_preview_comment`, then the corresponding write tool only after confirmation.
 
+For image evidence on a new Redmine bug, pass `attachments` to `redmine_preview_bug` as
+objects containing `file` and optional `filename`/`description`. Review every returned
+filename, MIME type, size, SHA-256, attachment action, warning, and the final
+`preview_digest`. Call `redmine_create_bug` with the unchanged files only after explicit
+confirmation. Supported images are PNG, JPEG, GIF, WebP, and BMP, with at most five images
+and 10 MiB per image. Upload tokens are internal to `redmine-mcp` and must never be requested,
+logged, or passed between agents. If dedupe reuses an open issue, create-bug deliberately
+does not upload the images; report the `not-uploaded-reused` result instead of implying that
+evidence was attached.
+
 Before creating or updating a testcase, read
 [`references/testcase-maintenance.md`](references/testcase-maintenance.md) and follow its
 single-row preview, explicit multi-row authorization, readback verification, and reporting

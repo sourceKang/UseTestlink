@@ -77,6 +77,19 @@ Execution URL:
 Dedupe Key:
 ```
 
+## Image Attachment Policy
+
+Bug creation may include optional image evidence through `redmine-mcp`. Attachment input is
+local file intent only; API credentials and Redmine upload tokens are never MCP arguments.
+
+- Preview computes and displays filename, detected MIME type, byte size, and SHA-256.
+- The exact attachment metadata and content digest are included in `preview_digest`.
+- Upload occurs only with `write: true` and the matching digest, after the final dedupe check.
+- Supported formats are PNG, JPEG, GIF, WebP, and BMP; maximum five images and 10 MiB each.
+- Upload tokens are internal ephemeral values and must not be written to responses, errors, or audit JSON.
+- When an open dedupe match is reused, create-bug does not upload the supplied images and reports a warning.
+- A failed upload is audited and the issue create call is not made; retry requires the unchanged confirmed input.
+
 ## Custom Field Template
 
 Template files live under:
