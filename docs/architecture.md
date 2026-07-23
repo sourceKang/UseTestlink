@@ -18,7 +18,7 @@ flowchart LR
 | 元件 | 唯一責任 | 可持有的認證 |
 |---|---|---|
 | `testlink-mcp` | TestLink discovery、精確 target resolution、testcase/execution preview/write、readback verification、operation idempotency | TestLink only |
-| `redmine-mcp` | Redmine metadata/template、dedupe、issue/comment preview/write、operation idempotency | Redmine only |
+| `redmine-mcp` | Redmine metadata/template、dedupe、issue/comment preview/write、image upload、operation idempotency | Redmine only |
 | `qa-integration-agent` | report parsing、跨系統規劃、aggregate preview、traceability、workflow audit/resume | 不持有上游 API key |
 | `qa-mcp-contracts` | 版本化 schema、canonical payload、digest 與安全驗證 | 無 |
 

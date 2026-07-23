@@ -74,6 +74,55 @@ class RedmineClient:
             raise RedmineMcpError("Redmine response must be a JSON object.", code="INVALID_RESPONSE")
         return parsed
 
+    def request_binary_json(
+        self,
+        method: str,
+        path: str,
+        content: bytes,
+        *,
+        query: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        query_items = {key: value for key, value in (query or {}).items() if value not in (None, "")}
+        url = f"{self.base_url}{path}"
+        if query_items:
+            url = f"{url}?{urllib.parse.urlencode(query_items)}"
+        request = urllib.request.Request(
+            url,
+            data=content,
+            method=method,
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Accept": "application/json",
+                "X-Redmine-API-Key": self.api_key,
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                response_body = response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            response_body = exc.read().decode("utf-8", errors="replace")
+            raise RedmineMcpError(
+                f"Redmine upload HTTP {exc.code}: {response_body}",
+                code=f"HTTP_{exc.code}",
+                retryable=exc.code >= 500,
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise RedmineMcpError(
+                f"Redmine upload connection failed: {exc.reason}",
+                code="CONNECTION_FAILED",
+                retryable=True,
+            ) from exc
+        try:
+            parsed = json.loads(response_body)
+        except json.JSONDecodeError as exc:
+            raise RedmineMcpError(
+                "Redmine upload returned a non-JSON response.",
+                code="INVALID_RESPONSE",
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise RedmineMcpError("Redmine upload response must be a JSON object.", code="INVALID_RESPONSE")
+        return parsed
+
     def health(self) -> dict[str, Any]:
         return self.request_json("GET", "/users/current.json")
 
@@ -146,6 +195,22 @@ class RedmineClient:
             state="open",
             reused=False,
         )
+
+    def upload_attachment(self, *, filename: str, content: bytes) -> str:
+        response = self.request_binary_json(
+            "POST",
+            "/uploads.json",
+            content,
+            query={"filename": filename},
+        )
+        upload = response.get("upload")
+        token = str(upload.get("token") or "").strip() if isinstance(upload, dict) else ""
+        if not token:
+            raise RedmineMcpError(
+                "Redmine upload response did not include an upload token.",
+                code="INVALID_RESPONSE",
+            )
+        return token
 
     def add_comment(self, issue_id: str | int, notes: str) -> dict[str, Any]:
         if not str(issue_id).strip():

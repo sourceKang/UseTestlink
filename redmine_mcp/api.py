@@ -13,6 +13,7 @@ from qa_mcp_contracts import (
     validate_preview_digest,
 )
 
+from .attachments import PreparedImageAttachment, prepare_image_attachments
 from .audit import find_operation_audits, utc_now_iso, write_operation_audit
 from .client import RedmineClient
 from .config import DEFAULT_AUDIT_DIR, DEFAULT_TIMEOUT_SECONDS, RedmineSettings, load_redmine_settings
@@ -156,6 +157,7 @@ def _build_bug_plan(
     operation_id: str,
     environment: str,
     issue_payload: dict[str, Any],
+    attachments: list[dict[str, Any]],
     dedupe_marker: str,
     dedupe: str,
 ) -> dict[str, Any]:
@@ -189,6 +191,10 @@ def _build_bug_plan(
     elif open_issue is not None:
         action = "reuse"
         existing_issue = open_issue
+        if attachments:
+            warnings.append(
+                "The dedupe marker matches an open issue; image attachments are not uploaded to reused issues."
+            )
     elif closed_issue is not None:
         action = "blocked"
         existing_issue = closed_issue
@@ -205,6 +211,14 @@ def _build_bug_plan(
         "dedupe_marker": marker,
         "dedupe_digest": hashlib.sha256(marker.encode("utf-8")).hexdigest()[:16],
         "issue_payload": issue_payload,
+        "attachments": attachments,
+        "attachment_action": (
+            "upload-and-attach"
+            if action == "create" and attachments
+            else "not-uploaded-reused"
+            if action == "reuse" and attachments
+            else "none"
+        ),
         "existing_issue": _issue_preview(existing_issue),
         "manager_fields_enabled": manager_fields_allowed(),
         "blocked_fields": blocked_fields,
@@ -227,6 +241,9 @@ def _bug_preview(plan: dict[str, Any]) -> dict[str, Any]:
         "manager_fields_enabled": plan["manager_fields_enabled"],
         "blocked_fields": plan["blocked_fields"],
         "warnings": plan["warnings"],
+        "attachment_action": plan["attachment_action"],
+        "attachment_count": len(plan["attachments"]),
+        "attachments": plan["attachments"],
     }
     if plan["existing_issue"] is not None:
         result["existing_issue"] = plan["existing_issue"]
@@ -242,6 +259,7 @@ def _attempt_failure_audit(
     error: BaseException,
     audit_dir: str | None,
     audit_id: str | None = None,
+    details: dict[str, Any] | None = None,
 ) -> str | None:
     normalized = normalize_error(error)
     try:
@@ -255,6 +273,7 @@ def _attempt_failure_audit(
                 "preview_digest": preview_digest,
                 "finished_at": utc_now_iso(),
                 "error": normalized.to_dict(),
+                **(details or {}),
             },
             audit_dir,
             audit_id=audit_id,
@@ -432,6 +451,7 @@ def _redmine_bug(
     tracker_id: str | None = None,
     priority_id: str | None = None,
     dedupe_marker: str,
+    attachments: Any = None,
     project_id: str | None = None,
     custom_fields: Any = None,
     category_id: str | None = None,
@@ -446,6 +466,8 @@ def _redmine_bug(
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     attempt_audit_id: str | None = None
+    attachment_metadata: list[dict[str, Any]] = []
+    planned_redmine_action: str | None = None
     try:
         settings, client = _runtime(env_file, timeout)
         selected = validate_environment(environment, settings.environment)
@@ -470,6 +492,8 @@ def _redmine_bug(
             assigned_to_id=merged["assigned_to_id"],
             fixed_version_id=merged["fixed_version_id"],
         )
+        prepared_attachments: list[PreparedImageAttachment] = prepare_image_attachments(attachments)
+        attachment_metadata = [attachment.metadata() for attachment in prepared_attachments]
 
         def build_plan() -> dict[str, Any]:
             return _build_bug_plan(
@@ -477,6 +501,7 @@ def _redmine_bug(
                 operation_id=operation_id,
                 environment=selected,
                 issue_payload=payload,
+                attachments=attachment_metadata,
                 dedupe_marker=dedupe_marker,
                 dedupe=dedupe,
             )
@@ -486,6 +511,7 @@ def _redmine_bug(
 
         with _dedupe_lock(dedupe_marker):
             plan = build_plan()
+            planned_redmine_action = str(plan["action"])
             validate_preview_digest(plan, str(preview_digest or ""))
             if plan["action"] == "blocked":
                 raise RedmineMcpError(
@@ -502,6 +528,9 @@ def _redmine_bug(
                     "preview_digest": preview_digest,
                     "dedupe_digest": plan["dedupe_digest"],
                     "planned_redmine_action": plan["action"],
+                    "attachment_action": plan["attachment_action"],
+                    "attachment_count": len(attachment_metadata),
+                    "attachments": attachment_metadata,
                     "started_at": utc_now_iso(),
                 },
                 audit_dir,
@@ -517,9 +546,21 @@ def _redmine_bug(
                     reused=True,
                 )
                 action = "reused"
+                attachment_status = "not-uploaded-reused" if prepared_attachments else "none"
             else:
-                issue = client.create_issue(payload)
+                upload_references = []
+                for attachment in prepared_attachments:
+                    upload_token = client.upload_attachment(
+                        filename=attachment.filename,
+                        content=attachment.content,
+                    )
+                    upload_references.append(attachment.upload_reference(upload_token))
+                write_payload = {**payload}
+                if upload_references:
+                    write_payload["uploads"] = upload_references
+                issue = client.create_issue(write_payload)
                 action = "created"
+                attachment_status = "attached" if prepared_attachments else "none"
             audit_path = write_operation_audit(
                 {
                     "schema_version": CONTRACT_SCHEMA_VERSION,
@@ -531,6 +572,9 @@ def _redmine_bug(
                     "preview_digest": preview_digest,
                     "dedupe_digest": plan["dedupe_digest"],
                     "issue": _issue_result(issue),
+                    "attachment_status": attachment_status,
+                    "attachment_count": len(attachment_metadata),
+                    "attachments": attachment_metadata,
                     "finished_at": utc_now_iso(),
                 },
                 audit_dir,
@@ -545,6 +589,8 @@ def _redmine_bug(
                     "status": "success",
                     "action": action,
                     "issue": _issue_result(issue),
+                    "attachment_status": attachment_status,
+                    "attachment_count": len(attachment_metadata),
                     "comment_status": "not-required",
                     "audit_id": audit_path.name,
                 }
@@ -559,6 +605,11 @@ def _redmine_bug(
                 error=exc,
                 audit_dir=audit_dir,
                 audit_id=attempt_audit_id,
+                details={
+                    "planned_redmine_action": planned_redmine_action,
+                    "attachment_count": len(attachment_metadata),
+                    "attachments": attachment_metadata,
+                },
             )
             if audit_id is None:
                 exc = RedmineMcpError(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import unittest
+import urllib.request
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -21,9 +22,11 @@ class FakeRedmineClient:
         self.closed_issue: RedmineIssue | None = None
         self.created_payloads: list[dict] = []
         self.comments: list[tuple[str, str]] = []
+        self.uploaded_files: list[tuple[str, bytes]] = []
         self.journals: list[dict] = []
         self.fail_create = False
         self.fail_comment = False
+        self.fail_upload = False
 
     def health(self):
         return {"user": {"id": 7, "login": "qa-user"}}
@@ -68,6 +71,12 @@ class FakeRedmineClient:
         self.open_issue = issue
         return issue
 
+    def upload_attachment(self, *, filename, content):
+        self.uploaded_files.append((filename, content))
+        if self.fail_upload:
+            raise RedmineMcpError("upload failed with token=7167.upload-secret")
+        return f"7167.upload-secret-{len(self.uploaded_files)}"
+
     def add_comment(self, issue_id, notes):
         self.comments.append((str(issue_id), notes))
         if self.fail_comment:
@@ -100,6 +109,12 @@ def bug_args(**overrides):
     }
     values.update(overrides)
     return values
+
+
+def write_test_png(directory: str, *, name: str = "screenshot.png", marker: bytes = b"A") -> Path:
+    path = Path(directory) / name
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + marker)
+    return path
 
 
 class RedmineMcpApiTests(unittest.TestCase):
@@ -160,6 +175,132 @@ class RedmineMcpApiTests(unittest.TestCase):
             audit_text = audit_path.read_text(encoding="utf-8")
             self.assertNotIn("redmine-secret", audit_text)
             self.assertEqual("success", json.loads(audit_text)["status"])
+
+    def test_image_attachment_is_previewed_hashed_uploaded_and_audited_without_token(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            image = write_test_png(tmpdir)
+            args = bug_args(
+                attachments=[
+                    {
+                        "file": str(image),
+                        "filename": "filter-result.png",
+                        "description": "Filter result evidence",
+                    }
+                ]
+            )
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_create_bug(**args)["result"]
+                self.assertEqual([], client.uploaded_files)
+                self.assertEqual("upload-and-attach", preview["attachment_action"])
+                self.assertEqual(1, preview["attachment_count"])
+                self.assertEqual("image/png", preview["attachments"][0]["content_type"])
+                self.assertEqual(64, len(preview["attachments"][0]["sha256"]))
+
+                result = api.redmine_create_bug(
+                    **args,
+                    write=True,
+                    preview_digest=preview["preview_digest"],
+                    audit_dir=tmpdir,
+                )
+
+            self.assertTrue(result["ok"])
+            self.assertEqual("attached", result["result"]["attachment_status"])
+            self.assertEqual([("filter-result.png", image.read_bytes())], client.uploaded_files)
+            upload = client.created_payloads[0]["uploads"][0]
+            self.assertEqual("filter-result.png", upload["filename"])
+            self.assertEqual("image/png", upload["content_type"])
+            self.assertIn("token", upload)
+            audit_text = (Path(tmpdir) / result["result"]["audit_id"]).read_text(encoding="utf-8")
+
+        self.assertNotIn("upload-secret", audit_text)
+        self.assertNotIn('"token"', audit_text)
+        self.assertEqual("attached", json.loads(audit_text)["attachment_status"])
+
+    def test_attachment_content_change_invalidates_preview_before_upload(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            image = write_test_png(tmpdir, marker=b"before")
+            args = bug_args(attachments=[{"file": str(image)}])
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_create_bug(**args)["result"]
+                image.write_bytes(b"\x89PNG\r\n\x1a\nafter")
+                result = api.redmine_create_bug(
+                    **args,
+                    write=True,
+                    preview_digest=preview["preview_digest"],
+                    audit_dir=tmpdir,
+                )
+
+        self.assertFalse(result["ok"])
+        self.assertIn("does not match", result["error"]["error"]["message"])
+        self.assertEqual([], client.uploaded_files)
+        self.assertEqual([], client.created_payloads)
+
+    def test_non_image_attachment_is_rejected_during_preview(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            attachment = Path(tmpdir) / "evidence.txt"
+            attachment.write_text("not an image", encoding="utf-8")
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                result = api.redmine_preview_bug(
+                    **bug_args(attachments=[{"file": str(attachment)}])
+                )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("ATTACHMENT_TYPE_UNSUPPORTED", result["error"]["error"]["code"])
+
+    def test_attachment_upload_failure_is_audited_without_upload_token(self) -> None:
+        client = FakeRedmineClient()
+        client.fail_upload = True
+        with TemporaryDirectory() as tmpdir:
+            image = write_test_png(tmpdir)
+            args = bug_args(attachments=[{"file": str(image)}])
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_create_bug(**args)["result"]
+                result = api.redmine_create_bug(
+                    **args,
+                    write=True,
+                    preview_digest=preview["preview_digest"],
+                    audit_dir=tmpdir,
+                )
+            audit_path = next(Path(tmpdir).glob("*.json"))
+            audit_text = audit_path.read_text(encoding="utf-8")
+
+        self.assertFalse(result["ok"])
+        self.assertEqual([], client.created_payloads)
+        self.assertNotIn("7167.upload-secret", json.dumps(result))
+        self.assertIn("*****", result["error"]["error"]["message"])
+        self.assertNotIn("7167.upload-secret", audit_text)
+        self.assertIn("*****", audit_text)
+        self.assertEqual("failed", json.loads(audit_text)["status"])
+
+    def test_reused_issue_does_not_upload_or_duplicate_image_attachment(self) -> None:
+        client = FakeRedmineClient()
+        client.open_issue = RedmineIssue(
+            id="88",
+            url="https://redmine.example.com/issues/88",
+            subject="Existing",
+            reused=True,
+        )
+        with TemporaryDirectory() as tmpdir:
+            image = write_test_png(tmpdir)
+            args = bug_args(attachments=[{"file": str(image)}])
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_create_bug(**args)["result"]
+                result = api.redmine_create_bug(
+                    **args,
+                    write=True,
+                    preview_digest=preview["preview_digest"],
+                    audit_dir=tmpdir,
+                )
+
+        self.assertEqual("not-uploaded-reused", preview["attachment_action"])
+        self.assertTrue(preview["warnings"])
+        self.assertTrue(result["ok"])
+        self.assertEqual("not-uploaded-reused", result["result"]["attachment_status"])
+        self.assertEqual([], client.uploaded_files)
+        self.assertEqual([], client.created_payloads)
 
     def test_changed_write_payload_is_rejected_and_audited(self) -> None:
         client = FakeRedmineClient()
@@ -602,6 +743,35 @@ class RedmineMcpApiTests(unittest.TestCase):
 
 
 class RedmineClientTests(unittest.TestCase):
+    def test_upload_attachment_uses_binary_body_filename_query_and_returns_token(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return b'{"upload":{"token":"7167.server-secret"}}'
+
+        captured = []
+
+        def fake_urlopen(request, timeout):
+            captured.append((request, timeout))
+            return FakeResponse()
+
+        client = RedmineClient("https://redmine.example.com", "redmine-secret", timeout=17)
+        with patch.object(urllib.request, "urlopen", side_effect=fake_urlopen):
+            token = client.upload_attachment(filename="filter result.png", content=b"PNG bytes")
+
+        request, timeout = captured[0]
+        self.assertEqual("7167.server-secret", token)
+        self.assertEqual(17, timeout)
+        self.assertEqual("POST", request.method)
+        self.assertEqual(b"PNG bytes", request.data)
+        self.assertIn("/uploads.json?filename=filter+result.png", request.full_url)
+        self.assertEqual("application/octet-stream", request.get_header("Content-type"))
+
     def test_add_comment_uses_notes_only_payload(self) -> None:
         class RecordingClient(RedmineClient):
             def __init__(self):

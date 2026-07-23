@@ -14,7 +14,7 @@ class RedmineMcpServerTests(unittest.TestCase):
         response = handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
 
         self.assertEqual("redmine-mcp", response["result"]["serverInfo"]["name"])
-        self.assertEqual("0.1.0", response["result"]["serverInfo"]["version"])
+        self.assertEqual("0.2.0", response["result"]["serverInfo"]["version"])
 
     def test_expected_tools_are_exposed(self) -> None:
         tools = {tool["name"]: tool for tool in TOOLS}
@@ -33,6 +33,9 @@ class RedmineMcpServerTests(unittest.TestCase):
         )
         self.assertFalse(tools["redmine_create_bug"]["inputSchema"]["properties"]["write"]["default"])
         self.assertFalse(tools["redmine_add_comment"]["inputSchema"]["properties"]["write"]["default"])
+        attachments = tools["redmine_create_bug"]["inputSchema"]["properties"]["attachments"]
+        self.assertEqual(5, attachments["maxItems"])
+        self.assertEqual(["file"], attachments["items"]["required"])
 
     def test_tool_schemas_never_accept_api_credentials(self) -> None:
         for tool in TOOLS:

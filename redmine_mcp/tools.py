@@ -45,6 +45,32 @@ BUG_PROPERTIES: dict[str, Any] = {
     "fixed_version_id": string("Manager-only fixed version ID; blocked unless explicitly enabled."),
     "dedupe_marker": string("Stable marker used to find and reuse an existing issue."),
     "dedupe": {"type": "string", "enum": ["open"], "default": "open"},
+    "attachments": {
+        "type": "array",
+        "maxItems": 5,
+        "description": (
+            "Optional local image files attached only when a new bug is created. "
+            "Each image is limited to 10 MiB and preview-bound by SHA-256."
+        ),
+        "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "file": string("Local PNG, JPEG, GIF, WebP, or BMP image path."),
+                "filename": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Optional attachment filename; defaults to the local basename.",
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Optional Redmine attachment description.",
+                },
+            },
+            "required": ["file"],
+        },
+    },
     "audit_dir": string("Local directory for redacted operation audit JSON."),
 }
 
