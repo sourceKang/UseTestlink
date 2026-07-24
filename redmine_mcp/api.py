@@ -117,6 +117,65 @@ def _issue_result(issue: RedmineIssue | None) -> dict[str, Any] | None:
     }
 
 
+def _normalized_field_value(value: Any) -> Any:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        return [_normalized_field_value(item) for item in value]
+    return str(value).strip()
+
+
+def _verify_issue_fields(
+    issue_data: dict[str, Any],
+    issue_fields: dict[str, Any],
+) -> dict[str, Any]:
+    severity = issue_fields["severity"]
+    priority = issue_fields.get("priority")
+    actual_priority = issue_data.get("priority") if isinstance(issue_data.get("priority"), dict) else {}
+    expected_severity_id = str(severity["priority_id"])
+    actual_severity_id = str(actual_priority.get("id") or "")
+    severity_result = {
+        "label": severity.get("label"),
+        "transport_field": "priority_id",
+        "expected_priority_id": expected_severity_id,
+        "actual_priority_id": actual_severity_id,
+        "match": actual_severity_id == expected_severity_id,
+    }
+    priority_result: dict[str, Any] | None = None
+    if priority is not None:
+        field_id = str(priority["custom_field_id"])
+        custom_fields = issue_data.get("custom_fields")
+        matching = next(
+            (
+                field
+                for field in custom_fields if isinstance(field, dict)
+                if str(field.get("id") or "").strip() == field_id
+            ),
+            None,
+        ) if isinstance(custom_fields, list) else None
+        expected_value = _normalized_field_value(priority.get("value"))
+        actual_value = _normalized_field_value(matching.get("value")) if matching is not None else None
+        priority_result = {
+            "transport_field": "custom_fields",
+            "custom_field_id": field_id,
+            "expected_value": expected_value,
+            "actual_value": actual_value,
+            "found": matching is not None,
+            "match": matching is not None and actual_value == expected_value,
+        }
+    verified = severity_result["match"] and (priority_result is None or priority_result["match"])
+    result = {
+        "status": "verified" if verified else "verification_failed",
+        "verified": verified,
+        "severity": severity_result,
+        "priority": priority_result,
+    }
+    assert_safe_contract(result)
+    return result
+
+
 def _build_issue_payload(
     *,
     project_id: str,
@@ -157,6 +216,7 @@ def _build_bug_plan(
     operation_id: str,
     environment: str,
     issue_payload: dict[str, Any],
+    issue_fields: dict[str, Any],
     attachments: list[dict[str, Any]],
     dedupe_marker: str,
     dedupe: str,
@@ -211,6 +271,7 @@ def _build_bug_plan(
         "dedupe_marker": marker,
         "dedupe_digest": hashlib.sha256(marker.encode("utf-8")).hexdigest()[:16],
         "issue_payload": issue_payload,
+        "issue_fields": issue_fields,
         "attachments": attachments,
         "attachment_action": (
             "upload-and-attach"
@@ -244,6 +305,8 @@ def _bug_preview(plan: dict[str, Any]) -> dict[str, Any]:
         "attachment_action": plan["attachment_action"],
         "attachment_count": len(plan["attachments"]),
         "attachments": plan["attachments"],
+        "issue_fields": plan["issue_fields"],
+        "issue_payload": plan["issue_payload"],
     }
     if plan["existing_issue"] is not None:
         result["existing_issue"] = plan["existing_issue"]
@@ -262,6 +325,7 @@ def _attempt_failure_audit(
     details: dict[str, Any] | None = None,
 ) -> str | None:
     normalized = normalize_error(error)
+    status = "verification-failed" if normalized.code == "VERIFICATION_FAILED" else "failed"
     try:
         path = write_operation_audit(
             {
@@ -269,7 +333,7 @@ def _attempt_failure_audit(
                 "operation_id": operation_id,
                 "environment": environment,
                 "action": action,
-                "status": "failed",
+                "status": status,
                 "preview_digest": preview_digest,
                 "finished_at": utc_now_iso(),
                 "error": normalized.to_dict(),
@@ -450,6 +514,8 @@ def _redmine_bug(
     description: str,
     tracker_id: str | None = None,
     priority_id: str | None = None,
+    severity: str | None = None,
+    custom_priority: Any = None,
     dedupe_marker: str,
     attachments: Any = None,
     project_id: str | None = None,
@@ -468,6 +534,8 @@ def _redmine_bug(
     attempt_audit_id: str | None = None
     attachment_metadata: list[dict[str, Any]] = []
     planned_redmine_action: str | None = None
+    affected_issue: RedmineIssue | None = None
+    field_verification: dict[str, Any] | None = None
     try:
         settings, client = _runtime(env_file, timeout)
         selected = validate_environment(environment, settings.environment)
@@ -476,6 +544,8 @@ def _redmine_bug(
             project_id=project_id or settings.project_id,
             tracker_id=tracker_id,
             priority_id=priority_id,
+            severity=severity,
+            custom_priority=custom_priority,
             custom_fields=custom_fields,
             category_id=category_id,
             assigned_to_id=assigned_to_id,
@@ -501,6 +571,7 @@ def _redmine_bug(
                 operation_id=operation_id,
                 environment=selected,
                 issue_payload=payload,
+                issue_fields=merged["issue_fields"],
                 attachments=attachment_metadata,
                 dedupe_marker=dedupe_marker,
                 dedupe=dedupe,
@@ -559,8 +630,25 @@ def _redmine_bug(
                 if upload_references:
                     write_payload["uploads"] = upload_references
                 issue = client.create_issue(write_payload)
+                affected_issue = issue
                 action = "created"
                 attachment_status = "attached" if prepared_attachments else "none"
+                field_verification = _verify_issue_fields(
+                    client.get_issue(issue.id),
+                    plan["issue_fields"],
+                )
+                if not field_verification["verified"]:
+                    raise RedmineMcpError(
+                        "Created Redmine issue fields do not match the confirmed preview.",
+                        code="VERIFICATION_FAILED",
+                    )
+            if action == "reused":
+                field_verification = {
+                    "status": "not-required-reused",
+                    "verified": None,
+                    "severity": None,
+                    "priority": None,
+                }
             audit_path = write_operation_audit(
                 {
                     "schema_version": CONTRACT_SCHEMA_VERSION,
@@ -572,6 +660,7 @@ def _redmine_bug(
                     "preview_digest": preview_digest,
                     "dedupe_digest": plan["dedupe_digest"],
                     "issue": _issue_result(issue),
+                    "field_verification": field_verification,
                     "attachment_status": attachment_status,
                     "attachment_count": len(attachment_metadata),
                     "attachments": attachment_metadata,
@@ -589,6 +678,7 @@ def _redmine_bug(
                     "status": "success",
                     "action": action,
                     "issue": _issue_result(issue),
+                    "field_verification": field_verification,
                     "attachment_status": attachment_status,
                     "attachment_count": len(attachment_metadata),
                     "comment_status": "not-required",
@@ -609,6 +699,8 @@ def _redmine_bug(
                     "planned_redmine_action": planned_redmine_action,
                     "attachment_count": len(attachment_metadata),
                     "attachments": attachment_metadata,
+                    "issue": _issue_result(affected_issue),
+                    "field_verification": field_verification,
                 },
             )
             if audit_id is None:
@@ -617,7 +709,17 @@ def _redmine_bug(
                     code="AUDIT_WRITE_FAILED",
                 )
         stage = "write" if write else "preview"
-        return _failure(operation_id, f"redmine-bug-{stage}", exc)
+        failure = _failure(operation_id, f"redmine-bug-{stage}", exc)
+        if affected_issue is not None:
+            failure["error"]["partial_result"] = redact_secrets(
+                {
+                    "action": "created",
+                    "issue": _issue_result(affected_issue),
+                    "field_verification": field_verification,
+                    "audit_id": audit_id,
+                }
+            )
+        return failure
 
 
 def redmine_preview_bug(**kwargs: Any) -> dict[str, Any]:

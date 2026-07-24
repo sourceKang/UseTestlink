@@ -11,7 +11,7 @@ class QaIntegrationServerTests(unittest.TestCase):
         response = handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
 
         self.assertEqual("qa-integration-agent", response["result"]["serverInfo"]["name"])
-        self.assertEqual("1.0.0", response["result"]["serverInfo"]["version"])
+        self.assertEqual("1.1.0", response["result"]["serverInfo"]["version"])
 
     def test_expected_tools_and_confirmation_contract(self) -> None:
         tools = {tool["name"]: tool for tool in TOOLS}
@@ -27,6 +27,8 @@ class QaIntegrationServerTests(unittest.TestCase):
             set(tools),
         )
         self.assertEqual(True, tools["qa_execute_report_import"]["inputSchema"]["properties"]["write"]["const"])
+        self.assertIn("redmine_severity", tools["qa_preview_report_import"]["inputSchema"]["properties"])
+        self.assertIn("redmine_custom_priority", tools["qa_preview_report_import"]["inputSchema"]["properties"])
         self.assertFalse(tools["qa_execute_report_import"]["annotations"]["destructiveHint"])
 
     def test_coordinator_tool_schema_has_no_credentials_or_manager_fields(self) -> None:

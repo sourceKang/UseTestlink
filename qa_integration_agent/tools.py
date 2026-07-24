@@ -20,7 +20,13 @@ PLAN_PROPERTIES: dict[str, Any] = {
     "redmine_create_bugs": {"type": "boolean", "default": False},
     "redmine_project_id": string("Redmine project identifier; required when bug creation is enabled."),
     "redmine_tracker_id": string("Redmine tracker ID or use a template."),
-    "redmine_priority_id": string("Redmine priority ID or use a template."),
+    "redmine_priority_id": string(
+        "Legacy Redmine priority ID; validated against the template Severity mapping when configured."
+    ),
+    "redmine_severity": string("Semantic Severity label resolved by redmine-mcp through the template mapping."),
+    "redmine_custom_priority": string(
+        "Value for the separate custom Priority field; leave blank until allowed values are confirmed."
+    ),
     "redmine_template_file": string("Validated Redmine project template path."),
     "redmine_custom_fields": {
         "type": "array",

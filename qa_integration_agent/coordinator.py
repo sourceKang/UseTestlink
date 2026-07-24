@@ -168,6 +168,8 @@ class QaCoordinator:
         redmine_project_id: str | None = None,
         redmine_tracker_id: str | None = None,
         redmine_priority_id: str | None = None,
+        redmine_severity: str | None = None,
+        redmine_custom_priority: Any = None,
         redmine_template_file: str | None = None,
         redmine_custom_fields: Any = None,
     ) -> dict[str, Any]:
@@ -260,6 +262,8 @@ class QaCoordinator:
                     ),
                     "tracker_id": redmine_tracker_id,
                     "priority_id": redmine_priority_id,
+                    "severity": redmine_severity,
+                    "custom_priority": redmine_custom_priority,
                     "template_file": redmine_template_file,
                     "custom_fields": render_custom_fields(
                         template_file=redmine_template_file,
@@ -351,6 +355,8 @@ class QaCoordinator:
                 "testlink_preview_digest": item["testlink_preview"]["preview_digest"],
                 "redmine_action": action,
                 "redmine_preview_digest": redmine.get("preview_digest"),
+                "redmine_issue_fields": redmine.get("issue_fields"),
+                "redmine_issue_payload": redmine.get("issue_payload"),
                 "dedupe_digest": item["dedupe_digest"],
             }
             if redmine.get("existing_issue") is not None:
@@ -398,6 +404,7 @@ class QaCoordinator:
             "redmine_preview_digest": redmine.get("preview_digest"),
             "planned_redmine_action": str(redmine.get("action") or "none"),
             "redmine_audit_id": None,
+            "redmine_field_verification": None,
             "testlink_write": "pending",
             "testlink_execution_id": None,
             "testlink_audit_id": None,
@@ -584,21 +591,49 @@ class QaCoordinator:
             try:
                 if issue is None and plan_item["redmine_request"] is not None:
                     redmine_preview = plan_item["redmine_preview"]
-                    redmine_result = require_result(
-                        self.ports.redmine_bug(
-                            **plan_item["redmine_request"],
-                            write=True,
-                            preview_digest=redmine_preview["preview_digest"],
-                        ),
-                        f"Redmine write {external_id}",
+                    redmine_response = self.ports.redmine_bug(
+                        **plan_item["redmine_request"],
+                        write=True,
+                        preview_digest=redmine_preview["preview_digest"],
                     )
+                    if not redmine_response.get("ok"):
+                        response_error = redmine_response.get("error")
+                        partial = response_error.get("partial_result") if isinstance(response_error, dict) else None
+                        partial_issue = partial.get("issue") if isinstance(partial, dict) else None
+                        if isinstance(partial_issue, dict) and partial_issue.get("id") and partial_issue.get("url"):
+                            issue = partial_issue
+                            item_audit["redmine_action"] = str(partial.get("action") or "created")
+                            item_audit["redmine_issue_id"] = issue["id"]
+                            item_audit["redmine_issue_url"] = issue["url"]
+                            item_audit["redmine_audit_id"] = partial.get("audit_id")
+                            item_audit["redmine_field_verification"] = partial.get("field_verification")
+                            item_audit["state"] = "redmine-verification-failed"
+                            persist()
+                    redmine_result = require_result(redmine_response, f"Redmine write {external_id}")
                     issue = redmine_result["issue"]
                     item_audit["redmine_action"] = redmine_result["action"]
                     item_audit["redmine_issue_id"] = issue["id"]
                     item_audit["redmine_issue_url"] = issue["url"]
                     item_audit["redmine_audit_id"] = redmine_result.get("audit_id")
+                    item_audit["redmine_field_verification"] = redmine_result.get("field_verification")
                     item_audit["state"] = "redmine-resolved"
                     persist()
+                    if redmine_result["action"] == "created" and not (
+                        isinstance(redmine_result.get("field_verification"), dict)
+                        and redmine_result["field_verification"].get("verified") is True
+                    ):
+                        raise CoordinatorError(
+                            f"Redmine field readback verification is missing for {external_id}.",
+                            code="REDMINE_VERIFICATION_REQUIRED",
+                        )
+                if issue is not None and item_audit.get("redmine_action") == "created" and not (
+                    isinstance(item_audit.get("redmine_field_verification"), dict)
+                    and item_audit["redmine_field_verification"].get("verified") is True
+                ):
+                    raise CoordinatorError(
+                        f"Redmine field readback verification is unresolved for {external_id}.",
+                        code="REDMINE_VERIFICATION_REQUIRED",
+                    )
                 final_request = {
                     **plan_item["testlink_request"],
                     "notes": self._final_notes(plan_item["testlink_request"]["notes"], issue),
@@ -692,6 +727,11 @@ class QaCoordinator:
                     issues.append(f"{external_id}: missing Redmine identity")
                 if item.get("testlink_write") not in {"success", "skipped-resume"}:
                     issues.append(f"{external_id}: missing successful TestLink execution")
+            if action == "created" and not (
+                isinstance(item.get("redmine_field_verification"), dict)
+                and item["redmine_field_verification"].get("verified") is True
+            ):
+                issues.append(f"{external_id}: Redmine field readback is not verified")
             if action == "reused" and item.get("testlink_write") in {"success", "skipped-resume"}:
                 if item.get("evidence_comment") != "added":
                     issues.append(f"{external_id}: reused issue missing evidence comment")

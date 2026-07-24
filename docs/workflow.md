@@ -88,8 +88,16 @@ Preview output must show:
 - For each Fail/Error result, whether Redmine will create or reuse an issue
 - Dedupe key or a stable short digest of it
 - Whether manager-only Redmine fields are blocked or enabled
+- Resolved Severity label and built-in `priority_id`
+- The distinct custom Priority field ID/value, including an explicit blank value
+- The exact safe Redmine issue payload covered by the preview digest
 
 Preview output must not contain API keys, devKeys, tokens, or passwords.
+
+After a new Redmine issue is created, the service must read back and independently compare
+the built-in Severity transport (`issue.priority.id`) and configured custom Priority field.
+Verification failure is a partial operation and must retain the created issue identity in
+audit so retry/recovery cannot create a duplicate.
 
 ## Report Schema Validation
 

@@ -1,9 +1,22 @@
 {
   "project_id": "redmine-project-identifier",
   "tracker_id": 1,
-  "priority_id": 5,
+  "severity": {
+    "transport_field": "priority_id",
+    "default": "L2",
+    "values": {
+      "L3": 4,
+      "L2": 5,
+      "L1": 6
+    }
+  },
+  "priority": {
+    "transport_field": "custom_fields",
+    "custom_field_id": 119,
+    "allowed_values": [],
+    "default": null
+  },
   "required_custom_fields": [
-    "Severity",
     "FW Ver",
     "Product Line",
     "Model",
@@ -16,11 +29,6 @@
     "Service Type"
   ],
   "custom_fields": [
-    {
-      "id": 1,
-      "name": "Severity",
-      "value": "Major"
-    },
     {
       "id": 2,
       "name": "FW Ver",

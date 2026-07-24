@@ -43,6 +43,8 @@ def _plan_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
         "redmine_project_id",
         "redmine_tracker_id",
         "redmine_priority_id",
+        "redmine_severity",
+        "redmine_custom_priority",
         "redmine_template_file",
         "redmine_custom_fields",
     }

@@ -30,7 +30,11 @@ BUG_PROPERTIES: dict[str, Any] = {
     "subject": string("Bug subject."),
     "description": string("Bug description including external evidence."),
     "tracker_id": string("Redmine tracker ID."),
-    "priority_id": string("Redmine priority ID."),
+    "priority_id": string("Legacy Redmine priority ID; validated against severity mapping when configured."),
+    "severity": string("Semantic Severity label resolved through the validated template mapping."),
+    "custom_priority": string(
+        "Value for the distinct custom Priority field; rejected until template allowed values are confirmed."
+    ),
     "custom_fields": {
         "type": "array",
         "items": {

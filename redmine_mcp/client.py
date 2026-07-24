@@ -196,6 +196,18 @@ class RedmineClient:
             reused=False,
         )
 
+    def get_issue(self, issue_id: str | int) -> dict[str, Any]:
+        if not str(issue_id).strip():
+            raise RedmineMcpError("Redmine issue ID is required.", code="INVALID_ARGUMENT")
+        response = self.request_json("GET", f"/issues/{issue_id}.json")
+        issue = response.get("issue")
+        if not isinstance(issue, dict) or "id" not in issue:
+            raise RedmineMcpError(
+                f"Unexpected Redmine issue response: {response}",
+                code="INVALID_RESPONSE",
+            )
+        return issue
+
     def upload_attachment(self, *, filename: str, content: bytes) -> str:
         response = self.request_binary_json(
             "POST",
