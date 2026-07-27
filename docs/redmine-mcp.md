@@ -81,6 +81,7 @@ args = ["-m", "redmine_mcp.server"]
 cwd = "D:\\UseTestlink"
 
 [mcp_servers.redmine-mcp.env]
+REDMINE_MCP_TOOLSET = "issue" # issue, metadata, integration, all
 REDMINE_MCP_ENV_FILE = "D:\\UseTestlink\\local\\redmine_mcp.env"
 ```
 

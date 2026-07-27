@@ -22,7 +22,7 @@ REDMINE_API_KEY=<personal Redmine API key>
 REDMINE_PROJECT_ID=<corporate project identifier>
 REDMINE_TEMPLATE=<local/redmine_templates/*.json>
 REDMINE_TRACKER_ID=<tracker id>
-REDMINE_PRIORITY_ID=<priority id>
+REDMINE_PRIORITY_ID=<legacy priority id; prefer template Severity mapping>
 REDMINE_ENV=corp|sandbox
 REDMINE_MCP_ENV_FILE=<absolute or repository-local env file path>
 ```
@@ -60,6 +60,58 @@ tracker_id
 priority_id
 custom_fields, when required by the corporate tracker
 ```
+
+## Corporate Severity And Priority Contract
+
+The corporate Redmine UI uses two distinct fields that must never share a mapping:
+
+- **Severity** is transported through Redmine's built-in `priority_id`.
+- **Priority** is transported through custom field ID `119`.
+
+The verified Severity mapping is:
+
+```text
+L3 -> priority_id 4
+L2 -> priority_id 5
+L1 -> priority_id 6
+```
+
+The project template must encode the distinction explicitly:
+
+```json
+{
+  "severity": {
+    "transport_field": "priority_id",
+    "default": "L2",
+    "values": {"L3": 4, "L2": 5, "L1": 6}
+  },
+  "priority": {
+    "transport_field": "custom_fields",
+    "custom_field_id": 119,
+    "allowed_values": [],
+    "default": null
+  }
+}
+```
+
+Callers should pass a semantic `severity` label. A legacy numeric `priority_id` is accepted
+only when it agrees with the configured mapping. The custom Priority field has its own
+`custom_priority` input and is never resolved through the Severity mapping. Until
+`allowed_values` for field 119 are confirmed, non-blank values fail closed.
+
+Preview must display both semantic and transport values, for example:
+
+```text
+Severity: L2 (Redmine priority_id=5)
+Priority: blank (custom field ID 119)
+```
+
+The preview also returns the exact safe `issue_payload`. Both the semantic field summary
+and resolved payload are covered by `preview_digest`; changing either requires a new preview.
+
+After creating an issue, `redmine-mcp` reads it back and verifies `issue.priority.id` and
+`custom_fields[id=119]` independently. A mismatch is a `VERIFICATION_FAILED` partial result:
+the created issue identity is retained in audit, and the issue must not be created again.
 
 The issue description must include TestLink evidence:
 

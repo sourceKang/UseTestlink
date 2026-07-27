@@ -14,7 +14,7 @@ class RedmineMcpServerTests(unittest.TestCase):
         response = handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
 
         self.assertEqual("redmine-mcp", response["result"]["serverInfo"]["name"])
-        self.assertEqual("0.2.0", response["result"]["serverInfo"]["version"])
+        self.assertEqual("0.3.0", response["result"]["serverInfo"]["version"])
 
     def test_expected_tools_are_exposed(self) -> None:
         tools = {tool["name"]: tool for tool in TOOLS}
@@ -36,6 +36,9 @@ class RedmineMcpServerTests(unittest.TestCase):
         attachments = tools["redmine_create_bug"]["inputSchema"]["properties"]["attachments"]
         self.assertEqual(5, attachments["maxItems"])
         self.assertEqual(["file"], attachments["items"]["required"])
+        bug_properties = tools["redmine_preview_bug"]["inputSchema"]["properties"]
+        self.assertIn("severity", bug_properties)
+        self.assertIn("custom_priority", bug_properties)
 
     def test_tool_schemas_never_accept_api_credentials(self) -> None:
         for tool in TOOLS:
@@ -56,13 +59,30 @@ class RedmineMcpServerTests(unittest.TestCase):
                     "jsonrpc": "2.0",
                     "id": 9,
                     "method": "tools/call",
-                    "params": {"name": "fake", "arguments": {}},
+                    "params": {"name": "redmine_health", "arguments": {}},
                 }
             )
 
         text = response["result"]["content"][0]["text"]
         self.assertNotIn("redmine-secret", text)
         self.assertIn("*****", text)
+
+    def test_issue_toolset_hides_metadata_tools_and_rejects_direct_calls(self) -> None:
+        with patch.dict("os.environ", {"REDMINE_MCP_TOOLSET": "issue"}):
+            listed = handle_request({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
+            names = {tool["name"] for tool in listed["result"]["tools"]}
+            blocked = handle_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {"name": "redmine_get_project_metadata", "arguments": {}},
+                }
+            )
+
+        self.assertIn("redmine_create_bug", names)
+        self.assertNotIn("redmine_get_project_metadata", names)
+        self.assertEqual(-32602, blocked["error"]["code"])
 
     def test_tools_call_returns_structured_mcp_content(self) -> None:
         with patch.object(

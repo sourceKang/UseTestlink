@@ -9,7 +9,7 @@ from .api import call_tool
 from .client import RedmineClient
 from .config import load_redmine_settings
 from .errors import normalize_error, redact_secrets
-from .tools import TOOLS
+from .tools import tools_for_toolset
 
 
 def _result_response(request_id: Any, result: Any) -> dict[str, Any]:
@@ -41,11 +41,13 @@ def handle_request(message: dict[str, Any]) -> dict[str, Any] | None:
     if method == "ping":
         return _result_response(request_id, {})
     if method == "tools/list":
-        return _result_response(request_id, {"tools": TOOLS})
+        return _result_response(request_id, {"tools": tools_for_toolset()})
     if method == "tools/call":
-        tool_name = params.get("name")
+        tool_name = str(params.get("name"))
+        if tool_name not in {tool["name"] for tool in tools_for_toolset()}:
+            return _error_response(request_id, -32602, f"Tool is not enabled in this toolset: {tool_name}")
         arguments = params.get("arguments") or {}
-        result = call_tool(str(tool_name), arguments if isinstance(arguments, dict) else {})
+        result = call_tool(tool_name, arguments if isinstance(arguments, dict) else {})
         return _result_response(
             request_id,
             {

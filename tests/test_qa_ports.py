@@ -62,6 +62,7 @@ class StdioMcpPortsTests(unittest.TestCase):
         self.assertNotIn("REDMINE_MCP_ENV_FILE", child_env)
         self.assertNotIn("QA_REDMINE_MCP_ENV_FILE", child_env)
         self.assertEqual([os.sys.executable, "-m", "testlink_mcp.server"], run.call_args.args[0])
+        self.assertEqual("integration", run.call_args.kwargs["env"]["TESTLINK_MCP_TOOLSET"])
 
     def test_redmine_child_receives_only_redmine_pointer(self) -> None:
         with TemporaryDirectory() as tmpdir:
@@ -88,6 +89,7 @@ class StdioMcpPortsTests(unittest.TestCase):
         self.assertNotIn("TESTLINK_MCP_ENV_FILE", child_env)
         self.assertNotIn("QA_TESTLINK_MCP_ENV_FILE", child_env)
         self.assertEqual([os.sys.executable, "-m", "redmine_mcp.server"], run.call_args.args[0])
+        self.assertEqual("integration", run.call_args.kwargs["env"]["REDMINE_MCP_TOOLSET"])
 
     def test_missing_pointer_fails_before_subprocess(self) -> None:
         ports = StdioMcpPorts(testlink_env_file="", redmine_env_file="")

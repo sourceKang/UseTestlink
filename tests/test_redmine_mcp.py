@@ -27,6 +27,8 @@ class FakeRedmineClient:
         self.fail_create = False
         self.fail_comment = False
         self.fail_upload = False
+        self.last_issue_payload: dict | None = None
+        self.issue_readback_override: dict | None = None
 
     def health(self):
         return {"user": {"id": 7, "login": "qa-user"}}
@@ -48,9 +50,9 @@ class FakeRedmineClient:
         return {
             "project": {"id": 1, "identifier": project_id, "name": "EMS"},
             "trackers": [{"id": 1, "name": "Bug"}],
-            "priorities": [{"id": 2, "name": "Normal"}],
+            "priorities": [{"id": 5, "name": "L2"}],
             "custom_fields": [
-                {"id": 10, "name": "Severity", "field_format": "list", "is_required": True}
+                {"id": 119, "name": "Priority", "field_format": "list", "is_required": False}
             ],
             "statuses": [{"id": 1, "name": "New", "is_closed": False}],
         }
@@ -60,6 +62,7 @@ class FakeRedmineClient:
 
     def create_issue(self, payload):
         self.created_payloads.append(payload)
+        self.last_issue_payload = dict(payload)
         if self.fail_create:
             raise RedmineMcpError("create failed with REDMINE_API_KEY=redmine-secret")
         issue = RedmineIssue(
@@ -70,6 +73,16 @@ class FakeRedmineClient:
         )
         self.open_issue = issue
         return issue
+
+    def get_issue(self, issue_id):
+        if self.issue_readback_override is not None:
+            return self.issue_readback_override
+        payload = self.last_issue_payload or {}
+        return {
+            "id": str(issue_id),
+            "priority": {"id": payload.get("priority_id")},
+            "custom_fields": payload.get("custom_fields") or [],
+        }
 
     def upload_attachment(self, *, filename, content):
         self.uploaded_files.append((filename, content))
@@ -625,7 +638,7 @@ class RedmineMcpApiTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual("EMS", result["result"]["project"]["name"])
-        self.assertEqual("Severity", result["result"]["custom_fields"][0]["name"])
+        self.assertEqual("Priority", result["result"]["custom_fields"][0]["name"])
         self.assertNotIn("possible_values", result["result"]["custom_fields"][0])
 
     def test_template_validation_and_rendered_template_bug_preview(self) -> None:
@@ -662,6 +675,336 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertTrue(validation["result"]["valid"])
         self.assertTrue(preview["ok"])
         self.assertEqual("create", preview["result"]["action"])
+
+    def test_company_field_contract_resolves_severity_and_previews_distinct_priority(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "redmine-template.json"
+            template_path.write_text(
+                json.dumps(
+                    {
+                        "project_id": "ems",
+                        "tracker_id": 1,
+                        "severity": {
+                            "transport_field": "priority_id",
+                            "default": "L2",
+                            "values": {"L3": 4, "L2": 5, "L1": 6},
+                        },
+                        "priority": {
+                            "transport_field": "custom_fields",
+                            "custom_field_id": 119,
+                            "allowed_values": [],
+                            "default": None,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_preview_bug(
+                    **bug_args(
+                        tracker_id=None,
+                        priority_id=None,
+                        template_file=str(template_path),
+                    )
+                )["result"]
+
+        self.assertEqual("L2", preview["issue_fields"]["severity"]["label"])
+        self.assertEqual("5", preview["issue_fields"]["severity"]["priority_id"])
+        self.assertEqual("L2 (Redmine priority_id=5)", preview["issue_fields"]["severity"]["display"])
+        self.assertEqual("blank (custom field ID 119)", preview["issue_fields"]["priority"]["display"])
+        self.assertEqual("119", preview["issue_fields"]["priority"]["custom_field_id"])
+        self.assertEqual("5", preview["issue_payload"]["priority_id"])
+        self.assertNotIn("custom_fields", preview["issue_payload"])
+
+    def test_company_field_contract_rejects_wrong_raw_severity_id(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "redmine-template.json"
+            template_path.write_text(
+                json.dumps(
+                    {
+                        "project_id": "ems",
+                        "tracker_id": 1,
+                        "severity": {
+                            "transport_field": "priority_id",
+                            "default": "L2",
+                            "values": {"L3": 4, "L2": 5, "L1": 6},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                result = api.redmine_preview_bug(
+                    **bug_args(priority_id="4", template_file=str(template_path))
+                )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("SEVERITY_PRIORITY_CONFLICT", result["error"]["error"]["code"])
+
+    def test_unconfirmed_custom_priority_value_is_rejected(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "redmine-template.json"
+            template_path.write_text(
+                json.dumps(
+                    {
+                        "project_id": "ems",
+                        "tracker_id": 1,
+                        "severity": {
+                            "transport_field": "priority_id",
+                            "default": "L2",
+                            "values": {"L3": 4, "L2": 5, "L1": 6},
+                        },
+                        "priority": {
+                            "transport_field": "custom_fields",
+                            "custom_field_id": 119,
+                            "allowed_values": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                result = api.redmine_preview_bug(
+                    **bug_args(
+                        priority_id=None,
+                        custom_priority="L2",
+                        template_file=str(template_path),
+                    )
+                )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("INVALID_CUSTOM_PRIORITY", result["error"]["error"]["code"])
+
+    def test_template_validation_rejects_unconfirmed_direct_priority_field_value(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "redmine-template.json"
+            template_path.write_text(
+                json.dumps(
+                    {
+                        "project_id": "ems",
+                        "tracker_id": 1,
+                        "severity": {
+                            "transport_field": "priority_id",
+                            "default": "L2",
+                            "values": {"L3": 4, "L2": 5, "L1": 6},
+                        },
+                        "priority": {
+                            "transport_field": "custom_fields",
+                            "custom_field_id": 119,
+                            "allowed_values": [],
+                        },
+                        "custom_fields": [{"id": 119, "name": "Priority", "value": "L2"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                result = api.redmine_validate_template(
+                    operation_id="operation-template-priority",
+                    environment="sandbox",
+                    template_file=str(template_path),
+                )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("INVALID_CUSTOM_PRIORITY", result["error"]["error"]["code"])
+
+    def test_template_validation_rejects_duplicate_custom_field_ids(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "redmine-template.json"
+            template_path.write_text(
+                json.dumps(
+                    {
+                        "project_id": "ems",
+                        "tracker_id": 1,
+                        "priority_id": 5,
+                        "custom_fields": [
+                            {"id": 119, "name": "Priority", "value": ""},
+                            {"id": 119, "name": "Priority Alias", "value": ""},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                result = api.redmine_validate_template(
+                    operation_id="operation-template-duplicate-id",
+                    environment="sandbox",
+                    template_file=str(template_path),
+                )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("TEMPLATE_INVALID", result["error"]["error"]["code"])
+
+    def test_semantic_fields_change_preview_digest_and_route_priority_to_field_119(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "redmine-template.json"
+            template_path.write_text(
+                json.dumps(
+                    {
+                        "project_id": "ems",
+                        "tracker_id": 1,
+                        "severity": {
+                            "transport_field": "priority_id",
+                            "default": "L2",
+                            "values": {"L3": 4, "L2": 5, "L1": 6},
+                        },
+                        "priority": {
+                            "transport_field": "custom_fields",
+                            "custom_field_id": 119,
+                            "allowed_values": ["P1", "P2"],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                first = api.redmine_preview_bug(
+                    **bug_args(
+                        priority_id=None,
+                        severity="L2",
+                        custom_priority="P1",
+                        template_file=str(template_path),
+                    )
+                )["result"]
+                second = api.redmine_preview_bug(
+                    **bug_args(
+                        priority_id=None,
+                        severity="L1",
+                        custom_priority="P1",
+                        template_file=str(template_path),
+                    )
+                )["result"]
+                third = api.redmine_preview_bug(
+                    **bug_args(
+                        priority_id=None,
+                        severity="L2",
+                        custom_priority="P2",
+                        template_file=str(template_path),
+                    )
+                )["result"]
+
+        self.assertEqual("5", first["issue_payload"]["priority_id"])
+        self.assertEqual([{"id": "119", "value": "P1"}], first["issue_payload"]["custom_fields"])
+        self.assertNotEqual(first["preview_digest"], second["preview_digest"])
+        self.assertNotEqual(first["preview_digest"], third["preview_digest"])
+
+    def test_created_company_issue_readback_verifies_severity_and_blank_priority(self) -> None:
+        client = FakeRedmineClient()
+        client.issue_readback_override = {
+            "id": "12345",
+            "priority": {"id": 5, "name": "L2"},
+            "custom_fields": [{"id": 119, "name": "Priority", "value": ""}],
+        }
+        with TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "redmine-template.json"
+            template_path.write_text(
+                json.dumps(
+                    {
+                        "project_id": "ems",
+                        "tracker_id": 1,
+                        "severity": {
+                            "transport_field": "priority_id",
+                            "default": "L2",
+                            "values": {"L3": 4, "L2": 5, "L1": 6},
+                        },
+                        "priority": {
+                            "transport_field": "custom_fields",
+                            "custom_field_id": 119,
+                            "allowed_values": [],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = bug_args(
+                tracker_id=None,
+                priority_id=None,
+                template_file=str(template_path),
+            )
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_create_bug(**args)["result"]
+                result = api.redmine_create_bug(
+                    **args,
+                    write=True,
+                    preview_digest=preview["preview_digest"],
+                    audit_dir=tmpdir,
+                )
+
+        self.assertTrue(result["ok"])
+        verification = result["result"]["field_verification"]
+        self.assertEqual("verified", verification["status"])
+        self.assertTrue(verification["severity"]["match"])
+        self.assertTrue(verification["priority"]["match"])
+        self.assertEqual("", verification["priority"]["actual_value"])
+
+    def test_created_issue_readback_mismatch_fails_and_audits_issue_identity(self) -> None:
+        client = FakeRedmineClient()
+        client.issue_readback_override = {
+            "id": "12345",
+            "priority": {"id": 4, "name": "L3"},
+            "custom_fields": [],
+        }
+        with TemporaryDirectory() as tmpdir:
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_create_bug(**bug_args())["result"]
+                result = api.redmine_create_bug(
+                    **bug_args(
+                        write=True,
+                        preview_digest=preview["preview_digest"],
+                        audit_dir=tmpdir,
+                    )
+                )
+            audit_files = list(Path(tmpdir).glob("*.json"))
+            audit = json.loads(audit_files[0].read_text(encoding="utf-8"))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("VERIFICATION_FAILED", result["error"]["error"]["code"])
+        self.assertEqual("12345", result["error"]["partial_result"]["issue"]["id"])
+        self.assertEqual(
+            "verification_failed",
+            result["error"]["partial_result"]["field_verification"]["status"],
+        )
+        self.assertEqual("12345", audit["issue"]["id"])
+        self.assertEqual("verification-failed", audit["status"])
+        self.assertEqual("verification_failed", audit["field_verification"]["status"])
+
+    def test_verification_failure_retry_reuses_issue_without_duplicate_create(self) -> None:
+        client = FakeRedmineClient()
+        client.issue_readback_override = {
+            "id": "12345",
+            "priority": {"id": 4, "name": "L3"},
+            "custom_fields": [],
+        }
+        with TemporaryDirectory() as tmpdir:
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                first_preview = api.redmine_create_bug(**bug_args())["result"]
+                failed = api.redmine_create_bug(
+                    **bug_args(
+                        write=True,
+                        preview_digest=first_preview["preview_digest"],
+                        audit_dir=tmpdir,
+                    )
+                )
+                retry_preview = api.redmine_create_bug(**bug_args())["result"]
+                retried = api.redmine_create_bug(
+                    **bug_args(
+                        write=True,
+                        preview_digest=retry_preview["preview_digest"],
+                        audit_dir=tmpdir,
+                    )
+                )
+
+        self.assertFalse(failed["ok"])
+        self.assertEqual("reuse", retry_preview["action"])
+        self.assertTrue(retried["ok"])
+        self.assertEqual("reused", retried["result"]["action"])
+        self.assertEqual(1, len(client.created_payloads))
 
     def test_template_accepts_object_required_field_descriptors(self) -> None:
         client = FakeRedmineClient()

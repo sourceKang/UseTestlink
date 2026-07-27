@@ -69,6 +69,10 @@ class StdioMcpPorts:
             if not key.startswith(("TESTLINK_", "REDMINE_", "QA_TESTLINK_", "QA_REDMINE_"))
         }
         child_env[pointer_name] = str(pointer_path.resolve())
+        if pointer_name == "TESTLINK_MCP_ENV_FILE":
+            child_env["TESTLINK_MCP_TOOLSET"] = "integration"
+        elif pointer_name == "REDMINE_MCP_ENV_FILE":
+            child_env["REDMINE_MCP_TOOLSET"] = "integration"
         child_env.setdefault("PYTHONUTF8", "1")
         return child_env
 

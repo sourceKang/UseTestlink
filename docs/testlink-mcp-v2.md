@@ -20,6 +20,10 @@ TESTLINK_AUTHOR_LOGIN=<login>
 
 ## Protected Execution
 
+Use `testlink_resolve_execution_target` when names need validation. It resolves the exact
+project, plan, platform, build, and optional testcase in one read-only MCP call. Missing or
+non-unique values fail; suggestions are diagnostic only and are never selected automatically.
+
 `testlink_report_execution` requires:
 
 - caller-generated `operation_id`
@@ -62,6 +66,10 @@ proven.
 
 ## Tool Boundary
 
+Set `TESTLINK_MCP_TOOLSET` to `discovery`, `execution`, `maintenance`, `integration`, or
+`all`. Codex should enable only the task-specific surface; `integration` is reserved for
+the coordinator child process.
+
 The v2 server excludes:
 
 - `testlink_upload_report`
@@ -83,6 +91,7 @@ args = ["-m", "testlink_mcp.server"]
 cwd = "D:\\UseTestlink"
 
 [mcp_servers.testlink-mcp.env]
+TESTLINK_MCP_TOOLSET = "execution" # discovery, execution, maintenance, integration, all
 TESTLINK_MCP_ENV_FILE = "D:\\UseTestlink\\local\\testlink_mcp.env"
 ```
 

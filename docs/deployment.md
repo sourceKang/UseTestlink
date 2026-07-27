@@ -39,14 +39,14 @@ Do not publish a release tag from an unreviewed or partially merged branch.
 Install once per Windows user, not once per consuming project:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.4.0"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.6.0"
 ```
 
 If an editable or obsolete installation already exists, replace it explicitly:
 
 ```powershell
 pipx uninstall testlink-agent
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.4.0"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.6.0"
 ```
 
 Run `pipx ensurepath` once if the pipx binary directory is not already on `PATH`, then
@@ -54,8 +54,10 @@ open a new terminal.
 
 ## Codex Registration
 
-Register the installed executables in the user-level Codex `config.toml`. Use
-`docs/codex-mcp-config.example.toml` as the template. Do not set a repository `cwd`.
+Register only the task-scoped executable in the user-level Codex `config.toml`. Use
+`docs/codex-mcp-config.example.toml` for the recommended QA-import default, or
+`docs/codex-mcp-config.direct.example.toml` for one direct server. Do not register all
+three by default and do not set a repository `cwd`.
 
 Store credentials under a user-controlled location such as:
 
@@ -93,7 +95,7 @@ verification never authorizes a TestLink execution or Redmine write.
 After a newer reviewed tag is published:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.4.0"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.6.0"
 ```
 
 Restart Codex and repeat source, entrypoint, and read-only smoke verification. Avoid
@@ -105,7 +107,7 @@ reproducible release identity.
 Reinstall the previously approved tag:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.3.1"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.5.0"
 ```
 
 Restart Codex and verify the installed version. Rollback changes only the local MCP

@@ -1,22 +1,11 @@
-# Copy these entries into the user-level Codex config.toml after installing a tagged
-# GitHub release with pipx. Ensure the pipx binary directory is on PATH.
-# Replace <username>. Credential values stay in local env files; do not place them here.
-
-[mcp_servers."testlink-mcp"]
-command = "testlink-mcp"
-
-[mcp_servers."testlink-mcp".env]
-TESTLINK_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\testlink_mcp.env"
-
-[mcp_servers."redmine-mcp"]
-command = "redmine-mcp"
-
-[mcp_servers."redmine-mcp".env]
-REDMINE_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\redmine_mcp.env"
+# Recommended default: register only the cross-system coordinator. This keeps the
+# persistent tool schema small while the coordinator starts isolated child MCPs.
+# Replace <username>; credentials stay in local env files.
 
 [mcp_servers."qa-integration-agent"]
 command = "qa-integration-agent-mcp"
 
 [mcp_servers."qa-integration-agent".env]
+QA_INTEGRATION_TOOLSET = "import" # import, legacy, shadow, all
 QA_TESTLINK_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\testlink_mcp.env"
 QA_REDMINE_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\redmine_mcp.env"

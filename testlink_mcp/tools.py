@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from testlink_agent_core.tools import TOOLS as LEGACY_TOOLS
@@ -161,9 +162,75 @@ UPDATE_TESTCASE_TOOL: dict[str, Any] = {
 }
 
 
+RESOLVE_EXECUTION_TARGET_TOOL: dict[str, Any] = {
+    "name": "testlink_resolve_execution_target",
+    "description": "Resolve one exact project/plan/platform/build/testcase target in a single read-only call.",
+    "inputSchema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "operation_id": string("Caller-generated discovery operation identity."),
+            "environment": {"type": "string", "enum": ["corp", "sandbox"]},
+            "project": string("Exact TestLink project name."),
+            "plan": string("Exact TestLink plan name."),
+            "platform": string("Exact TestLink platform name."),
+            "build": string("Exact TestLink build name."),
+            "testcase_external_id": string("Optional exact testcase external ID in the selected target."),
+            "env_file": string("Optional TestLink env file path."),
+            "timeout": {"type": "integer", "minimum": 1, "default": 60},
+        },
+        "required": ["operation_id", "environment", "project", "plan", "platform", "build"],
+    },
+    "annotations": {"readOnlyHint": True},
+}
+
+
 TOOLS = [
+    RESOLVE_EXECUTION_TARGET_TOOL,
     REPORT_EXECUTION_TOOL,
     CREATE_TESTCASE_TOOL,
     UPDATE_TESTCASE_TOOL,
     *(tool for tool in LEGACY_TOOLS if tool["name"] not in EXCLUDED_LEGACY_TOOLS),
 ]
+
+
+TOOLSET_ENV = "TESTLINK_MCP_TOOLSET"
+TOOLSETS: dict[str, set[str]] = {
+    "integration": {"testlink_report_execution"},
+    "execution": {
+        "testlink_resolve_execution_target",
+        "testlink_report_execution",
+        "testlink_list_projects",
+        "testlink_list_plans",
+        "testlink_list_platforms",
+        "testlink_list_builds",
+        "list_test_cases",
+        "get_test_case",
+        "get_last_result",
+    },
+    "maintenance": {
+        "testlink_resolve_execution_target",
+        "testlink_create_testcase",
+        "testlink_update_testcase",
+        "testlink_list_projects",
+        "testlink_list_suites",
+        "testlink_find_suites",
+        "list_test_cases",
+        "get_test_case",
+    },
+    "discovery": {
+        tool["name"]
+        for tool in TOOLS
+        if bool(tool.get("annotations", {}).get("readOnlyHint"))
+    },
+    "all": {tool["name"] for tool in TOOLS},
+}
+
+
+def tools_for_toolset(toolset: str | None = None) -> list[dict[str, Any]]:
+    selected = str(toolset or os.environ.get(TOOLSET_ENV, "all")).strip().casefold()
+    if selected not in TOOLSETS:
+        choices = ", ".join(sorted(TOOLSETS))
+        raise ValueError(f"{TOOLSET_ENV} must be one of: {choices}.")
+    allowed = TOOLSETS[selected]
+    return [tool for tool in TOOLS if tool["name"] in allowed]

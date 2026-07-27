@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from testlink_mcp.api import call_tool
 from testlink_mcp.server import handle_request
@@ -12,7 +14,7 @@ class TestLinkMcpServerTests(unittest.TestCase):
         response = handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
 
         self.assertEqual("testlink-mcp", response["result"]["serverInfo"]["name"])
-        self.assertEqual("2.0.0", response["result"]["serverInfo"]["version"])
+        self.assertEqual("2.1.0", response["result"]["serverInfo"]["version"])
 
     def test_tool_surface_excludes_redmine_and_upload_orchestration(self) -> None:
         tools = {tool["name"]: tool for tool in TOOLS}
@@ -50,6 +52,84 @@ class TestLinkMcpServerTests(unittest.TestCase):
             self.assertIn("operation_id", schema["required"])
             self.assertIn("environment", schema["required"])
             self.assertGreaterEqual(len(schema["allOf"]), 2)
+
+    def test_maintenance_toolset_exposes_only_relevant_surface(self) -> None:
+        with patch.dict("os.environ", {"TESTLINK_MCP_TOOLSET": "maintenance"}):
+            listed = handle_request({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+            names = {tool["name"] for tool in listed["result"]["tools"]}
+            blocked = handle_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "delete_execution", "arguments": {}},
+                }
+            )
+
+        self.assertIn("testlink_create_testcase", names)
+        self.assertIn("testlink_update_testcase", names)
+        self.assertNotIn("delete_execution", names)
+        self.assertEqual(-32602, blocked["error"]["code"])
+
+    def test_single_call_resolver_returns_exact_execution_target(self) -> None:
+        class FakeClient:
+            def get_projects(self):
+                return [{"id": "10", "name": "EMS"}]
+
+            def get_project_test_plans(self, project_id):
+                return [{"id": "20", "name": "Regression"}]
+
+            def get_platforms(self, testplan_id):
+                return [{"id": "30", "name": "Default Platform"}]
+
+            def get_builds(self, testplan_id):
+                return [{"id": "40", "name": "build-1"}]
+
+            def get_plan_cases_by_external_id(self, testplan_id, platform_id):
+                return {"EMS-1": {"id": "50", "name": "Login"}}
+
+        arguments = {
+            "operation_id": "resolve-1",
+            "environment": "sandbox",
+            "project": "EMS",
+            "plan": "Regression",
+            "platform": "Default Platform",
+            "build": "build-1",
+            "testcase_external_id": "EMS-1",
+        }
+        with (
+            patch("testlink_mcp.api.load_runtime", return_value=SimpleNamespace(environment="sandbox")),
+            patch("testlink_mcp.api.write_client", return_value=FakeClient()),
+        ):
+            result = call_tool("testlink_resolve_execution_target", arguments)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual("40", result["result"]["target"]["build"]["id"])
+        self.assertEqual("EMS-1", result["result"]["target"]["testcase"]["external_id"])
+
+    def test_single_call_resolver_rejects_non_unique_exact_name(self) -> None:
+        class DuplicateProjectClient:
+            def get_projects(self):
+                return [{"id": "10", "name": "EMS"}, {"id": "11", "name": "EMS"}]
+
+        with (
+            patch("testlink_mcp.api.load_runtime", return_value=SimpleNamespace(environment="sandbox")),
+            patch("testlink_mcp.api.write_client", return_value=DuplicateProjectClient()),
+        ):
+            result = call_tool(
+                "testlink_resolve_execution_target",
+                {
+                    "operation_id": "resolve-duplicate",
+                    "environment": "sandbox",
+                    "project": "EMS",
+                    "plan": "Regression",
+                    "platform": "Default Platform",
+                    "build": "build-1",
+                },
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertIn("found 2", result["error"]["error"]["message"])
 
 
 if __name__ == "__main__":

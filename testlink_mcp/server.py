@@ -9,7 +9,7 @@ from testlink_agent_core.errors import normalize_testlink_error, redact_secrets
 from . import __version__
 from .api import call_tool
 from .config import load_runtime, write_client
-from .tools import TOOLS
+from .tools import tools_for_toolset
 
 
 def _result_response(request_id: Any, result: Any) -> dict[str, Any]:
@@ -41,10 +41,13 @@ def handle_request(message: dict[str, Any]) -> dict[str, Any] | None:
     if method == "ping":
         return _result_response(request_id, {})
     if method == "tools/list":
-        return _result_response(request_id, {"tools": TOOLS})
+        return _result_response(request_id, {"tools": tools_for_toolset()})
     if method == "tools/call":
+        tool_name = str(params.get("name"))
+        if tool_name not in {tool["name"] for tool in tools_for_toolset()}:
+            return _error_response(request_id, -32602, f"Tool is not enabled in this toolset: {tool_name}")
         result = call_tool(
-            str(params.get("name")),
+            tool_name,
             params.get("arguments") if isinstance(params.get("arguments"), dict) else {},
         )
         return _result_response(
