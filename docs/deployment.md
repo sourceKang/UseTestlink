@@ -107,7 +107,7 @@ reproducible release identity.
 Reinstall the previously approved tag:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.5.0"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.4.0"
 ```
 
 Restart Codex and verify the installed version. Rollback changes only the local MCP
