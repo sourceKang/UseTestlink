@@ -59,13 +59,30 @@ class RedmineMcpServerTests(unittest.TestCase):
                     "jsonrpc": "2.0",
                     "id": 9,
                     "method": "tools/call",
-                    "params": {"name": "fake", "arguments": {}},
+                    "params": {"name": "redmine_health", "arguments": {}},
                 }
             )
 
         text = response["result"]["content"][0]["text"]
         self.assertNotIn("redmine-secret", text)
         self.assertIn("*****", text)
+
+    def test_issue_toolset_hides_metadata_tools_and_rejects_direct_calls(self) -> None:
+        with patch.dict("os.environ", {"REDMINE_MCP_TOOLSET": "issue"}):
+            listed = handle_request({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
+            names = {tool["name"] for tool in listed["result"]["tools"]}
+            blocked = handle_request(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {"name": "redmine_get_project_metadata", "arguments": {}},
+                }
+            )
+
+        self.assertIn("redmine_create_bug", names)
+        self.assertNotIn("redmine_get_project_metadata", names)
+        self.assertEqual(-32602, blocked["error"]["code"])
 
     def test_tools_call_returns_structured_mcp_content(self) -> None:
         with patch.object(

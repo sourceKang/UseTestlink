@@ -53,6 +53,73 @@ def _named_target(value: Any, label: str) -> dict[str, str]:
     return {"id": target_id, "name": name}
 
 
+def _resolve_exact_named(label: str, expected: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    matches = [row for row in rows if str(row.get("name") or "").strip().casefold() == expected.strip().casefold()]
+    if len(matches) != 1:
+        raise TestLinkError(f"Expected exactly one {label} named {expected!r}; found {len(matches)}.")
+    return matches[0]
+
+
+def testlink_resolve_execution_target(
+    *,
+    operation_id: str,
+    environment: str,
+    project: str,
+    plan: str,
+    platform: str,
+    build: str,
+    testcase_external_id: str | None = None,
+    env_file: str | None = None,
+    timeout: int = 60,
+) -> dict[str, Any]:
+    try:
+        runtime = load_runtime(env_file=env_file, timeout=timeout)
+        selected = validate_environment(environment, runtime.environment)
+        client = write_client(runtime)
+        project_row = _resolve_exact_named("project", project, client.get_projects())
+        plan_row = _resolve_exact_named(
+            "plan",
+            plan,
+            client.get_project_test_plans(str(project_row.get("id") or "")),
+        )
+        plan_id = str(plan_row.get("id") or "")
+        platform_row = _resolve_exact_named("platform", platform, client.get_platforms(plan_id))
+        build_row = _resolve_exact_named("build", build, client.get_builds(plan_id))
+        target: dict[str, Any] = {
+            "project": _named_target(project_row, "project"),
+            "plan": _named_target(plan_row, "plan"),
+            "platform": _named_target(platform_row, "platform"),
+            "build": _named_target(build_row, "build"),
+        }
+        if testcase_external_id:
+            cases = client.get_plan_cases_by_external_id(plan_id, str(platform_row.get("id") or ""))
+            matches = [
+                case
+                for external_id, case in cases.items()
+                if external_id.casefold() == testcase_external_id.casefold()
+            ]
+            if len(matches) != 1:
+                raise TestLinkError(
+                    f"Testcase is not uniquely present in the selected plan/platform: {testcase_external_id}"
+                )
+            target["testcase"] = {
+                "external_id": testcase_external_id,
+                "id": str(matches[0].get("id") or matches[0].get("testcase_id") or ""),
+                "name": str(matches[0].get("name") or matches[0].get("testcase_name") or ""),
+            }
+        return _success(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "mode": "read-only",
+                "target": target,
+            }
+        )
+    except Exception as exc:
+        return _failure(operation_id, "resolve-execution-target", exc)
+
+
 def _build_plan(operation_id: str, environment: str, preview: dict[str, Any]) -> dict[str, Any]:
     target = preview.get("target") if isinstance(preview.get("target"), dict) else {}
     payload = preview.get("payload") if isinstance(preview.get("payload"), dict) else None
@@ -841,6 +908,12 @@ def testlink_update_testcase(
 
 
 def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+    if name == "testlink_resolve_execution_target":
+        try:
+            return testlink_resolve_execution_target(**(arguments or {}))
+        except TypeError as exc:
+            operation_id = str((arguments or {}).get("operation_id") or "unknown-operation")
+            return _failure(operation_id, "arguments", exc)
     if name == "testlink_report_execution":
         try:
             return testlink_report_execution(**(arguments or {}))

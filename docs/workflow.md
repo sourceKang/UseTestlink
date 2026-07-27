@@ -10,9 +10,9 @@ The recommended integrated path is `qa-integration-agent` -> ownership-specific 
 3. Resolve exact TestLink project/plan/platform/build
 4. Ask redmine-mcp for dedupe-aware bug previews when explicitly enabled
 5. Ask testlink-mcp for execution previews
-6. Return one aggregate preview and preview_digest; perform zero writes
-7. Wait for explicit confirmation of the unchanged preview
-8. Execute Redmine create/reuse decision for Fail/Error
+6. Persist the exact plan/review artifact and return a compact aggregate preview plus preview_digest; perform zero writes
+7. Review the artifact and wait for explicit confirmation of its unchanged digest
+8. Execute by preview_artifact reference; verify the report hash before any external write
 9. Write TestLink execution with Redmine traceability
 10. If an issue was reused, append Redmine evidence after TestLink succeeds
 11. Save service audits and the item-level workflow audit
@@ -23,10 +23,11 @@ The platform and build are exact inputs. A missing requested platform is a targe
 
 ## Confirmation Contract
 
-- Preview is read-only and returns a canonical `preview_digest`.
-- Write requires `write: true`, the same `operation_id` and environment, unchanged inputs, and the matching digest.
+- `qa_preview_report_artifact` is read-only, persists the exact redacted plan/review under `local/`, and returns its path plus canonical `preview_digest`.
+- The conversational response is bounded: aggregate counts, warnings, target, a short testcase sample, artifact path, and digest. Exact per-item payloads stay in the review artifact.
+- `qa_execute_preview_artifact` requires `write: true`, the same `operation_id`, the returned `preview_artifact`, and the matching digest. The coordinator loads that plan instead of rebuilding it from repeated arguments.
 - Any changed report, target, template, custom field, or Redmine opt-in invalidates the digest and requires a new preview.
-- Resume uses the prior audit identity and completed item states; it is not a fresh bulk retry.
+- `qa_resume_preview_artifact` uses the same preview artifact plus prior audit identity and completed item states; it is not a fresh bulk retry.
 
 ## Protected Testcase Maintenance
 
@@ -90,7 +91,7 @@ Preview output must show:
 - Whether manager-only Redmine fields are blocked or enabled
 - Resolved Severity label and built-in `priority_id`
 - The distinct custom Priority field ID/value, including an explicit blank value
-- The exact safe Redmine issue payload covered by the preview digest
+- The review artifact path containing each exact safe Redmine issue payload covered by the preview digest
 
 Preview output must not contain API keys, devKeys, tokens, or passwords.
 

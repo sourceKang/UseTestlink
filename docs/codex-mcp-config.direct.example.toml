@@ -1,0 +1,19 @@
+# Direct-work alternative. Enable only the server needed for the current task and
+# restart Codex so the tools/list snapshot is refreshed. Do not combine this profile
+# with the default QA profile unless the task truly needs both surfaces.
+
+[mcp_servers."testlink-mcp"]
+command = "testlink-mcp"
+
+[mcp_servers."testlink-mcp".env]
+# Allowed values: discovery, execution, maintenance, integration, all
+TESTLINK_MCP_TOOLSET = "execution"
+TESTLINK_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\testlink_mcp.env"
+
+# For Redmine-only work, disable the TestLink entry above and enable this entry.
+# [mcp_servers."redmine-mcp"]
+# command = "redmine-mcp"
+#
+# [mcp_servers."redmine-mcp".env]
+# REDMINE_MCP_TOOLSET = "issue" # issue, metadata, integration, all
+# REDMINE_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\redmine_mcp.env"

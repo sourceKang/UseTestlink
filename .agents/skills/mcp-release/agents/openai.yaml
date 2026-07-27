@@ -1,0 +1,4 @@
+interface:
+  display_name: "MCP Release"
+  short_description: "Build, validate, publish, and install tagged MCP releases."
+  default_prompt: "Use $mcp-release to follow the protected project workflow."

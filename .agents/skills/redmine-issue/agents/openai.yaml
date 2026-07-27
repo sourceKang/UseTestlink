@@ -1,0 +1,4 @@
+interface:
+  display_name: "Redmine Issue"
+  short_description: "Preview and safely create or comment on a company Redmine issue."
+  default_prompt: "Use $redmine-issue to follow the protected project workflow."

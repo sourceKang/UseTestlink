@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import copy
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -386,6 +387,26 @@ class QaCoordinatorTests(unittest.TestCase):
         self.assertEqual("blank (custom field ID 119)", item["redmine_issue_fields"]["priority"]["display"])
         self.assertEqual("5", item["redmine_issue_payload"]["priority_id"])
 
+    def test_compact_preview_size_is_bounded_for_bulk_items(self) -> None:
+        ports = FakePorts()
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_report(tmpdir)
+            plan = coordinator.build_plan(**workflow_args(report))
+            first = coordinator.public_preview(plan, include_items=False)
+            template = plan["items"][0]
+            plan["items"] = []
+            for index in range(100):
+                item = copy.deepcopy(template)
+                external_id = f"EMS-{index + 1}"
+                item["result"]["external_id"] = external_id
+                plan["items"].append(item)
+            bulk = coordinator.public_preview(plan, include_items=False)
+
+        self.assertNotIn("items", bulk)
+        self.assertEqual(10, len(bulk["summary"]["sample_testcase_external_ids"]))
+        self.assertLess(len(json.dumps(bulk)), len(json.dumps(first)) * 2)
+
     def test_create_issue_then_testlink_write_produces_bidirectional_trace(self) -> None:
         ports = FakePorts(redmine_action="create")
         coordinator = QaCoordinator(ports)
@@ -552,12 +573,140 @@ class QaCoordinatorTests(unittest.TestCase):
         with TemporaryDirectory() as tmpdir:
             report = write_report(tmpdir)
             values = workflow_args(report)
-            preview = api.qa_preview_report_import(coordinator=coordinator, **values)
-            refused = api.qa_execute_report_import(
+            preview = api.qa_preview_report_artifact(
                 coordinator=coordinator,
+                artifact_dir=tmpdir,
+                **values,
+            )
+            refused = api.qa_execute_preview_artifact(
+                coordinator=coordinator,
+                operation_id=values["operation_id"],
+                preview_artifact=preview["result"]["preview_artifact"],
                 preview_digest=preview["result"]["preview_digest"],
                 write=False,
                 audit_dir=tmpdir,
+            )
+            executed = api.qa_execute_preview_artifact(
+                coordinator=coordinator,
+                operation_id=values["operation_id"],
+                preview_artifact=preview["result"]["preview_artifact"],
+                preview_digest=preview["result"]["preview_digest"],
+                write=True,
+                audit_dir=tmpdir,
+            )
+            audit_path = Path(tmpdir) / executed["result"]["audit_id"]
+            loaded = read_workflow_audit(audit_path)
+            compact_operation = api.qa_get_operation(
+                operation_id=values["operation_id"],
+                audit_file=str(audit_path),
+            )
+
+        self.assertFalse(refused["ok"])
+        self.assertTrue(executed["ok"])
+        self.assertNotIn("items", preview["result"])
+        self.assertEqual("review", preview["result"]["review_path"])
+        self.assertNotIn("audit", executed["result"])
+        self.assertNotIn("items", compact_operation["result"])
+        self.assertEqual(1, compact_operation["result"]["item_count"])
+        self.assertEqual("operation-workflow-1", loaded["operation_id"])
+
+    def test_artifact_execute_rejects_changed_report_before_external_writes(self) -> None:
+        ports = FakePorts()
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_report(tmpdir)
+            values = workflow_args(report)
+            preview = api.qa_preview_report_artifact(
+                coordinator=coordinator,
+                artifact_dir=tmpdir,
+                **values,
+            )
+            write_report(tmpdir, status="Pass")
+            executed = api.qa_execute_preview_artifact(
+                coordinator=coordinator,
+                operation_id=values["operation_id"],
+                preview_artifact=preview["result"]["preview_artifact"],
+                preview_digest=preview["result"]["preview_digest"],
+                write=True,
+                audit_dir=tmpdir,
+            )
+
+        self.assertFalse(executed["ok"])
+        self.assertEqual("PREVIEW_MISMATCH", executed["error"]["error"]["code"])
+        self.assertEqual(0, ports.redmine_write_count)
+        self.assertEqual(0, ports.testlink_write_count)
+
+    def test_artifact_execute_rejects_tampered_plan_before_external_writes(self) -> None:
+        ports = FakePorts()
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_report(tmpdir)
+            values = workflow_args(report)
+            preview = api.qa_preview_report_artifact(
+                coordinator=coordinator,
+                artifact_dir=tmpdir,
+                **values,
+            )
+            artifact_path = Path(preview["result"]["preview_artifact"])
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+            artifact["plan"]["target"]["build"] = "tampered-build"
+            artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+            executed = api.qa_execute_preview_artifact(
+                coordinator=coordinator,
+                operation_id=values["operation_id"],
+                preview_artifact=str(artifact_path),
+                preview_digest=preview["result"]["preview_digest"],
+                write=True,
+                audit_dir=tmpdir,
+            )
+
+        self.assertFalse(executed["ok"])
+        self.assertEqual("PREVIEW_MISMATCH", executed["error"]["error"]["code"])
+        self.assertEqual(0, ports.redmine_write_count)
+        self.assertEqual(0, ports.testlink_write_count)
+
+    def test_public_resume_uses_same_artifact_and_audit_identity(self) -> None:
+        ports = FakePorts(redmine_action="create")
+        ports.testlink_write_failures = 1
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_report(tmpdir)
+            values = workflow_args(report)
+            preview = api.qa_preview_report_artifact(
+                coordinator=coordinator,
+                artifact_dir=tmpdir,
+                **values,
+            )
+            first = api.qa_execute_preview_artifact(
+                coordinator=coordinator,
+                operation_id=values["operation_id"],
+                preview_artifact=preview["result"]["preview_artifact"],
+                preview_digest=preview["result"]["preview_digest"],
+                write=True,
+                audit_dir=tmpdir,
+            )
+            resumed = api.qa_resume_preview_artifact(
+                coordinator=coordinator,
+                operation_id=values["operation_id"],
+                preview_artifact=preview["result"]["preview_artifact"],
+                audit_file=first["result"]["audit_file"],
+                write=True,
+            )
+
+        self.assertEqual("partial-failure", first["result"]["status"])
+        self.assertEqual("completed", resumed["result"]["status"])
+        self.assertEqual(1, ports.redmine_write_count)
+        self.assertEqual(2, ports.testlink_write_count)
+
+    def test_legacy_execute_contract_remains_available_in_all_toolset(self) -> None:
+        ports = FakePorts()
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_report(tmpdir)
+            values = workflow_args(report)
+            preview = api.qa_preview_report_import(
+                coordinator=coordinator,
+                artifact_dir=tmpdir,
                 **values,
             )
             executed = api.qa_execute_report_import(
@@ -567,12 +716,10 @@ class QaCoordinatorTests(unittest.TestCase):
                 audit_dir=tmpdir,
                 **values,
             )
-            audit_path = Path(tmpdir) / executed["result"]["audit_id"]
-            loaded = read_workflow_audit(audit_path)
 
-        self.assertFalse(refused["ok"])
         self.assertTrue(executed["ok"])
-        self.assertEqual("operation-workflow-1", loaded["operation_id"])
+        self.assertIn("items", preview["result"])
+        self.assertIn("audit", executed["result"])
 
 
 if __name__ == "__main__":

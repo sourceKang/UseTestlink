@@ -1,0 +1,4 @@
+interface:
+  display_name: "TestLink Execution"
+  short_description: "Discover targets and safely append a TestLink execution."
+  default_prompt: "Use $testlink-execution to follow the protected project workflow."

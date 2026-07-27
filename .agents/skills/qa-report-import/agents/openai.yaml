@@ -1,0 +1,4 @@
+interface:
+  display_name: "QA Report Import"
+  short_description: "Preview and safely execute a TestLink/Redmine report import."
+  default_prompt: "Use $qa-report-import to follow the protected project workflow."

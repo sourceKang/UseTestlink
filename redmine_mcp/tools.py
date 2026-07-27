@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 
@@ -173,3 +174,31 @@ TOOLS: list[dict[str, Any]] = [
         "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
     },
 ]
+
+
+TOOLSET_ENV = "REDMINE_MCP_TOOLSET"
+TOOLSETS: dict[str, set[str]] = {
+    "integration": {"redmine_create_bug", "redmine_add_comment"},
+    "issue": {
+        "redmine_search_issues",
+        "redmine_preview_bug",
+        "redmine_create_bug",
+        "redmine_preview_comment",
+        "redmine_add_comment",
+    },
+    "metadata": {
+        "redmine_health",
+        "redmine_get_project_metadata",
+        "redmine_validate_template",
+    },
+    "all": {tool["name"] for tool in TOOLS},
+}
+
+
+def tools_for_toolset(toolset: str | None = None) -> list[dict[str, Any]]:
+    selected = str(toolset or os.environ.get(TOOLSET_ENV, "all")).strip().casefold()
+    if selected not in TOOLSETS:
+        choices = ", ".join(sorted(TOOLSETS))
+        raise ValueError(f"{TOOLSET_ENV} must be one of: {choices}.")
+    allowed = TOOLSETS[selected]
+    return [tool for tool in TOOLS if tool["name"] in allowed]

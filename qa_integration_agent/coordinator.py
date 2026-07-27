@@ -328,6 +328,7 @@ class QaCoordinator:
             "correlation_id": correlation_id or operation_id,
             "environment": environment,
             "input_digest": file_sha256(report_path),
+            "report": str(report_path),
             "report_schema": report_schema,
             "target": {"project": project, "plan": plan, "platform": platform, "build": build},
             "redmine_create_bugs": bool(redmine_create_bugs),
@@ -339,7 +340,7 @@ class QaCoordinator:
         return plan_payload
 
     @staticmethod
-    def public_preview(plan: dict[str, Any]) -> dict[str, Any]:
+    def public_preview(plan: dict[str, Any], *, include_items: bool = True) -> dict[str, Any]:
         public_items = []
         blocked = False
         for item in plan["items"]:
@@ -362,7 +363,7 @@ class QaCoordinator:
             if redmine.get("existing_issue") is not None:
                 public_item["existing_issue"] = redmine["existing_issue"]
             public_items.append(public_item)
-        return {
+        preview = {
             "schema_version": CONTRACT_SCHEMA_VERSION,
             "operation_id": plan["operation_id"],
             "correlation_id": plan["correlation_id"],
@@ -376,9 +377,26 @@ class QaCoordinator:
             "parsed_count": len(plan["items"]) + len(plan["ignored"]),
             "write_count": len(plan["items"]),
             "ignored_count": len(plan["ignored"]),
-            "items": public_items,
-            "warnings": plan["warnings"],
+            "warnings": plan["warnings"] if include_items else plan["warnings"][:20],
+            "warning_count": len(plan["warnings"]),
+            "warnings_truncated": not include_items and len(plan["warnings"]) > 20,
+            "summary": {
+                "status_counts": {
+                    status: sum(1 for item in public_items if item["status"] == status)
+                    for status in sorted({item["status"] for item in public_items})
+                },
+                "redmine_action_counts": {
+                    action: sum(1 for item in public_items if item["redmine_action"] == action)
+                    for action in sorted({item["redmine_action"] for item in public_items})
+                },
+                "sample_testcase_external_ids": [
+                    item["testcase_external_id"] for item in public_items[:10]
+                ],
+            },
         }
+        if include_items:
+            preview["items"] = public_items
+        return preview
 
     @staticmethod
     def _workflow_from_plan(plan: dict[str, Any]) -> dict[str, Any]:

@@ -59,7 +59,7 @@ For MCPs shared by other Codex projects, install a tagged GitHub release into an
 isolated user environment. Do not point those projects at `D:\UseTestlink`:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.5.0"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.6.0"
 ```
 
 This installs the following console entrypoints:
@@ -117,30 +117,23 @@ an approved manager-owned machine.
 
 ## Codex MCP Registration
 
-For cross-project use, copy the entries from `docs/codex-mcp-config.example.toml` into
-the user-level Codex `config.toml`. The executable names are resolved from the pipx
-binary directory and no repository `cwd` is used:
+For cross-project use, copy `docs/codex-mcp-config.example.toml` into the user-level
+Codex `config.toml`. The recommended default registers only the coordinator and its
+`import` toolset, so unrelated TestLink and Redmine schemas do not consume every task's
+context. The executable is resolved from pipx and no repository `cwd` is used:
 
 ```toml
-[mcp_servers."testlink-mcp"]
-command = "testlink-mcp"
-
-[mcp_servers."testlink-mcp".env]
-TESTLINK_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\testlink_mcp.env"
-
-[mcp_servers."redmine-mcp"]
-command = "redmine-mcp"
-
-[mcp_servers."redmine-mcp".env]
-REDMINE_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\redmine_mcp.env"
-
 [mcp_servers."qa-integration-agent"]
 command = "qa-integration-agent-mcp"
 
 [mcp_servers."qa-integration-agent".env]
+QA_INTEGRATION_TOOLSET = "import" # import, legacy, shadow, all
 QA_TESTLINK_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\testlink_mcp.env"
 QA_REDMINE_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\redmine_mcp.env"
 ```
+
+For TestLink-only or Redmine-only work, switch to the one-server task profile in
+`docs/codex-mcp-config.direct.example.toml`; do not keep all three servers registered.
 
 The coordinator receives only the credential-file locations needed to start isolated
 ownership-specific child MCP processes. It scrubs inherited TestLink and Redmine secret
@@ -149,21 +142,21 @@ variables and never accepts API keys through tool arguments.
 Keep the credential files outside the Git checkout and replace `<username>` with the
 local Windows account name. Restart Codex after changing MCP registration so the
 available tool snapshot is refreshed. See `docs/deployment.md` for source and version
-verification.
+verification, and `docs/token-budget.md` for measured schema/instruction budgets.
 
 ## Recommended Integrated Workflow
 
-1. Use read-only `testlink-mcp` discovery tools to confirm the exact project, plan,
-   platform, build, and test cases.
-2. Call `qa_preview_report_import` with a stable `operation_id`, explicit environment,
+1. Confirm the exact project, plan, platform, and build before preview; use the
+   TestLink `discovery` profile only when the values are not already authoritative.
+2. Call `qa_preview_report_artifact` with a stable `operation_id`, explicit environment,
    exact target, and report path. Preview performs zero external writes.
-3. Review the resolved target, parsed counts, ignored rows, missing cases, Redmine
-   create/reuse decisions, warnings, and returned `preview_digest`.
-4. Only after explicit confirmation, call `qa_execute_report_import` with unchanged
-   inputs, `write: true`, and the matching digest.
+3. Review the compact counts and the exact persisted `preview_artifact`, including
+   Redmine create/reuse decisions, warnings, and returned `preview_digest`.
+4. Only after explicit confirmation, call `qa_execute_preview_artifact` with the artifact
+   path, `write: true`, and the matching digest. The original report hash is rechecked.
 5. Validate TestLink/Redmine traceability and the item-level workflow audit.
-6. For partial failure, call `qa_resume_report_import` with the same operation identity
-   and matching audit; do not rerun the entire import as a new operation.
+6. For partial failure, call `qa_resume_preview_artifact` with the same operation identity,
+   preview artifact, and matching audit; do not rerun the entire import as a new operation.
 
 Changes to the report, target, environment, template, custom fields, or Redmine opt-in
 invalidate the old digest and require a new preview.
@@ -174,7 +167,9 @@ invalidate the old digest and require a new preview.
 
 Use for TestLink-only discovery, testcase maintenance, and protected execution. The
 recommended execution tool is `testlink_report_execution`, which previews or appends one
-execution using an exact target and confirmed digest. Read-only discovery includes
+execution using an exact target and confirmed digest. Prefer
+`testlink_resolve_execution_target` to resolve project, plan, platform, build, and optional
+testcase in one exact read-only call. Other discovery tools include
 `testlink_list_projects`, `testlink_list_plans`, `testlink_list_platforms`,
 `testlink_list_builds`, `testlink_list_suites`, and `testlink_find_suites`.
 
@@ -208,7 +203,10 @@ are bound into the preview. The server rechecks dedupe immediately before creati
 
 Use for cross-system automation-report workflows:
 
+- `qa_preview_report_artifact`
 - `qa_preview_report_import`
+- `qa_execute_preview_artifact`
+- `qa_resume_preview_artifact`
 - `qa_execute_report_import`
 - `qa_resume_report_import`
 - `qa_get_operation`
@@ -216,8 +214,14 @@ Use for cross-system automation-report workflows:
 - `qa_compare_shadow_previews`
 
 The coordinator uses versioned contracts, aggregates previews, preserves item-level
-state for resume, and verifies bidirectional traceability. It does not own TestLink or
-Redmine credentials.
+state for resume, and verifies bidirectional traceability. Preview persists the full
+redacted plan/review artifact while returning a bounded summary; execute/resume refer to
+that artifact instead of repeating the full plan. It does not own TestLink or Redmine
+credentials.
+
+The `*_report_import` preview/execute/resume names remain available only in the
+`legacy`/`all` toolsets for v1 compatibility; the default `import` profile advertises
+artifact tools.
 
 ## File Separation
 

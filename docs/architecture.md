@@ -19,7 +19,7 @@ flowchart LR
 |---|---|---|
 | `testlink-mcp` | TestLink discovery、精確 target resolution、testcase/execution preview/write、readback verification、operation idempotency | TestLink only |
 | `redmine-mcp` | Redmine metadata/template、dedupe、issue/comment preview/write、image upload、operation idempotency | Redmine only |
-| `qa-integration-agent` | report parsing、跨系統規劃、aggregate preview、traceability、workflow audit/resume | 不持有上游 API key |
+| `qa-integration-agent` | report parsing、跨系統規劃、persisted preview artifact、compact summary、traceability、workflow audit/resume | 不持有上游 API key |
 | `qa-mcp-contracts` | 版本化 schema、canonical payload、digest 與安全驗證 | 無 |
 
 這是「分開 MCP、集中協調」，不是拆成互不相干的兩個 Agent。不同維護團隊可以獨立發版與處理認證；跨系統規則仍由 coordinator 保持一致。舊 `testlink-agent-mcp` 是相容層，僅用於 shadow 與回退，不新增正式整合能力。
@@ -40,6 +40,7 @@ flowchart LR
 - `qa-integration-agent-mcp` 是跨系統唯一推薦入口。
 - `testlink-agent-mcp` 與舊 CLI 保留一個主要版本作為相容／rollback 路徑。
 - contracts 以 major version 演進；v1 欄位語意凍結，破壞性變更建立 v2 而非靜默修改。
+- Artifact execute/resume 使用新增工具名稱；既有 v1 execute/resume 留在 `legacy`/`all` toolset，避免以 token 優化為由破壞已發布契約。
 
 `testlink-agent` 提供 `testlink-mcp` server，讓 agent 能安全操作 TestLink，並受控地整合公司 Redmine/eITS 流程。
 
