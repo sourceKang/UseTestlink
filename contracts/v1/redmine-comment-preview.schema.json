@@ -11,8 +11,11 @@
     "mode",
     "preview_digest",
     "planned_write",
+    "action",
     "issue_id",
     "notes_digest",
+    "text_format",
+    "format_validation",
     "warnings"
   ],
   "properties": {
@@ -22,11 +25,51 @@
     "mode": {"const": "preview"},
     "preview_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "planned_write": {"type": "boolean"},
+    "action": {"enum": ["add-comment", "blocked"]},
     "issue_id": {"type": "string", "minLength": 1},
     "notes_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "text_format": {"$ref": "#/$defs/textFormat"},
+    "format_validation": {"$ref": "#/$defs/formatValidation"},
     "warnings": {
       "type": "array",
       "items": {"type": "string", "maxLength": 2000}
+    }
+  },
+  "$defs": {
+    "textFormat": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["engine", "validation", "policy_version"],
+      "properties": {
+        "engine": {"enum": ["markdown", "textile"]},
+        "validation": {"enum": ["strict", "warn", "off"]},
+        "policy_version": {"const": 1}
+      }
+    },
+    "formatFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line", "code", "message", "excerpt"],
+      "properties": {
+        "line": {"type": "integer", "minimum": 0},
+        "code": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1},
+        "excerpt": {"type": "string", "maxLength": 160}
+      }
+    },
+    "formatValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["valid", "field", "engine", "validation", "policy_version", "errors", "warnings"],
+      "properties": {
+        "valid": {"type": "boolean"},
+        "field": {"const": "notes"},
+        "engine": {"type": ["string", "null"]},
+        "validation": {"enum": ["strict", "warn", "off", "unconfigured"]},
+        "policy_version": {"const": 1},
+        "errors": {"type": "array", "items": {"$ref": "#/$defs/formatFinding"}},
+        "warnings": {"type": "array", "items": {"$ref": "#/$defs/formatFinding"}}
+      }
     }
   }
 }

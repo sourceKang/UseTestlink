@@ -12,6 +12,7 @@ REDMINE_ENV=corp|sandbox
 REDMINE_URL=<Redmine base URL>
 REDMINE_API_KEY=<personal API key>
 REDMINE_PROJECT_ID=<default project identifier>
+REDMINE_TEMPLATE=<absolute validated project template path>
 ```
 
 `REDMINE_ENV` is mandatory and fails closed when omitted. During migration, `TESTLINK_AGENT_ENV_FILE` remains a compatibility fallback, but new installations should use a separate `REDMINE_MCP_ENV_FILE` and keep TestLink credentials out of that file.
@@ -30,6 +31,17 @@ Do not place `REDMINE_ALLOW_MANAGER_FIELDS=true` in a shared env file. Manager-o
 - `redmine_add_comment`
 
 Bug creation and comments default to preview. A write call must include `write: true` and the exact `preview_digest` returned for the unchanged planned payload. The server recomputes dedupe state immediately before creation; if another actor created a matching issue after preview, the old digest is rejected and a new preview is required.
+
+### Description and comment format validation
+
+The selected `REDMINE_TEMPLATE` declares a `text_format` contract. Corporate writes require
+`validation: strict`. Bug descriptions and evidence comments are checked before preview;
+high-confidence Textile syntax in a Markdown profile blocks the write, while code fences,
+indented code, and `<pre>` regions are ignored. The MCP reports structured line findings,
+binds the contract and findings into `preview_digest`, and never performs silent conversion.
+
+Comments use the same default template resolved from `REDMINE_TEMPLATE`; callers may select
+an explicit validated `template_file`, but cannot override the formatter directly.
 
 ### Image attachments on bug creation
 
@@ -74,15 +86,16 @@ warning. Adding images to an existing issue is outside this create-bug capabilit
 
 ## Local Registration
 
+Direct Redmine registration is intended only for an explicit Redmine-only task profile;
+the normal integrated profile registers `qa-integration-agent` alone.
+
 ```toml
 [mcp_servers.redmine-mcp]
-command = "python"
-args = ["-m", "redmine_mcp.server"]
-cwd = "D:\\UseTestlink"
+command = "redmine-mcp"
 
 [mcp_servers.redmine-mcp.env]
 REDMINE_MCP_TOOLSET = "issue" # issue, metadata, integration, all
-REDMINE_MCP_ENV_FILE = "D:\\UseTestlink\\local\\redmine_mcp.env"
+REDMINE_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\redmine_mcp.env"
 ```
 
 Restart the Codex task after changing MCP registration so the `tools/list` snapshot is refreshed.

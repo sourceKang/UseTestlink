@@ -92,6 +92,7 @@ BUG_REQUIRED = [
 COMMENT_PROPERTIES: dict[str, Any] = {
     "issue_id": string("Existing Redmine issue ID."),
     "notes": string("Evidence comment; does not alter status, assignee, or fixed version."),
+    "template_file": string("Optional validated Redmine project template JSON."),
     "audit_dir": string("Local directory for redacted operation audit JSON."),
 }
 

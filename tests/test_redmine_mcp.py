@@ -101,12 +101,13 @@ class FakeRedmineClient:
         return list(self.journals)
 
 
-def settings(environment: str = "sandbox") -> RedmineSettings:
+def settings(environment: str = "sandbox", *, template_file: str = "") -> RedmineSettings:
     return RedmineSettings(
         url="https://redmine.example.com",
         api_key="redmine-secret",
         environment=environment,
         project_id="ems",
+        template_file=template_file,
     )
 
 
@@ -130,6 +131,32 @@ def write_test_png(directory: str, *, name: str = "screenshot.png", marker: byte
     return path
 
 
+def write_format_template(
+    directory: str,
+    *,
+    engine: str = "markdown",
+    validation: str = "strict",
+) -> Path:
+    path = Path(directory) / "redmine-template.json"
+    path.write_text(
+        json.dumps(
+            {
+                "project_id": "ems",
+                "tracker_id": 1,
+                "priority_id": 2,
+                "text_format": {
+                    "engine": engine,
+                    "validation": validation,
+                    "policy_version": 1,
+                },
+                "custom_fields": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 class RedmineMcpApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.saved_env = {
@@ -140,6 +167,7 @@ class RedmineMcpApiTests(unittest.TestCase):
                 "REDMINE_ENV",
                 "REDMINE_MCP_ENV_FILE",
                 "REDMINE_PROJECT_ID",
+                "REDMINE_TEMPLATE",
                 "REDMINE_URL",
                 "TESTLINK_AGENT_ENV_FILE",
             )
@@ -167,6 +195,85 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertEqual(64, len(preview["preview_digest"]))
         self.assertEqual([], client.created_payloads)
 
+    def test_corporate_markdown_preview_uses_template_contract(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template = write_format_template(tmpdir)
+            with patch(
+                "redmine_mcp.api._runtime",
+                return_value=(settings("corp", template_file=str(template)), client),
+            ):
+                result = api.redmine_preview_bug(
+                    **bug_args(environment="corp", description="# Environment\n\nValid Markdown text.")
+                )
+
+        self.assertTrue(result["ok"])
+        preview = result["result"]
+        self.assertEqual("create", preview["action"])
+        self.assertTrue(preview["planned_write"])
+        self.assertEqual("markdown", preview["text_format"]["engine"])
+        self.assertTrue(preview["format_validation"]["valid"])
+        self.assertEqual("AMBIGUOUS_HASH_LINE_IN_MARKDOWN", preview["format_validation"]["warnings"][0]["code"])
+
+    def test_corporate_textile_heading_is_blocked_in_markdown_description(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template = write_format_template(tmpdir)
+            with patch(
+                "redmine_mcp.api._runtime",
+                return_value=(settings("corp", template_file=str(template)), client),
+            ):
+                result = api.redmine_preview_bug(
+                    **bug_args(environment="corp", description="h3. Environment\nEvidence")
+                )
+
+        self.assertTrue(result["ok"])
+        preview = result["result"]
+        self.assertEqual("blocked", preview["action"])
+        self.assertFalse(preview["planned_write"])
+        self.assertEqual("TEXTILE_HEADING_IN_MARKDOWN", preview["format_validation"]["errors"][0]["code"])
+        self.assertEqual([], client.created_payloads)
+
+    def test_markdown_code_fence_does_not_trigger_textile_heading_error(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template = write_format_template(tmpdir)
+            with patch(
+                "redmine_mcp.api._runtime",
+                return_value=(settings("corp", template_file=str(template)), client),
+            ):
+                result = api.redmine_preview_bug(
+                    **bug_args(environment="corp", description="```text\nh3. Environment\n|_. Header |\n```")
+                )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual("create", result["result"]["action"])
+        self.assertTrue(result["result"]["format_validation"]["valid"])
+
+    def test_text_format_change_invalidates_confirmed_bug_preview(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template = write_format_template(tmpdir)
+            runtime = settings("corp", template_file=str(template))
+            with patch("redmine_mcp.api._runtime", return_value=(runtime, client)):
+                preview = api.redmine_preview_bug(
+                    **bug_args(environment="corp", description="Valid text")
+                )["result"]
+                write_format_template(tmpdir, engine="textile")
+                result = api.redmine_create_bug(
+                    **bug_args(
+                        environment="corp",
+                        description="Valid text",
+                        write=True,
+                        preview_digest=preview["preview_digest"],
+                        audit_dir=tmpdir,
+                    )
+                )
+
+        self.assertFalse(result["ok"])
+        self.assertIn("preview_digest", result["error"]["error"]["message"])
+        self.assertEqual([], client.created_payloads)
+
     def test_create_bug_requires_exact_preview_digest_and_writes_audit(self) -> None:
         client = FakeRedmineClient()
         with TemporaryDirectory() as tmpdir:
@@ -187,7 +294,13 @@ class RedmineMcpApiTests(unittest.TestCase):
             self.assertTrue(audit_path.exists())
             audit_text = audit_path.read_text(encoding="utf-8")
             self.assertNotIn("redmine-secret", audit_text)
-            self.assertEqual("success", json.loads(audit_text)["status"])
+            audit = json.loads(audit_text)
+            self.assertEqual("success", audit["status"])
+            self.assertEqual(
+                ["TEXT_FORMAT_NOT_CONFIGURED"],
+                audit["format_validation"]["warning_codes"],
+            )
+            self.assertNotIn("excerpt", audit_text)
 
     def test_image_attachment_is_previewed_hashed_uploaded_and_audited_without_token(self) -> None:
         client = FakeRedmineClient()
@@ -315,14 +428,14 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertEqual([], client.uploaded_files)
         self.assertEqual([], client.created_payloads)
 
-    def test_changed_write_payload_is_rejected_and_audited(self) -> None:
+    def test_changed_description_invalidates_preview_and_is_audited(self) -> None:
         client = FakeRedmineClient()
         with TemporaryDirectory() as tmpdir:
             with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
                 preview = api.redmine_create_bug(**bug_args())["result"]
                 result = api.redmine_create_bug(
                     **bug_args(
-                        subject="Changed after preview",
+                        description="Changed after preview\nDedupe Key: testlink-agent:abc123",
                         write=True,
                         preview_digest=preview["preview_digest"],
                         audit_dir=tmpdir,
@@ -481,6 +594,54 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertEqual("added", result["result"]["status"])
         self.assertEqual([("88", args["notes"])], client.comments)
 
+    def test_corporate_comment_blocks_textile_heading(self) -> None:
+        client = FakeRedmineClient()
+        args = {
+            "operation_id": "operation-comment-format",
+            "environment": "corp",
+            "issue_id": "88",
+            "notes": "h3. Retest evidence",
+        }
+        with TemporaryDirectory() as tmpdir:
+            template = write_format_template(tmpdir)
+            with patch(
+                "redmine_mcp.api._runtime",
+                return_value=(settings("corp", template_file=str(template)), client),
+            ):
+                preview = api.redmine_preview_comment(**args)["result"]
+                result = api.redmine_add_comment(
+                    **args,
+                    write=True,
+                    preview_digest=preview["preview_digest"],
+                    audit_dir=tmpdir,
+                )
+
+        self.assertEqual("blocked", preview["action"])
+        self.assertFalse(preview["planned_write"])
+        self.assertEqual("TEXTILE_HEADING_IN_MARKDOWN", preview["format_validation"]["errors"][0]["code"])
+        self.assertFalse(result["ok"])
+        self.assertEqual("WRITE_BLOCKED", result["error"]["error"]["code"])
+        self.assertEqual([], client.comments)
+
+    def test_corporate_comment_allows_textile_examples_inside_code_fence(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template = write_format_template(tmpdir)
+            with patch(
+                "redmine_mcp.api._runtime",
+                return_value=(settings("corp", template_file=str(template)), client),
+            ):
+                preview = api.redmine_preview_comment(
+                    operation_id="operation-comment-code",
+                    environment="corp",
+                    issue_id="88",
+                    notes="```text\nh3. Environment\n|_. Header |\n```",
+                )["result"]
+
+        self.assertEqual("add-comment", preview["action"])
+        self.assertTrue(preview["planned_write"])
+        self.assertTrue(preview["format_validation"]["valid"])
+
     def test_successful_comment_retry_is_idempotently_skipped(self) -> None:
         client = FakeRedmineClient()
         args = {
@@ -612,6 +773,22 @@ class RedmineMcpApiTests(unittest.TestCase):
 
         self.assertEqual("sandbox", loaded.environment)
         self.assertEqual("https://redmine.example.com", loaded.url)
+
+    def test_config_loads_default_template_file(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            template = write_format_template(tmpdir)
+            env_file = Path(tmpdir) / "redmine.env"
+            env_file.write_text(
+                "REDMINE_ENV=sandbox\n"
+                "REDMINE_URL=https://redmine.example.com\n"
+                "REDMINE_API_KEY=replace-with-redmine-key\n"
+                f"REDMINE_TEMPLATE={template}\n",
+                encoding="utf-8",
+            )
+
+            loaded = load_redmine_settings(env_file=str(env_file))
+
+        self.assertEqual(str(template), loaded.template_file)
 
     def test_health_and_search_return_safe_summary(self) -> None:
         client = FakeRedmineClient()
