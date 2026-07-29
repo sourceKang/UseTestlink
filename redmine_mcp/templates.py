@@ -8,6 +8,7 @@ from qa_mcp_contracts import assert_safe_contract
 
 from .errors import RedmineMcpError
 from .policy import blocked_manager_fields
+from .text_format import normalize_text_format_contract
 
 
 def load_template(path: str | None) -> dict[str, Any]:
@@ -361,6 +362,7 @@ def validate_template(template: dict[str, Any]) -> dict[str, Any]:
         )
     severity_contract = _validate_severity_contract(template)
     priority_contract = _validate_priority_contract(template)
+    text_format = normalize_text_format_contract(template.get("text_format"))
     _resolve_priority(
         template,
         custom_priority=None,
@@ -385,6 +387,7 @@ def validate_template(template: dict[str, Any]) -> dict[str, Any]:
         "priority_id": resolved_priority_id,
         "severity": severity_summary,
         "priority": priority_contract,
+        "text_format": text_format,
         "custom_fields": fields,
         "required_custom_fields": normalized_required,
         "unresolved_fields": unresolved,
@@ -408,6 +411,7 @@ def merge_template_values(
     summary = validate_template(template) if template else {
         "unresolved_fields": [],
         "required_custom_fields": [],
+        "text_format": None,
     }
     selected_custom_fields = custom_fields if custom_fields is not None else template.get("custom_fields")
     if selected_custom_fields is not None:
@@ -437,6 +441,7 @@ def merge_template_values(
             "severity": severity_summary,
             "priority": priority_summary,
         },
+        "text_format": summary.get("text_format"),
         "category_id": category_id if category_id is not None else template.get("category_id"),
         "assigned_to_id": assigned_to_id if assigned_to_id is not None else template.get("assigned_to_id"),
         "fixed_version_id": (

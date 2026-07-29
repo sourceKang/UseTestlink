@@ -1,6 +1,11 @@
 {
   "project_id": "redmine-project-identifier",
   "tracker_id": 1,
+  "text_format": {
+    "engine": "markdown",
+    "validation": "strict",
+    "policy_version": 1
+  },
   "severity": {
     "transport_field": "priority_id",
     "default": "L2",

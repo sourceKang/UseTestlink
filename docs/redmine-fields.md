@@ -61,6 +61,42 @@ priority_id
 custom_fields, when required by the corporate tracker
 ```
 
+## Text Format Contract
+
+Redmine stores raw issue descriptions and journal notes, then renders them with the
+server-wide text formatter. The selected local template must record the formatter that
+was verified for that Redmine profile:
+
+```json
+{
+  "text_format": {
+    "engine": "markdown",
+    "validation": "strict",
+    "policy_version": 1
+  }
+}
+```
+
+The contract applies to both issue `description` and comment `notes`. It is template-owned;
+callers cannot supply a competing format argument. Corporate previews fail closed when the
+contract is absent or not strict. Sandbox previews may continue with a warning when the
+contract is absent.
+
+For a Markdown profile, strict validation blocks high-confidence Textile syntax outside
+fenced code, indented code, and HTML `<pre>` regions:
+
+```text
+h1. through h6. headings
+|_. Textile table headers
+two or more consecutive # item lines
+```
+
+A single `# text` line remains valid Markdown and produces only an ambiguity warning.
+The MCP never silently converts Textile to Markdown. Preview returns `text_format` and
+structured `format_validation`; both are part of `preview_digest`. A format error sets
+`action: blocked` and `planned_write: false`, and the write call repeats validation before
+any Redmine mutation.
+
 ## Corporate Severity And Priority Contract
 
 The corporate Redmine UI uses two distinct fields that must never share a mapping:
@@ -225,6 +261,7 @@ Before using a new corporate tracker, confirm:
 - Which fields are manager-only
 - Whether a dedupe custom field exists
 - Whether comments can be added through API
+- The server-wide Redmine text formatter and strict validation policy
 - Whether issue search can filter by custom field or must search open issues by text
 
 Document the confirmed values in a local template file under `local/redmine_templates/`; do not commit company secrets or personal API keys.

@@ -21,6 +21,7 @@ from .errors import RedmineMcpError, normalize_error, redact_secrets
 from .models import RedmineIssue
 from .policy import blocked_manager_fields, manager_fields_allowed, validate_environment
 from .templates import load_template, merge_template_values, validate_template
+from .text_format import validate_redmine_text
 
 
 _LOCKS_GUARD = threading.Lock()
@@ -217,6 +218,8 @@ def _build_bug_plan(
     environment: str,
     issue_payload: dict[str, Any],
     issue_fields: dict[str, Any],
+    text_format: dict[str, Any] | None,
+    format_validation: dict[str, Any],
     attachments: list[dict[str, Any]],
     dedupe_marker: str,
     dedupe: str,
@@ -244,7 +247,15 @@ def _build_bug_plan(
             tracker_id=str(issue_payload.get("tracker_id") or ""),
         )
     warnings: list[str] = []
-    if blocked_fields:
+    warnings.extend(
+        str(item.get("message") or "Redmine text format warning.")
+        for item in format_validation["warnings"]
+    )
+    if not format_validation["valid"]:
+        action = "blocked"
+        existing_issue = open_issue or closed_issue
+        warnings.append("Redmine description format validation failed.")
+    elif blocked_fields:
         action = "blocked"
         existing_issue = open_issue or closed_issue
         warnings.append("Manager-only Redmine fields are blocked in this environment.")
@@ -272,6 +283,8 @@ def _build_bug_plan(
         "dedupe_digest": hashlib.sha256(marker.encode("utf-8")).hexdigest()[:16],
         "issue_payload": issue_payload,
         "issue_fields": issue_fields,
+        "text_format": text_format,
+        "format_validation": format_validation,
         "attachments": attachments,
         "attachment_action": (
             "upload-and-attach"
@@ -306,11 +319,27 @@ def _bug_preview(plan: dict[str, Any]) -> dict[str, Any]:
         "attachment_count": len(plan["attachments"]),
         "attachments": plan["attachments"],
         "issue_fields": plan["issue_fields"],
+        "text_format": plan["text_format"],
+        "format_validation": plan["format_validation"],
         "issue_payload": plan["issue_payload"],
     }
     if plan["existing_issue"] is not None:
         result["existing_issue"] = plan["existing_issue"]
     return result
+
+
+def _format_validation_audit(validation: dict[str, Any] | None) -> dict[str, Any] | None:
+    if validation is None:
+        return None
+    return {
+        "valid": bool(validation.get("valid")),
+        "field": validation.get("field"),
+        "engine": validation.get("engine"),
+        "validation": validation.get("validation"),
+        "policy_version": validation.get("policy_version"),
+        "error_codes": [str(item.get("code") or "") for item in validation.get("errors") or []],
+        "warning_codes": [str(item.get("code") or "") for item in validation.get("warnings") or []],
+    }
 
 
 def _attempt_failure_audit(
@@ -536,11 +565,14 @@ def _redmine_bug(
     planned_redmine_action: str | None = None
     affected_issue: RedmineIssue | None = None
     field_verification: dict[str, Any] | None = None
+    selected_text_format: dict[str, Any] | None = None
+    format_validation: dict[str, Any] | None = None
     try:
         settings, client = _runtime(env_file, timeout)
         selected = validate_environment(environment, settings.environment)
+        selected_template_file = template_file or settings.template_file or None
         merged = merge_template_values(
-            load_template(template_file),
+            load_template(selected_template_file),
             project_id=project_id or settings.project_id,
             tracker_id=tracker_id,
             priority_id=priority_id,
@@ -562,6 +594,13 @@ def _redmine_bug(
             assigned_to_id=merged["assigned_to_id"],
             fixed_version_id=merged["fixed_version_id"],
         )
+        selected_text_format = merged["text_format"]
+        format_validation = validate_redmine_text(
+            str(payload["description"]),
+            selected_text_format,
+            environment=selected,
+            field="description",
+        )
         prepared_attachments: list[PreparedImageAttachment] = prepare_image_attachments(attachments)
         attachment_metadata = [attachment.metadata() for attachment in prepared_attachments]
 
@@ -572,6 +611,8 @@ def _redmine_bug(
                 environment=selected,
                 issue_payload=payload,
                 issue_fields=merged["issue_fields"],
+                text_format=selected_text_format,
+                format_validation=format_validation,
                 attachments=attachment_metadata,
                 dedupe_marker=dedupe_marker,
                 dedupe=dedupe,
@@ -599,6 +640,8 @@ def _redmine_bug(
                     "preview_digest": preview_digest,
                     "dedupe_digest": plan["dedupe_digest"],
                     "planned_redmine_action": plan["action"],
+                    "text_format": plan["text_format"],
+                    "format_validation": _format_validation_audit(plan["format_validation"]),
                     "attachment_action": plan["attachment_action"],
                     "attachment_count": len(attachment_metadata),
                     "attachments": attachment_metadata,
@@ -661,6 +704,8 @@ def _redmine_bug(
                     "dedupe_digest": plan["dedupe_digest"],
                     "issue": _issue_result(issue),
                     "field_verification": field_verification,
+                    "text_format": plan["text_format"],
+                    "format_validation": _format_validation_audit(plan["format_validation"]),
                     "attachment_status": attachment_status,
                     "attachment_count": len(attachment_metadata),
                     "attachments": attachment_metadata,
@@ -701,6 +746,8 @@ def _redmine_bug(
                     "attachments": attachment_metadata,
                     "issue": _issue_result(affected_issue),
                     "field_verification": field_verification,
+                    "text_format": selected_text_format,
+                    "format_validation": _format_validation_audit(format_validation),
                 },
             )
             if audit_id is None:
@@ -736,6 +783,7 @@ def _redmine_comment(
     environment: str,
     issue_id: str,
     notes: str,
+    template_file: str | None = None,
     write: bool = False,
     preview_digest: str | None = None,
     env_file: str | None = None,
@@ -743,18 +791,40 @@ def _redmine_comment(
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     attempt_audit_id: str | None = None
+    text_format: dict[str, Any] | None = None
+    format_validation: dict[str, Any] | None = None
     try:
         settings, client = _runtime(env_file, timeout)
         selected = validate_environment(environment, settings.environment)
         selected_issue_id = _require_text("issue_id", issue_id)
         selected_notes = _require_text("notes", notes)
+        selected_template_file = template_file or settings.template_file or None
+        selected_template = load_template(selected_template_file)
+        template_summary = validate_template(selected_template) if selected_template else {"text_format": None}
+        text_format = template_summary.get("text_format")
+        format_validation = validate_redmine_text(
+            selected_notes,
+            text_format,
+            environment=selected,
+            field="notes",
+        )
+        warnings = [
+            str(item.get("message") or "Redmine text format warning.")
+            for item in format_validation["warnings"]
+        ]
+        if not format_validation["valid"]:
+            warnings.append("Redmine comment format validation failed.")
         plan = {
             "schema_version": CONTRACT_SCHEMA_VERSION,
             "operation_id": _require_text("operation_id", operation_id, max_length=128),
             "environment": selected,
-            "action": "add-comment",
+            "action": "add-comment" if format_validation["valid"] else "blocked",
+            "planned_write": bool(format_validation["valid"]),
             "issue_id": selected_issue_id,
             "notes": selected_notes,
+            "text_format": text_format,
+            "format_validation": format_validation,
+            "warnings": warnings,
         }
         assert_safe_contract(plan)
         digest = payload_digest(plan)
@@ -766,13 +836,21 @@ def _redmine_comment(
                     "environment": selected,
                     "mode": "preview",
                     "preview_digest": digest,
-                    "planned_write": True,
+                    "planned_write": plan["planned_write"],
+                    "action": plan["action"],
                     "issue_id": selected_issue_id,
                     "notes_digest": hashlib.sha256(selected_notes.encode("utf-8")).hexdigest(),
-                    "warnings": [],
+                    "text_format": text_format,
+                    "format_validation": format_validation,
+                    "warnings": warnings,
                 }
             )
         validate_preview_digest(plan, str(preview_digest or ""))
+        if not plan["planned_write"]:
+            raise RedmineMcpError(
+                "Redmine comment write is blocked by text format validation.",
+                code="WRITE_BLOCKED",
+            )
         notes_digest = hashlib.sha256(selected_notes.encode("utf-8")).hexdigest()
         for previous_path, previous in find_operation_audits(operation_id, "add-comment", audit_dir):
             if previous.get("preview_digest") != preview_digest:
@@ -833,6 +911,8 @@ def _redmine_comment(
                 "issue_id": selected_issue_id,
                 "notes_digest": notes_digest,
                 "preview_digest": preview_digest,
+                "text_format": text_format,
+                "format_validation": _format_validation_audit(format_validation),
                 "started_at": utc_now_iso(),
             },
             audit_dir,
@@ -849,6 +929,8 @@ def _redmine_comment(
                 "issue_id": selected_issue_id,
                 "notes_digest": notes_digest,
                 "preview_digest": preview_digest,
+                "text_format": text_format,
+                "format_validation": _format_validation_audit(format_validation),
                 "finished_at": utc_now_iso(),
             },
             audit_dir,
@@ -875,6 +957,10 @@ def _redmine_comment(
                 error=exc,
                 audit_dir=audit_dir,
                 audit_id=attempt_audit_id,
+                details={
+                    "text_format": text_format,
+                    "format_validation": _format_validation_audit(format_validation),
+                },
             )
             if audit_id is None:
                 exc = RedmineMcpError(

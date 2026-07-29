@@ -53,6 +53,7 @@ class RedmineSettings:
     api_key: str
     environment: str
     project_id: str = ""
+    template_file: str = ""
     timeout: int = DEFAULT_TIMEOUT_SECONDS
     loaded_env_file: str | None = None
 
@@ -67,6 +68,7 @@ def load_redmine_settings(
     api_key = os.environ.get("REDMINE_API_KEY", "").strip()
     environment = os.environ.get("REDMINE_ENV", "").strip().casefold()
     project_id = os.environ.get("REDMINE_PROJECT_ID", "").strip()
+    template_file = os.environ.get("REDMINE_TEMPLATE", "").strip()
     if not url:
         raise RedmineMcpError("REDMINE_URL is required.", code="CONFIG_MISSING")
     if not api_key:
@@ -81,6 +83,7 @@ def load_redmine_settings(
         api_key=api_key,
         environment=environment,
         project_id=project_id,
+        template_file=template_file,
         timeout=timeout,
         loaded_env_file=loaded,
     )
