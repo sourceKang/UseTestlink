@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "testlink-agent"
-version = "1.6.0"
+version = "1.7.0"
 description = "TestLink XML-RPC helper with CLI and MCP server entrypoints."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,4 +27,3 @@ packages = [
   "testlink_agent_core.tools",
   "testlink_mcp",
 ]
-

@@ -39,14 +39,14 @@ Do not publish a release tag from an unreviewed or partially merged branch.
 Install once per Windows user, not once per consuming project:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.6.0"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.7.0"
 ```
 
 If an editable or obsolete installation already exists, replace it explicitly:
 
 ```powershell
 pipx uninstall testlink-agent
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.6.0"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.7.0"
 ```
 
 Run `pipx ensurepath` once if the pipx binary directory is not already on `PATH`, then
@@ -95,7 +95,7 @@ verification never authorizes a TestLink execution or Redmine write.
 After a newer reviewed tag is published:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.6.0"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.7.0"
 ```
 
 Restart Codex and repeat source, entrypoint, and read-only smoke verification. Avoid
