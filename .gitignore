@@ -24,3 +24,8 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# Machine-local Claude registration; share only docs/*.example.json.
+.mcp.json
+.claude/
+CLAUDE.local.md

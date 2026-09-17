@@ -29,6 +29,18 @@ The platform and build are exact inputs. A missing requested platform is a targe
 - Any changed report, target, template, custom field, or Redmine opt-in invalidates the digest and requires a new preview.
 - `qa_resume_preview_artifact` uses the same preview artifact plus prior audit identity and completed item states; it is not a fresh bulk retry.
 
+## Paginated Preview Review (Unreleased)
+
+`qa_read_preview_artifact` reads the digest-bound plan using `operation_id`,
+`preview_artifact`, and `preview_digest`. It does not trust the separate stored `review`
+copy. Read `items`, `warnings`, and `ignored` sections with `offset` and `limit`
+(default 5, maximum 50), following `next_offset` until null. `section_counts` shows
+which sections need review. Items contain exact redacted request and preview payloads.
+Each page validates the digest again; a changed artifact requires a fresh preview.
+Pagination limits rows rather than truncating payloads; use limit 1 for large items.
+This local snapshot read does not revalidate remote state or the report file.
+Execute retains the existing report-hash, confirmation, dedupe, and audit protections.
+
 ## Protected Testcase Maintenance
 
 Use `testlink_create_testcase` and `testlink_update_testcase` for formal MCP testcase

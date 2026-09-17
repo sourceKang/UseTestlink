@@ -69,6 +69,14 @@ C:\Users\<username>\.codex\testlink-agent\redmine_mcp.env
 The files must not be committed or included in tool arguments. Restart Codex after
 changing registration.
 
+## Claude And Diagnostics (Unreleased)
+
+See `claude-setup.md` for separate Claude Code/Desktop templates. Both use the same
+isolated installation; never point a consuming project at the development checkout.
+The new `testlink-agent doctor` command performs offline checks without reading
+credential contents. It does not prove live connectivity or inspect client settings.
+The new features must be released before using them from a tagged shared installation.
+
 ## Verify Installation Source And Entrypoints
 
 Confirm all executables resolve outside `D:\UseTestlink`:
