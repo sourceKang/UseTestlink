@@ -97,3 +97,39 @@ class DoctorTests(unittest.TestCase):
                            "--redmine-env-file", str(self.env_file)])
         self.assertEqual(0, status)
         self.assertTrue(json.loads(output.getvalue())["ok"])
+
+    def test_explicit_executable_works_without_path_and_is_not_launched(self):
+        executable = Path(self.directory.name) / "server.exe"
+        executable.write_bytes(b"offline executable fixture")
+        executable.chmod(0o700)
+        with patch("testlink_agent_core.doctor.shutil.which", side_effect=AssertionError("must not use PATH")), \
+             patch("subprocess.Popen", side_effect=AssertionError("must not launch")):
+            result = diagnose(testlink_env_file=str(self.env_file), redmine_env_file=str(self.env_file),
+                              executable_path=str(executable))
+        self.assertTrue(result["ok"])
+        check = next(c for c in result["checks"] if c["check"] == "executable")
+        self.assertEqual("explicit", check["source"])
+        self.assertEqual(str(executable), check["path"])
+
+    def test_bad_explicit_executable_never_falls_back_to_valid_path(self):
+        for value in ("", "relative.exe", self.directory.name, str(Path(self.directory.name) / "missing.exe")):
+            with self.subTest(value=value), patch("testlink_agent_core.doctor.shutil.which", side_effect=AssertionError("no fallback")):
+                result = diagnose(server="testlink", testlink_env_file=str(self.env_file), executable_path=value)
+                check = next(c for c in result["checks"] if c["check"] == "executable")
+                self.assertEqual("error", check["status"])
+                self.assertFalse(result["ok"])
+
+    def test_non_executable_file_is_rejected(self):
+        with patch("testlink_agent_core.doctor.os.access", return_value=False):
+            result = diagnose(server="testlink", testlink_env_file=str(self.env_file), executable_path=str(self.env_file))
+        self.assertFalse(result["ok"])
+
+    def test_cli_explicit_executable_propagates_option(self):
+        executable = Path(self.directory.name) / "server.exe"
+        executable.write_bytes(b"offline executable fixture")
+        executable.chmod(0o700)
+        with patch("testlink_agent_core.doctor.shutil.which", return_value=None), redirect_stdout(io.StringIO()) as output:
+            status = main(["doctor", "--json", "--executable", str(executable),
+                           "--testlink-env-file", str(self.env_file), "--redmine-env-file", str(self.env_file)])
+        self.assertEqual(0, status)
+        self.assertEqual("explicit", next(c for c in json.loads(output.getvalue())["checks"] if c["check"] == "executable")["source"])

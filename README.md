@@ -122,7 +122,7 @@ are in [docs/claude-setup.md](docs/claude-setup.md). `CLAUDE.md` imports the sha
 `AGENTS.md` instructions for Claude Code working in this repository.
 
 The current development checkout adds `testlink-agent doctor` for offline installation
-diagnostics and `qa_read_preview_artifact` for digest-verified preview pagination.
+diagnostics (use `--executable` when the client launches an absolute path) and `qa_read_preview_artifact` for digest-verified preview pagination.
 These additions are not included in the existing v1.7.0 release tag. Client settings
 contain credential-file paths only, never API keys. See
 [the implementation plan](docs/usability-plan.md) for scope and validation.

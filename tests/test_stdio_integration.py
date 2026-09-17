@@ -21,7 +21,10 @@ class StdioIntegrationTests(unittest.TestCase):
             ("qa_integration_agent.server", "qa-integration-agent", "QA_INTEGRATION_TOOLSET", "import", "qa_read_preview_artifact"),
         )
         with TemporaryDirectory() as directory:
-            plan = {"operation_id": "stdio-offline", "items": [{"note": "繁體中文驗證"}],
+            plan = {"operation_id": "stdio-offline", "items": [{"note": "繁體中文驗證", "testlink_request": {
+                        "notes": "原始輸出 TESTLINK_DEVKEY=SYNTH-INLINE-TL",
+                        "description": "REDMINE_API_KEY=SYNTH-INLINE-RM",
+                        "detail": "devKey: SYNTH-INLINE-DK", "api_key": "SYNTH-FIELD"}}],
                     "warnings": [], "ignored": [], "environment": "sandbox", "target": {"project": "離線測試"}}
             plan["preview_digest"] = payload_digest(plan)
             artifact = Path(directory) / "preview.json"
@@ -72,6 +75,11 @@ class StdioIntegrationTests(unittest.TestCase):
                     if name == "qa-integration-agent":
                         payload = json.loads(responses[3]["result"]["content"][0]["text"])
                         self.assertEqual("繁體中文驗證", payload["result"]["entries"][0]["note"])
+                        fields = payload["result"]["entries"][0]["testlink_request"]
+                        self.assertEqual("原始輸出 TESTLINK_DEVKEY=*****", fields["notes"])
+                        self.assertEqual("REDMINE_API_KEY=*****", fields["description"])
+                        self.assertEqual("devKey: *****", fields["detail"])
+                        self.assertNotIn("SYNTH-", completed.stdout)
                         self.assertTrue(responses[4]["result"]["isError"])
                         failure = json.loads(responses[4]["result"]["content"][0]["text"])
                         self.assertEqual("CONFIRMATION_REQUIRED", failure["error"]["error"]["code"])

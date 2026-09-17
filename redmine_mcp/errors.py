@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
-import re
 from typing import Any
+
+from testlink_agent_core.errors import mask_secret_assignments
 
 
 MASK = "*****"
@@ -29,18 +30,8 @@ def mask_secrets(value: Any) -> str:
     text = str(value)
     for secret in _known_secret_values():
         text = text.replace(secret, MASK)
-    text = re.sub(r"(REDMINE_API_KEY\s*=\s*)(.+)", rf"\1{MASK}", text, flags=re.IGNORECASE)
-    text = re.sub(
-        r"(X-Redmine-API-Key\s*['\"]?\s*[:=]\s*['\"]?)([^,'\"\s}]+)",
-        rf"\1{MASK}",
-        text,
-        flags=re.IGNORECASE,
-    )
-    text = re.sub(
-        r"((?:['\"]?token['\"]?)\s*[:=]\s*['\"]?)([^,'\"\s}]+)",
-        rf"\1{MASK}",
-        text,
-        flags=re.IGNORECASE,
+    text = mask_secret_assignments(
+        text, "TESTLINK_DEVKEY|REDMINE_API_KEY|devKey|X-Redmine-API-Key|token",
     )
     return text
 

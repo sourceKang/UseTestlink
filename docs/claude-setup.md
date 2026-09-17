@@ -8,7 +8,11 @@
 `doctor` 與 `qa_read_preview_artifact` 是本次尚未發布的開發變更，
 既有 v1.7.0 tag 不包含這些新增功能。待變更審查並發布新版後，
 共用環境才依 `deployment.md` 安裝該 tag。不要將其他專案指向開發 checkout。
-離線測試與乾淨 wheel 安裝驗證不代表已完成 Claude 應用程式內的端到端驗證。
+交接報告已提供 commit `a6e7c01` 在 Linux／Python 3.11、Claude Code 2.1.274
+非互動模式的實際 MCP 接入證據（合成 artifact 分頁、中文及拒絕情境）。
+同次測試發現內層 JSON 遮蔽缺陷，本批修正另以離線回歸驗證；
+不可將舊 commit 的應用程式實測視為修正版已重測。
+Windows Claude Code、Claude Desktop、真實 preview 產生及外部寫入仍未實測。
 
 ## 1. 準備本機設定
 
@@ -28,7 +32,28 @@
 將 `claude-code-mcp.example.json` 的 `mcpServers` 項目合併到使用專案的
 `.mcp.json`，保留既有其他服務，不要整份覆蓋。也可依官方文件採用個人範圍註冊。
 使用者機器的實際路徑不應提交到共用 repository；此 repository 已忽略 `.mcp.json`。
-啟動 Claude Code 後，用 `/mcp` 查看服務狀態與工具清單。
+首次使用專案 `.mcp.json` 時，若 `claude mcp list` 顯示 `Pending approval`，
+代表尚未核准，不能當作連線故障。請在該目錄互動執行 `claude`，
+檢查並接受工作目錄信任與這個 MCP 的核准提示，再用 `/mcp` 查看連線與工具清單。
+
+已信任的測試專案若需非互動操作，可由使用者在本機
+`.claude/settings.local.json` 合併以下設定，只核准本服務：
+
+```json
+{
+  "enabledMcpjsonServers": ["qa-integration-agent"]
+}
+```
+
+保留既有設定與其他已核准項目，不要整份覆蓋。
+`enableAllProjectMcpServers: true` 會核准專案中的所有 MCP，只有已審閱全部服務的
+隔離測試環境才考慮採用，本專案不預設啟用。
+本機核准設定不代表跳過工作目錄信任；未信任目錄可能仍需互動核准。
+CI 應由管理者明確提供經審閱的設定，不由下載的 repository 自行核准服務。
+本 repository 已忽略 `.claude/`，不得提交個人核准設定或真實路徑。
+核准 MCP 載入也不等於授權外部寫入；write 與 Redmine opt-in 規則照常生效。
+
+參考：[官方 MCP 信任與核准說明](https://code.claude.com/docs/en/mcp#project-server-approvals-and-workspace-trust)。
 
 本 repository 的 `CLAUDE.md` 透過 `@AGENTS.md` 匯入共用安全規則，
 無須維護第二份相同守則。這是 Claude Code 開發本 repository 的入口；
@@ -69,6 +94,7 @@ Desktop 不會因註冊 MCP 自動讀取 repository 的 `CLAUDE.md`。
 
 ```powershell
 testlink-agent doctor --server qa `
+  --executable "C:/Users/<username>/.local/bin/qa-integration-agent-mcp.exe" `
   --testlink-env-file "C:/Users/<username>/.config/testlink-agent/testlink_mcp.env" `
   --redmine-env-file "C:/Users/<username>/.config/testlink-agent/redmine_mcp.env"
 ```
@@ -85,7 +111,11 @@ testlink-agent doctor --server qa `
 檢查範圍：Python、套件版本、來源是否被 checkout 遮蔽、PATH 執行檔、
 工具集合、憑證檔存在與可開啟。檔案內容、密鑰有效性、corp/sandbox 值、
 伺服器連線與用戶權限均不在離線健檢範圍。
-PATH 中的執行檔與客戶端指定的絕對路徑可能不同，需核對後再使用。
+若客戶端使用絕對路徑，請在 `--executable` 傳入相同的實際路徑。
+有指定時只檢查該檔案，不依賴 PATH、不在指定路徑錯誤時退回 PATH。
+路徑須為既有檔案且可執行（Windows 接受 .exe/.com/.bat/.cmd）；
+沒有指定時才沿用 PATH 查找，找不到仍回傳 error。
+健檢不啟動執行檔，也不證明它的內容或套件身分；仍需核對安裝來源。
 
 ## 官方參考
 

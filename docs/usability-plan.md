@@ -60,4 +60,45 @@ MCP 協定協商完整化、CI、自動化大量匯入效能量測與額外報�
 驗證用 wheel 位於被忽略的 `local/validation/usability/wheels/`。
 套件版本未提升，該 wheel 是本機開發快照，不是已發布的 v1.7.0 tag 成品。
 本次未改動使用者的 Claude/Codex 設定、未發布、未執行任何公司系統寫入。
-Claude Code／Desktop 應用程式內端到端驗證尚未進行。
+依使用者提供的 Claude Cowork 完整交接報告，commit `a6e7c01` 已在
+Linux x86_64／Python 3.11.15、Claude Code 2.1.274 的非互動模式驗證 MCP 接入、
+合成 artifact 分頁、繁體中文及拒絕情境；來源與安裝版各 266 項測試通過。
+隔離安裝驗證從 checkout 外執行，已確認套件來自 site-packages。
+該報告也揭露二次遮蔽破壞內層 JSON 的缺陷，因此上述實測不代表該缺陷已通過。
+Windows Claude Code、Claude Desktop、真實 preview 產生及外部寫入仍未實測；
+後續修正的應用程式實測狀態不可沿用舊 commit 宣稱完成。
+
+## PR #9 交接修正計畫（2026-09-17）
+
+1. 高優先：四個 MCP server 在結構化資料層完成遮蔽，傳輸層不再對
+   已序列化的 JSON 字串套用遮蔽；逐一檢查正常、錯誤及初始化回應。
+   收緊共用與 Redmine 字串遮蔽規則，保留 JSON 分隔符及引號。
+2. 中優先：doctor 新增 `--executable` 絕對路徑驗證，明確區別 PATH 與指定路徑，
+   不啟動待測執行檔、不以 PATH 掩蓋錯誤的指定路徑。
+3. 文件：補上 Claude 專案信任與單一 MCP 核准說明，更新 Linux 實測的來源與範圍。
+4. 驗收：先重現缺陷，再跑四個 server 的正常／錯誤回應、兩種 framing、
+   JSON 可解析及秘密不外洩回歸；補 doctor 路徑案例、完整離線 unittest，
+   並以乾淨 wheel 安裝驗證修正版。確認 Git 敏感檔案隔離後更新同一 PR。
+
+本批不合併、不發布、不進行公司系統連線或寫入；Linux 舊版已驗證項目沿用
+交接紀錄，修正版的離線回歸不等同 Claude 應用程式重新驗證。
+
+### 本批修正驗收結果
+
+- 修正前新增回歸可重現：四個 server 的正常／失敗回應內層 JSON 解析失敗。
+- 修正後來源測試：Windows Python 3.14 與 3.12 各 275 項通過。
+- 四個 server 的 line／Content-Length 回應均可解析外層與內層 JSON，
+  TESTLINK_DEVKEY、REDMINE_API_KEY、devKey 與結構化秘密欄位仍被遮蔽。
+  錯誤 data、未知 method、例外、request ID 與初始化回傳值維持遮蔽。
+- line framing 固定輸出 UTF-8 bytes；非 UTF-8 stdout 文字編碼的回歸通過。
+  這不代表公司 TestLink 的既有中文資料編碼問題已查明。
+- doctor 指定路徑時不使用 PATH、不啟動程式，無效路徑不會回退至 PATH；
+  相對路徑、目錄、不存在及不可執行檔案會報錯。
+- 修正版 wheel 已離線建置，於 checkout 外新 venv 非 editable 安裝。
+  五個套件確認載入自該 venv 的 site-packages 後，完整 275 項測試通過；
+  實際 console doctor 在空 PATH、指定隔離環境執行檔時成功。
+- `.claude/settings.local.json` 與 `.mcp.json` 均被 Git 忽略；
+  變更僅含程式、合成測試與文件，沒有交接報告原始資料、憑證或公司資料。
+
+驗證用 wheel 留在 `local/validation/pr9-fixes/wheels/`，不是正式發布。
+修正版 Claude 應用程式實測仍待後續；本批沒有真實系統連線或寫入。

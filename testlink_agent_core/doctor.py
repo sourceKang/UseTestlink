@@ -21,7 +21,7 @@ RECOMMENDED_TOOLSETS = {"qa": "import", "testlink": "execution", "redmine": "iss
 
 
 def diagnose(*, server: str = "qa", testlink_env_file: str | None = None,
-             redmine_env_file: str | None = None) -> dict[str, Any]:
+             redmine_env_file: str | None = None, executable_path: str | None = None) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
 
     def add(name: str, status: str, message: str, fix: str = "", **details: Any) -> None:
@@ -48,10 +48,23 @@ def diagnose(*, server: str = "qa", testlink_env_file: str | None = None,
         add("package", "error", "無法驗證套件中繼資料。", "重新安裝已審查版本。")
 
     executable, toolset_key, default_toolset = SERVERS[server]
-    resolved = shutil.which(executable)
-    add("executable", "ok" if resolved else "error", "檢查服務執行檔是否位於 PATH。",
-        "確認安裝與 PATH，或在客戶端設定執行檔絕對路徑。" if not resolved else "",
-        executable=executable, path=resolved)
+    if executable_path is None:
+        resolved = shutil.which(executable)
+        add("executable", "ok" if resolved else "error", "檢查服務執行檔是否位於 PATH。",
+            "確認安裝與 PATH；若客戶端使用絕對路徑，請以 --executable 傳入相同路徑。" if not resolved else "",
+            executable=executable, path=resolved, source="PATH")
+    else:
+        try:
+            candidate = Path(executable_path)
+            valid = candidate.is_absolute() and candidate.is_file() and os.access(candidate, os.X_OK)
+            if os.name == "nt":
+                valid = valid and candidate.suffix.casefold() in (".exe", ".com", ".bat", ".cmd")
+            add("executable", "ok" if valid else "error", "檢查指定的執行檔絕對路徑；不啟動程式。",
+                "請提供既有且可執行的檔案絕對路徑；不會改查 PATH。" if not valid else "",
+                executable=executable, path=str(candidate) if valid else None, source="explicit")
+        except (OSError, ValueError):
+            add("executable", "error", "無法檢查指定的執行檔路徑。",
+                "檢查路徑格式與檔案權限。", executable=executable, path=None, source="explicit")
 
     from qa_integration_agent.tools import tools_for_toolset as qa_tools
     from redmine_mcp.tools import tools_for_toolset as redmine_tools
@@ -99,7 +112,7 @@ def diagnose(*, server: str = "qa", testlink_env_file: str | None = None,
 
 def command_doctor(args: Any) -> int:
     result = diagnose(server=args.server, testlink_env_file=args.testlink_env_file,
-                      redmine_env_file=args.redmine_env_file)
+                      redmine_env_file=args.redmine_env_file, executable_path=args.executable_path)
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
