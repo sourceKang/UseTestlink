@@ -31,6 +31,9 @@ class FakeRedmineClient:
         self.issue_readback_override: dict | None = None
         self.issue_detail_override: dict | None = None
         self.projects: list[dict] = []
+        self.project_total = 0
+        self.search_results: list[dict] | None = None
+        self.search_queries: list[dict] = []
 
     def health(self):
         return {"user": {"id": 7, "login": "qa-user"}}
@@ -88,8 +91,18 @@ class FakeRedmineClient:
             "custom_fields": payload.get("custom_fields") or [],
         }
 
-    def list_projects(self, *, limit=100):
-        return list(self.projects)
+    def list_projects(self):
+        return {"projects": list(self.projects), "total_count": self.project_total or len(self.projects)}
+
+    def get_issue_statuses(self):
+        return [{"id": 1, "name": "New"}, {"id": 3, "name": "Resolved"}]
+
+    def search_issues(self, query):
+        self.search_queries.append(dict(query))
+        if self.search_results is not None:
+            return {"issues": list(self.search_results), "total_count": len(self.search_results)}
+        issues = self.find_issues(project_id=query["project_id"], status_id=query["status_id"])
+        return {"issues": issues, "total_count": len(issues)}
 
     def upload_attachment(self, *, filename, content):
         self.uploaded_files.append((filename, content))
@@ -824,14 +837,21 @@ class RedmineMcpApiTests(unittest.TestCase):
             "project": {"id": 42, "name": "NXC400"},
             "author": {"id": 3, "name": "QA Bot"},
             "assigned_to": {"id": 9, "name": "Owner"},
-            "custom_fields": [{"id": 200, "name": "Platform", "value": "NXC400"}],
+            "custom_fields": [
+                {"id": 31, "name": "Test case No", "value": "MSAN1-20189"},
+                {"id": 34, "name": "Reporter ", "value": ["QA Bot"]},
+            ],
             "journals": [
                 {
                     "id": 501,
                     "user": {"id": 3, "name": "QA Bot"},
                     "notes": "Retested on build 123.",
                     "created_on": "2026-01-01T00:00:00Z",
-                    "details": [{"property": "attr", "name": "status_id", "old_value": "1", "new_value": "2"}],
+                    "details": [
+                        {"property": "attr", "name": "status_id", "old_value": "1", "new_value": "3"},
+                        {"property": "cf", "name": "31", "old_value": "", "new_value": "MSAN1-20189"},
+                        {"property": "cf", "name": "119", "old_value": "Wish", "new_value": None},
+                    ],
                 }
             ],
             "attachments": [
@@ -850,29 +870,156 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         issue = result["result"]["issue"]
         self.assertEqual("Full repro steps.", issue["description"])
-        self.assertEqual("Platform", issue["custom_fields"][0]["name"])
-        self.assertEqual("NXC400", issue["custom_fields"][0]["value"])
+        self.assertEqual("MSAN1-20189", issue["custom_fields"][0]["value"])
+        self.assertEqual("Reporter", issue["custom_fields"][1]["name"])
         self.assertEqual(1, issue["journal_count"])
         self.assertEqual("Retested on build 123.", issue["journals"][0]["notes"])
+        status_detail, cf_detail, hidden_detail = issue["journals"][0]["details"]
+        self.assertEqual(("New", "Resolved"), (status_detail["old_label"], status_detail["new_label"]))
+        self.assertEqual("Test case No", cf_detail["field_name"])
+        self.assertIsNone(hidden_detail["field_name"])
         self.assertEqual(1, issue["attachment_count"])
         self.assertNotIn("watchers", issue)
         self.assertNotIn("spent_hours", issue)
+        self.assertEqual({"credentials": 0, "emails": 0}, result["result"]["redactions"])
 
-    def test_list_projects_returns_safe_summary(self) -> None:
+    def test_get_issue_masks_embedded_credentials_and_email_local_parts(self) -> None:
+        client = FakeRedmineClient()
+        client.issue_detail_override = {
+            "id": 89,
+            "subject": "NETCONF edit-config fails",
+            "description": "Reproduce with ssh -p 22 admin@10.1.1.1 then login password=Dev1ce!pw，後續保留。",
+            "custom_fields": [{"id": 123, "name": "Reporter Email", "value": "qa.person@example.com"}],
+            "journals": [
+                {
+                    "id": 1089491,
+                    "notes": "netconf-console2 --host 10.1.1.1 --port 830 -u admin -p Zy@secret1 --rpc get.xml",
+                    "details": [
+                        {
+                            "property": "attr",
+                            "name": "description",
+                            "old_value": "sshpass -p oldpass ssh root@dut",
+                            "new_value": "see ftp://ftpuser:ftppw@files.example.com/fw.bin",
+                        }
+                    ],
+                }
+            ],
+        }
+        with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+            result = api.redmine_get_issue(
+                operation_id="operation-get-issue-redact",
+                environment="sandbox",
+                issue_id="89",
+            )
+
+        self.assertTrue(result["ok"])
+        text = json.dumps(result, ensure_ascii=False)
+        for secret in ("Dev1ce!pw", "Zy@secret1", "oldpass", "ftppw", "qa.person"):
+            self.assertNotIn(secret, text)
+        issue = result["result"]["issue"]
+        self.assertIn("ssh -p 22 admin@10.1.1.1", issue["description"])
+        self.assertIn("password=*****，後續保留。", issue["description"])
+        self.assertIn("-u admin -p ***** --rpc get.xml", issue["journals"][0]["notes"])
+        self.assertEqual("*****@example.com", issue["custom_fields"][0]["value"])
+        self.assertEqual({"credentials": 4, "emails": 1}, result["result"]["redactions"])
+
+    def test_list_projects_reports_totals_and_filters_by_query(self) -> None:
         client = FakeRedmineClient()
         client.projects = [
             {"id": 738, "identifier": "ems-map", "name": "EMS Map", "status": 1},
-            {"id": 900, "identifier": "nxc400", "name": "NXC400", "status": 1},
+            {"id": 1560, "identifier": "neox-series", "name": "NeoX-series", "status": 1},
         ]
+        client.project_total = 250
         with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
             result = api.redmine_list_projects(
                 operation_id="operation-list-projects",
                 environment="sandbox",
+                query="NEOX",
             )
 
         self.assertTrue(result["ok"])
-        self.assertEqual(2, result["result"]["project_count"])
-        self.assertEqual("nxc400", result["result"]["projects"][1]["identifier"])
+        self.assertEqual(250, result["result"]["total_count"])
+        self.assertTrue(result["result"]["truncated"])
+        self.assertEqual(["neox-series"], [project["identifier"] for project in result["result"]["projects"]])
+
+    def test_search_builds_redmine_filters_and_returns_requested_custom_fields(self) -> None:
+        client = FakeRedmineClient()
+        client.search_results = [
+            {
+                "id": 259782,
+                "subject": "[Regression] NETCONF",
+                "status": {"name": "Resolved"},
+                "custom_fields": [
+                    {"id": 43, "name": "Fix Version", "value": "V1.03(ACKG.0)b5"},
+                    {"id": 31, "name": "Test case No", "value": "MSAN1-20189"},
+                    {"id": 123, "name": "Reporter Email", "value": "qa.person@example.com"},
+                ],
+            }
+        ]
+        with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+            result = api.redmine_search_issues(
+                operation_id="operation-search-filters",
+                environment="sandbox",
+                project_id="neox-series",
+                status_id="*",
+                subject_contains="NETCONF",
+                custom_field_filters=[{"id": "43", "value": "b5", "match": "contains"}],
+                include_custom_fields=["31", "123"],
+                closed_from="2026-09-01",
+                closed_to="2026-09-30",
+                offset=100,
+            )
+
+        self.assertTrue(result["ok"])
+        query = client.search_queries[0]
+        self.assertEqual("~b5", query["cf_43"])
+        self.assertEqual("~NETCONF", query["subject"])
+        self.assertEqual("><2026-09-01|2026-09-30", query["closed_on"])
+        self.assertEqual(100, query["offset"])
+        issue = result["result"]["issues"][0]
+        self.assertEqual(
+            [
+                {"id": 31, "name": "Test case No", "value": "MSAN1-20189"},
+                {"id": 123, "name": "Reporter Email", "value": "*****@example.com"},
+            ],
+            issue["custom_fields"],
+        )
+        self.assertEqual(1, result["result"]["total_count"])
+
+    def test_search_fails_closed_when_redmine_ignores_custom_field_filter(self) -> None:
+        client = FakeRedmineClient()
+        client.search_results = [
+            {"id": 1, "subject": "match", "custom_fields": [{"id": 43, "value": "V1.03(ACKG.0)b5"}]},
+            {"id": 2, "subject": "leaked-other-build", "custom_fields": [{"id": 43, "value": "V1.02(ACKG.0)b9"}]},
+        ]
+        with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+            result = api.redmine_search_issues(
+                operation_id="operation-search-ignored",
+                environment="sandbox",
+                custom_field_filters=[{"id": "43", "value": "V1.03(ACKG.0)b5"}],
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("FILTER_NOT_APPLIED", result["error"]["error"]["code"])
+        self.assertNotIn("leaked-other-build", json.dumps(result))
+
+    def test_search_rejects_non_numeric_custom_field_id_and_bad_dates(self) -> None:
+        client = FakeRedmineClient()
+        with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+            bad_id = api.redmine_search_issues(
+                operation_id="operation-search-bad-id",
+                environment="sandbox",
+                custom_field_filters=[{"id": "43&status_id=*", "value": "x"}],
+            )
+            bad_date = api.redmine_search_issues(
+                operation_id="operation-search-bad-date",
+                environment="sandbox",
+                updated_from="09/01/2026",
+            )
+
+        self.assertEqual("INVALID_ARGUMENT", bad_id["error"]["error"]["code"])
+        self.assertEqual("INVALID_ARGUMENT", bad_date["error"]["error"]["code"])
+        self.assertEqual([], client.search_queries)
 
     def test_project_metadata_returns_safe_field_summary(self) -> None:
         client = FakeRedmineClient()
@@ -1360,6 +1507,28 @@ class RedmineClientTests(unittest.TestCase):
         self.assertEqual(b"PNG bytes", request.data)
         self.assertIn("/uploads.json?filename=filter+result.png", request.full_url)
         self.assertEqual("application/octet-stream", request.get_header("Content-type"))
+
+    def test_list_projects_follows_pagination_until_total_count(self) -> None:
+        class PagedClient(RedmineClient):
+            def __init__(self):
+                super().__init__("https://redmine.example.com", "redmine-secret")
+                self.offsets = []
+
+            def request_json(self, method, path, payload=None, query=None):
+                self.offsets.append(query["offset"])
+                start = query["offset"]
+                count = min(100, 150 - start)
+                return {
+                    "projects": [{"id": start + index} for index in range(count)],
+                    "total_count": 150,
+                }
+
+        client = PagedClient()
+        listing = client.list_projects()
+
+        self.assertEqual([0, 100], client.offsets)
+        self.assertEqual(150, len(listing["projects"]))
+        self.assertEqual(150, listing["total_count"])
 
     def test_add_comment_uses_notes_only_payload(self) -> None:
         class RecordingClient(RedmineClient):

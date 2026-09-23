@@ -39,12 +39,34 @@ Bug creation and comments default to preview. A write call must include `write: 
 `redmine_get_issue` returns full issue content for one `issue_id`: description, status, tracker,
 priority, project, author, assignee, category, fixed version, custom fields, and the journal
 (comment/change) history with attachments metadata. It never returns watchers, spent/estimated
-hours, or any other field beyond this safe projection, and it never writes. `redmine_search_issues`
-remains the safe-summary listing tool (`id`/`subject`/`status`/`url`); use `redmine_get_issue` once
-a specific issue is identified.
+hours, or any other field beyond this safe projection, and it never writes. Journal details carry
+`field_name` for custom-field changes and `old_label`/`new_label` for status changes; a field hidden
+from the current tracker has `field_name: null`. Custom field names are whitespace-trimmed.
 
-`redmine_list_projects` returns `id`/`identifier`/`name`/`status` for Redmine projects so a caller
-can resolve the correct `project_id` instead of guessing a slug.
+`redmine_list_projects` pages through every project server-side and returns
+`id`/`identifier`/`name`/`status`, plus `total_count`, `fetched_count`, and `truncated` (true only
+if the 20-page safety cap was reached). An optional `query` narrows the result by name or
+identifier substring, so a caller resolves the correct `project_id` instead of guessing a slug.
+
+`redmine_search_issues` returns safe summaries (`id`/`subject`/`status`/`updated_on`/`url`) with
+`total_count` and `offset` for paging. Optional filters: `subject_contains`, `custom_field_filters`
+(`[{id, value, match: exact|contains}]`, sent as Redmine `cf_<id>`), `author_id`,
+`assigned_to_id`, `category_id`, and inclusive `updated_from`/`updated_to`/`closed_from`/`closed_to`
+dates (`YYYY-MM-DD`). `include_custom_fields` returns the listed custom field values per issue.
+Redmine silently ignores a filter on a custom field that is not filterable or not visible, so every
+returned issue is checked against each custom field filter; any mismatch fails the whole call with
+`FILTER_NOT_APPLIED` rather than returning unfiltered results.
+
+### Content redaction on read
+
+Issue text is authored by people and can contain device or service credentials. Before any read
+result leaves the server, every string in `redmine_get_issue` and `redmine_search_issues` output
+is masked for: `password=`/`passwd=`/`pwd=`/`secret=`/`token=`/`api_key=` assignments,
+`--password`/`--passwd`/`--pass` flags, `sshpass -p`, a `-p` value on a line that also has
+`-u`/`--user`/`--username` (so `ssh -p 22` stays readable), URL `user:password@` userinfo, and the
+local part of email addresses (`*****@example.com`). Results include `redactions` with
+`credentials` and `emails` counts so callers know content was masked. Redmine's own stored text is
+never modified; HTML entities such as `&lt;` in descriptions are returned as stored.
 
 ### Description and comment format validation
 
