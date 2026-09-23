@@ -22,6 +22,8 @@ class RedmineMcpServerTests(unittest.TestCase):
             {
                 "redmine_health",
                 "redmine_search_issues",
+                "redmine_get_issue",
+                "redmine_list_projects",
                 "redmine_get_project_metadata",
                 "redmine_validate_template",
                 "redmine_preview_bug",

@@ -448,6 +448,151 @@ def redmine_search_issues(
         return _failure(operation_id, "search", exc)
 
 
+def _named_ref(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    return {"id": value.get("id"), "name": str(value.get("name") or "")}
+
+
+def _safe_issue_detail(issue: dict[str, Any], client: RedmineClient) -> dict[str, Any]:
+    custom_fields = []
+    for field in issue.get("custom_fields") if isinstance(issue.get("custom_fields"), list) else []:
+        if not isinstance(field, dict):
+            continue
+        custom_fields.append(
+            {
+                "id": field.get("id"),
+                "name": str(field.get("name") or ""),
+                "value": field.get("value"),
+            }
+        )
+    journals = []
+    for journal in issue.get("journals") if isinstance(issue.get("journals"), list) else []:
+        if not isinstance(journal, dict):
+            continue
+        details = []
+        for detail in journal.get("details") if isinstance(journal.get("details"), list) else []:
+            if not isinstance(detail, dict):
+                continue
+            details.append(
+                {
+                    "property": str(detail.get("property") or ""),
+                    "name": str(detail.get("name") or ""),
+                    "old_value": detail.get("old_value"),
+                    "new_value": detail.get("new_value"),
+                }
+            )
+        journals.append(
+            {
+                "id": journal.get("id"),
+                "user": _named_ref(journal.get("user")),
+                "notes": str(journal.get("notes") or ""),
+                "private": bool(journal.get("private_notes")),
+                "created_on": journal.get("created_on"),
+                "details": details,
+            }
+        )
+    attachments = []
+    for attachment in issue.get("attachments") if isinstance(issue.get("attachments"), list) else []:
+        if not isinstance(attachment, dict):
+            continue
+        attachments.append(
+            {
+                "id": attachment.get("id"),
+                "filename": str(attachment.get("filename") or ""),
+                "filesize": attachment.get("filesize"),
+                "content_type": str(attachment.get("content_type") or ""),
+                "created_on": attachment.get("created_on"),
+            }
+        )
+    issue_id = str(issue.get("id") or "")
+    return {
+        "id": issue_id,
+        "url": client.issue_url(issue_id),
+        "subject": str(issue.get("subject") or ""),
+        "description": str(issue.get("description") or ""),
+        "status": _named_ref(issue.get("status")),
+        "tracker": _named_ref(issue.get("tracker")),
+        "priority": _named_ref(issue.get("priority")),
+        "project": _named_ref(issue.get("project")),
+        "author": _named_ref(issue.get("author")),
+        "assigned_to": _named_ref(issue.get("assigned_to")),
+        "fixed_version": _named_ref(issue.get("fixed_version")),
+        "category": _named_ref(issue.get("category")),
+        "done_ratio": issue.get("done_ratio"),
+        "start_date": issue.get("start_date"),
+        "due_date": issue.get("due_date"),
+        "created_on": issue.get("created_on"),
+        "updated_on": issue.get("updated_on"),
+        "closed_on": issue.get("closed_on"),
+        "custom_fields": custom_fields,
+        "journals": journals,
+        "journal_count": len(journals),
+        "attachments": attachments,
+        "attachment_count": len(attachments),
+    }
+
+
+def redmine_get_issue(
+    *,
+    operation_id: str,
+    environment: str,
+    issue_id: str,
+    env_file: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    try:
+        settings, client = _runtime(env_file, timeout)
+        selected = validate_environment(environment, settings.environment)
+        selected_issue_id = _require_text("issue_id", issue_id)
+        issue = client.get_issue(selected_issue_id, include="journals,attachments")
+        return _success(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "issue": _safe_issue_detail(issue, client),
+            }
+        )
+    except Exception as exc:
+        return _failure(operation_id, "get-issue", exc)
+
+
+def redmine_list_projects(
+    *,
+    operation_id: str,
+    environment: str,
+    limit: int = 100,
+    env_file: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    try:
+        settings, client = _runtime(env_file, timeout)
+        selected = validate_environment(environment, settings.environment)
+        projects = client.list_projects(limit=limit)
+        safe_projects = [
+            {
+                "id": project.get("id"),
+                "identifier": str(project.get("identifier") or ""),
+                "name": str(project.get("name") or ""),
+                "status": project.get("status"),
+            }
+            for project in projects
+            if project.get("id") not in (None, "")
+        ]
+        return _success(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "project_count": len(safe_projects),
+                "projects": safe_projects,
+            }
+        )
+    except Exception as exc:
+        return _failure(operation_id, "list-projects", exc)
+
+
 def redmine_get_project_metadata(
     *,
     operation_id: str,
@@ -982,6 +1127,8 @@ def redmine_add_comment(**kwargs: Any) -> dict[str, Any]:
 TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "redmine_health": redmine_health,
     "redmine_search_issues": redmine_search_issues,
+    "redmine_get_issue": redmine_get_issue,
+    "redmine_list_projects": redmine_list_projects,
     "redmine_get_project_metadata": redmine_get_project_metadata,
     "redmine_validate_template": redmine_validate_template,
     "redmine_preview_bug": redmine_preview_bug,

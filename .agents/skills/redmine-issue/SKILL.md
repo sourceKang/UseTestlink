@@ -7,6 +7,7 @@ description: Use for company Redmine/eITS metadata, template validation, bug pre
 
 使用 `redmine-mcp` 的 `metadata` 或 `issue` toolset，並先讀 `docs/redmine-fields.md`。
 
+0. 需要查既有 issue 完整內容（描述、custom fields、留言歷史）時用 `redmine_get_issue`；不知道正確 `project_id` 時用 `redmine_list_projects` 解析，不要用猜的 slug。這兩個都是唯讀。
 1. 確認 `corp`／`sandbox`、project、template 與 operation ID。
 2. 建單前先去重；open match 重用，closed match 阻擋自動重開。
 3. 先呼叫 preview。公司 template 中 Severity 由內建 `priority_id` mapping 解析；自訂 Priority 是獨立 custom field，不得共用 mapping 或猜 ID。

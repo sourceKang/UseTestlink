@@ -11,6 +11,7 @@ Formal bugs must be created in the corporate Redmine/eITS workflow. A local Redm
 - `testlink-mcp` receives only the resulting Redmine ID/URL needed in execution notes.
 - Formal work does not fall back to Chrome/browser control when the Redmine MCP is missing; fix or explicitly configure the MCP credential path.
 - Metadata discovery and template validation are read-only. Issue and comment writes require a matching preview digest and produce audit JSON.
+- `redmine_get_issue` and `redmine_list_projects` are read-only lookups. `redmine_get_issue` returns a safe field projection (description, status, tracker, priority, project, author, assignee, category, fixed version, custom fields, journals, attachment metadata) and always excludes watchers and time-tracking fields; it never writes and is not a substitute for `redmine_search_issues` when only a summary is needed.
 
 ## Required Target Configuration
 

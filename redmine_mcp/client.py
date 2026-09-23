@@ -138,6 +138,15 @@ class RedmineClient:
             "statuses": self.request_json("GET", "/issue_statuses.json").get("issue_statuses") or [],
         }
 
+    def list_projects(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        response = self.request_json(
+            "GET",
+            "/projects.json",
+            query={"limit": min(max(int(limit), 1), 100)},
+        )
+        projects = response.get("projects") or []
+        return [project for project in projects if isinstance(project, dict)]
+
     def find_issues(
         self,
         *,
@@ -196,10 +205,14 @@ class RedmineClient:
             reused=False,
         )
 
-    def get_issue(self, issue_id: str | int) -> dict[str, Any]:
+    def get_issue(self, issue_id: str | int, *, include: str | None = None) -> dict[str, Any]:
         if not str(issue_id).strip():
             raise RedmineMcpError("Redmine issue ID is required.", code="INVALID_ARGUMENT")
-        response = self.request_json("GET", f"/issues/{issue_id}.json")
+        response = self.request_json(
+            "GET",
+            f"/issues/{issue_id}.json",
+            query={"include": include} if include else None,
+        )
         issue = response.get("issue")
         if not isinstance(issue, dict) or "id" not in issue:
             raise RedmineMcpError(

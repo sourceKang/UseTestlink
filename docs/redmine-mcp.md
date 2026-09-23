@@ -23,6 +23,8 @@ Do not place `REDMINE_ALLOW_MANAGER_FIELDS=true` in a shared env file. Manager-o
 
 - `redmine_health`
 - `redmine_search_issues`
+- `redmine_get_issue`
+- `redmine_list_projects`
 - `redmine_get_project_metadata`
 - `redmine_validate_template`
 - `redmine_preview_bug`
@@ -31,6 +33,18 @@ Do not place `REDMINE_ALLOW_MANAGER_FIELDS=true` in a shared env file. Manager-o
 - `redmine_add_comment`
 
 Bug creation and comments default to preview. A write call must include `write: true` and the exact `preview_digest` returned for the unchanged planned payload. The server recomputes dedupe state immediately before creation; if another actor created a matching issue after preview, the old digest is rejected and a new preview is required.
+
+### Reading existing issues and resolving projects
+
+`redmine_get_issue` returns full issue content for one `issue_id`: description, status, tracker,
+priority, project, author, assignee, category, fixed version, custom fields, and the journal
+(comment/change) history with attachments metadata. It never returns watchers, spent/estimated
+hours, or any other field beyond this safe projection, and it never writes. `redmine_search_issues`
+remains the safe-summary listing tool (`id`/`subject`/`status`/`url`); use `redmine_get_issue` once
+a specific issue is identified.
+
+`redmine_list_projects` returns `id`/`identifier`/`name`/`status` for Redmine projects so a caller
+can resolve the correct `project_id` instead of guessing a slug.
 
 ### Description and comment format validation
 

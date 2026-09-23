@@ -119,6 +119,27 @@ TOOLS: list[dict[str, Any]] = [
         "annotations": {"readOnlyHint": True},
     },
     {
+        "name": "redmine_get_issue",
+        "description": (
+            "Read full Redmine issue content: description, status, custom fields, "
+            "and journal/comment history. Excludes watchers and other internal fields."
+        ),
+        "inputSchema": schema(
+            {"issue_id": string("Existing Redmine issue ID to read.")},
+            ["operation_id", "environment", "issue_id"],
+        ),
+        "annotations": {"readOnlyHint": True},
+    },
+    {
+        "name": "redmine_list_projects",
+        "description": "List Redmine projects with identifier and name so callers can resolve project_id instead of guessing.",
+        "inputSchema": schema(
+            {"limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 100}},
+            ["operation_id", "environment"],
+        ),
+        "annotations": {"readOnlyHint": True},
+    },
+    {
         "name": "redmine_get_project_metadata",
         "description": "Read safe Redmine project, tracker, priority, custom-field, and status metadata.",
         "inputSchema": schema(
@@ -182,6 +203,7 @@ TOOLSETS: dict[str, set[str]] = {
     "integration": {"redmine_create_bug", "redmine_add_comment"},
     "issue": {
         "redmine_search_issues",
+        "redmine_get_issue",
         "redmine_preview_bug",
         "redmine_create_bug",
         "redmine_preview_comment",
@@ -189,6 +211,7 @@ TOOLSETS: dict[str, set[str]] = {
     },
     "metadata": {
         "redmine_health",
+        "redmine_list_projects",
         "redmine_get_project_metadata",
         "redmine_validate_template",
     },

@@ -29,6 +29,8 @@ class FakeRedmineClient:
         self.fail_upload = False
         self.last_issue_payload: dict | None = None
         self.issue_readback_override: dict | None = None
+        self.issue_detail_override: dict | None = None
+        self.projects: list[dict] = []
 
     def health(self):
         return {"user": {"id": 7, "login": "qa-user"}}
@@ -74,7 +76,9 @@ class FakeRedmineClient:
         self.open_issue = issue
         return issue
 
-    def get_issue(self, issue_id):
+    def get_issue(self, issue_id, *, include=None):
+        if include and self.issue_detail_override is not None:
+            return self.issue_detail_override
         if self.issue_readback_override is not None:
             return self.issue_readback_override
         payload = self.last_issue_payload or {}
@@ -83,6 +87,9 @@ class FakeRedmineClient:
             "priority": {"id": payload.get("priority_id")},
             "custom_fields": payload.get("custom_fields") or [],
         }
+
+    def list_projects(self, *, limit=100):
+        return list(self.projects)
 
     def upload_attachment(self, *, filename, content):
         self.uploaded_files.append((filename, content))
@@ -804,6 +811,68 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertTrue(health["result"]["authenticated"])
         self.assertEqual("qa-user", health["result"]["login"])
         self.assertEqual(1, search["result"]["issue_count"])
+
+    def test_get_issue_returns_full_content_with_journals_and_excludes_watchers(self) -> None:
+        client = FakeRedmineClient()
+        client.issue_detail_override = {
+            "id": 88,
+            "subject": "NXC400 crash",
+            "description": "Full repro steps.",
+            "status": {"id": 1, "name": "New"},
+            "tracker": {"id": 1, "name": "Bug"},
+            "priority": {"id": 5, "name": "L2"},
+            "project": {"id": 42, "name": "NXC400"},
+            "author": {"id": 3, "name": "QA Bot"},
+            "assigned_to": {"id": 9, "name": "Owner"},
+            "custom_fields": [{"id": 200, "name": "Platform", "value": "NXC400"}],
+            "journals": [
+                {
+                    "id": 501,
+                    "user": {"id": 3, "name": "QA Bot"},
+                    "notes": "Retested on build 123.",
+                    "created_on": "2026-01-01T00:00:00Z",
+                    "details": [{"property": "attr", "name": "status_id", "old_value": "1", "new_value": "2"}],
+                }
+            ],
+            "attachments": [
+                {"id": 9001, "filename": "log.txt", "filesize": 128, "content_type": "text/plain"}
+            ],
+            "watchers": [{"id": 3, "name": "QA Bot"}],
+            "spent_hours": 4.5,
+        }
+        with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+            result = api.redmine_get_issue(
+                operation_id="operation-get-issue",
+                environment="sandbox",
+                issue_id="88",
+            )
+
+        self.assertTrue(result["ok"])
+        issue = result["result"]["issue"]
+        self.assertEqual("Full repro steps.", issue["description"])
+        self.assertEqual("Platform", issue["custom_fields"][0]["name"])
+        self.assertEqual("NXC400", issue["custom_fields"][0]["value"])
+        self.assertEqual(1, issue["journal_count"])
+        self.assertEqual("Retested on build 123.", issue["journals"][0]["notes"])
+        self.assertEqual(1, issue["attachment_count"])
+        self.assertNotIn("watchers", issue)
+        self.assertNotIn("spent_hours", issue)
+
+    def test_list_projects_returns_safe_summary(self) -> None:
+        client = FakeRedmineClient()
+        client.projects = [
+            {"id": 738, "identifier": "ems-map", "name": "EMS Map", "status": 1},
+            {"id": 900, "identifier": "nxc400", "name": "NXC400", "status": 1},
+        ]
+        with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+            result = api.redmine_list_projects(
+                operation_id="operation-list-projects",
+                environment="sandbox",
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(2, result["result"]["project_count"])
+        self.assertEqual("nxc400", result["result"]["projects"][1]["identifier"])
 
     def test_project_metadata_returns_safe_field_summary(self) -> None:
         client = FakeRedmineClient()
