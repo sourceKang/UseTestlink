@@ -62,9 +62,17 @@ def mask_secret_assignments(text: str, names: str) -> str:
     Call on plain field values before JSON serialization. The unquoted alternative
     also preserves delimiters if a caller mistakenly passes serialized JSON.
     Quoted values can contain spaces and escaped quotes.
+
+    The unquoted alternative accepts ASCII printable characters only, minus the
+    delimiters. Credentials are ASCII, so any non-ASCII character ends the value.
+    Excluding non-ASCII by a positive class rather than by adding full-width
+    punctuation to the exclusion set keeps Traditional Chinese written straight
+    after a secret, as in "TESTLINK_DEVKEY=<value>，後續內容必須保留。", from being
+    swallowed as part of the value.
     """
     pattern = (rf"""((?:{names})\s*['"]?\s*[:=]\s*)"""
-               + r"""("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,'"{}\[\]\\]+)""")
+               + r"""("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'"""
+               + r"""|(?:(?![\s,'"{}\[\]\\])[!-~])+)""")
 
     def replace(match: re.Match[str]) -> str:
         value = match.group(2)
