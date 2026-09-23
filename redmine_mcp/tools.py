@@ -204,6 +204,7 @@ TOOLSETS: dict[str, set[str]] = {
     "issue": {
         "redmine_search_issues",
         "redmine_get_issue",
+        "redmine_list_projects",
         "redmine_preview_bug",
         "redmine_create_bug",
         "redmine_preview_comment",
