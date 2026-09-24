@@ -28,10 +28,10 @@ Read back from corporate project `neox-series` (id 1560) on 2026-09-23. Use IDs,
 123  Reporter Email      string         masked on read
 ```
 
-The internal "Release Note Verify" report appears to be a custom page rather than a Redmine saved
-query (unverified). Its Platform and Result columns have no Redmine custom field and appear to come
-from TestLink execution data, so reproducing that report needs cross-system correlation in
-`qa-integration-agent`, not only `redmine-mcp`.
+"Release Note Verify" is a TestLink feature where QA manually closes Redmine bugs that have been
+released. Its Platform and Result columns come from TestLink execution data, not Redmine custom
+fields. Closing issues stays a manual QA action in TestLink: agents may prepare a read-only list of
+close candidates, but must never close or change the status of a Redmine issue.
 
 ## Required Target Configuration
 
