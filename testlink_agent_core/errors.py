@@ -56,13 +56,37 @@ def is_secret_key(key: str | None) -> bool:
     return bool(key) and any(part in key.casefold() for part in _SECRET_KEY_PARTS)
 
 
+def mask_secret_assignments(text: str, names: str) -> str:
+    """Mask assignment values without consuming surrounding quotes or delimiters.
+
+    Call on plain field values before JSON serialization. The unquoted alternative
+    also preserves delimiters if a caller mistakenly passes serialized JSON.
+    Quoted values can contain spaces and escaped quotes.
+
+    The unquoted alternative accepts ASCII printable characters only, minus the
+    delimiters. Credentials are ASCII, so any non-ASCII character ends the value.
+    Excluding non-ASCII by a positive class rather than by adding full-width
+    punctuation to the exclusion set keeps Traditional Chinese written straight
+    after a secret, as in "TESTLINK_DEVKEY=<value>，後續內容必須保留。", from being
+    swallowed as part of the value.
+    """
+    pattern = (rf"""((?:{names})\s*['"]?\s*[:=]\s*)"""
+               + r"""("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'"""
+               + r"""|(?:(?![\s,'"{}\[\]\\])[!-~])+)""")
+
+    def replace(match: re.Match[str]) -> str:
+        value = match.group(2)
+        quote = value[0] if value[0] in "\"'" else ""
+        return match.group(1) + quote + MASK + quote
+
+    return re.sub(pattern, replace, text, flags=re.IGNORECASE)
+
+
 def mask_secrets(value: Any) -> str:
     text = str(value)
     for secret in _known_secret_values():
         text = text.replace(secret, MASK)
-    text = re.sub(r"(devKey\s*['\"]?\s*[:=]\s*['\"]?)([^,'\"\s}]+)", rf"\1{MASK}", text, flags=re.IGNORECASE)
-    text = re.sub(r"(TESTLINK_DEVKEY\s*=\s*)(.+)", rf"\1{MASK}", text, flags=re.IGNORECASE)
-    text = re.sub(r"(REDMINE_API_KEY\s*=\s*)(.+)", rf"\1{MASK}", text, flags=re.IGNORECASE)
+    text = mask_secret_assignments(text, "TESTLINK_DEVKEY|REDMINE_API_KEY|devKey")
     return text
 
 

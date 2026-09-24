@@ -36,6 +36,13 @@ The first call defaults to preview and returns a SHA-256 `preview_digest`. A wri
 
 Execution writes append records. The protected tool does not expose overwrite or deletion. TestLink notes may contain Coordinator-generated Redmine traceability, but the TestLink MCP never calls Redmine.
 
+TestLink's XML-RPC `reportTCResult` answers with a list of structs (for example
+`[{"status": true, "id": 3043053}]`), not a bare mapping. The server reads the execution ID
+from that shape, and also inspects the response for a rejection: an error struct (`code`
+present or `status: false`) or an unrelated answer such as a platform list, which XML-RPC
+returns instead of a result when the platform is missing or ambiguous. Either case raises a
+failure instead of recording a successful execution.
+
 Every attempted write creates a redacted `started` audit under `local/testlink_audit/` and updates the same record to success or failure.
 
 ## Protected Testcase Maintenance

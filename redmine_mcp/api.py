@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -17,13 +18,20 @@ from .attachments import PreparedImageAttachment, prepare_image_attachments
 from .audit import find_operation_audits, utc_now_iso, write_operation_audit
 from .client import RedmineClient
 from .config import DEFAULT_AUDIT_DIR, DEFAULT_TIMEOUT_SECONDS, RedmineSettings, load_redmine_settings
-from .errors import RedmineMcpError, normalize_error, redact_secrets
+from .errors import (
+    RedmineMcpError,
+    mask_email_addresses,
+    mask_embedded_credentials,
+    normalize_error,
+    redact_secrets,
+)
 from .models import RedmineIssue
 from .policy import blocked_manager_fields, manager_fields_allowed, validate_environment
 from .templates import load_template, merge_template_values, validate_template
 from .text_format import validate_redmine_text
 
 
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _LOCKS_GUARD = threading.Lock()
 _DEDUPE_LOCKS: dict[str, threading.Lock] = {}
 
@@ -403,6 +411,103 @@ def redmine_health(
         return _failure(operation_id, "health", exc)
 
 
+def _redact_content(value: Any, counts: dict[str, int]) -> Any:
+    if isinstance(value, str):
+        text, credentials = mask_embedded_credentials(value)
+        text, emails = mask_email_addresses(text)
+        counts["credentials"] += credentials
+        counts["emails"] += emails
+        return text
+    if isinstance(value, dict):
+        return {key: _redact_content(item, counts) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_content(item, counts) for item in value]
+    return value
+
+
+def _redacted(value: Any) -> tuple[Any, dict[str, int]]:
+    counts = {"credentials": 0, "emails": 0}
+    return _redact_content(value, counts), counts
+
+
+def _custom_field_id(value: Any, name: str) -> str:
+    text = str(value if value is not None else "").strip()
+    if not text.isdigit():
+        raise RedmineMcpError(f"{name} must be a numeric custom field ID.", code="INVALID_ARGUMENT")
+    return text
+
+
+def _custom_field_filters(value: Any) -> list[dict[str, str]]:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list):
+        raise RedmineMcpError("custom_field_filters must be an array.", code="INVALID_ARGUMENT")
+    filters: list[dict[str, str]] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise RedmineMcpError(f"custom_field_filters[{index}] must be an object.", code="INVALID_ARGUMENT")
+        field_id = _custom_field_id(item.get("id"), f"custom_field_filters[{index}].id")
+        if any(existing["id"] == field_id for existing in filters):
+            raise RedmineMcpError(f"custom field {field_id} is filtered more than once.", code="INVALID_ARGUMENT")
+        match = str(item.get("match") or "exact").strip().casefold()
+        if match not in {"exact", "contains"}:
+            raise RedmineMcpError(
+                f"custom_field_filters[{index}].match must be exact or contains.",
+                code="INVALID_ARGUMENT",
+            )
+        filters.append(
+            {
+                "id": field_id,
+                "value": _require_text(f"custom_field_filters[{index}].value", item.get("value")),
+                "match": match,
+            }
+        )
+    return filters
+
+
+def _date_range(name: str, start: str | None, end: str | None) -> str | None:
+    bounds = []
+    for label, value in (("from", start), ("to", end)):
+        text = str(value or "").strip()
+        if text and not _DATE_RE.fullmatch(text):
+            raise RedmineMcpError(f"{name}_{label} must be YYYY-MM-DD.", code="INVALID_ARGUMENT")
+        bounds.append(text)
+    if bounds[0] and bounds[1]:
+        return f"><{bounds[0]}|{bounds[1]}"
+    if bounds[0]:
+        return f">={bounds[0]}"
+    if bounds[1]:
+        return f"<={bounds[1]}"
+    return None
+
+
+def _custom_field_values(issue: dict[str, Any], field_id: str) -> list[str] | None:
+    for field in issue.get("custom_fields") if isinstance(issue.get("custom_fields"), list) else []:
+        if isinstance(field, dict) and str(field.get("id")) == field_id:
+            value = field.get("value")
+            return [str(item or "").strip() for item in (value if isinstance(value, list) else [value])]
+    return None
+
+
+def _matches_custom_field_filter(issue: dict[str, Any], field_filter: dict[str, str]) -> bool:
+    values = _custom_field_values(issue, field_filter["id"])
+    if values is None:
+        return False
+    expected = field_filter["value"].casefold()
+    if field_filter["match"] == "contains":
+        return any(expected in value.casefold() for value in values)
+    return any(expected == value.casefold() for value in values)
+
+
+def _custom_field_summary(issue: dict[str, Any], field_ids: list[str]) -> list[dict[str, Any]]:
+    fields = issue.get("custom_fields") if isinstance(issue.get("custom_fields"), list) else []
+    return [
+        {"id": field.get("id"), "name": str(field.get("name") or "").strip(), "value": field.get("value")}
+        for field in fields
+        if isinstance(field, dict) and str(field.get("id")) in field_ids
+    ]
+
+
 def redmine_search_issues(
     *,
     operation_id: str,
@@ -410,7 +515,18 @@ def redmine_search_issues(
     project_id: str | None = None,
     status_id: str = "open",
     tracker_id: str | None = None,
+    subject_contains: str | None = None,
+    custom_field_filters: Any = None,
+    include_custom_fields: Any = None,
+    author_id: str | None = None,
+    assigned_to_id: str | None = None,
+    category_id: str | None = None,
+    updated_from: str | None = None,
+    updated_to: str | None = None,
+    closed_from: str | None = None,
+    closed_to: str | None = None,
     limit: int = 100,
+    offset: int = 0,
     env_file: str | None = None,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
@@ -418,34 +534,247 @@ def redmine_search_issues(
         settings, client = _runtime(env_file, timeout)
         selected = validate_environment(environment, settings.environment)
         project = _require_text("project_id", project_id or settings.project_id)
-        issues = client.find_issues(
-            project_id=project,
-            status_id=status_id,
-            tracker_id=tracker_id,
-            limit=limit,
-        )
-        safe_issues = [
+        field_filters = _custom_field_filters(custom_field_filters)
+        if include_custom_fields not in (None, "") and not isinstance(include_custom_fields, list):
+            raise RedmineMcpError("include_custom_fields must be an array.", code="INVALID_ARGUMENT")
+        included_fields = [
+            _custom_field_id(field_id, f"include_custom_fields[{index}]")
+            for index, field_id in enumerate(include_custom_fields or [])
+        ]
+        page_offset = max(int(offset), 0)
+        query: dict[str, Any] = {
+            "project_id": project,
+            "status_id": status_id,
+            "tracker_id": tracker_id,
+            "author_id": author_id,
+            "assigned_to_id": assigned_to_id,
+            "category_id": category_id,
+            "subject": f"~{subject_contains.strip()}" if str(subject_contains or "").strip() else None,
+            "updated_on": _date_range("updated", updated_from, updated_to),
+            "closed_on": _date_range("closed", closed_from, closed_to),
+            "limit": min(max(int(limit), 1), 100),
+            "offset": page_offset,
+            "sort": "updated_on:desc",
+        }
+        for field_filter in field_filters:
+            prefix = "~" if field_filter["match"] == "contains" else ""
+            query[f"cf_{field_filter['id']}"] = prefix + field_filter["value"]
+        response = client.search_issues(query)
+        issues = [issue for issue in response["issues"] if issue.get("id") not in (None, "")]
+        # Redmine silently drops filters on fields that are not filterable or visible.
+        ignored = sorted(
             {
+                field_filter["id"]
+                for issue in issues
+                for field_filter in field_filters
+                if not _matches_custom_field_filter(issue, field_filter)
+            }
+        )
+        if ignored:
+            raise RedmineMcpError(
+                "Redmine did not apply the custom field filter for field ID(s) "
+                f"{', '.join(ignored)}; results were discarded instead of returned unfiltered.",
+                code="FILTER_NOT_APPLIED",
+            )
+        safe_issues = []
+        for issue in issues:
+            row: dict[str, Any] = {
                 "id": str(issue.get("id") or ""),
                 "subject": str(issue.get("subject") or ""),
                 "status": str((issue.get("status") or {}).get("name") or ""),
+                "updated_on": issue.get("updated_on"),
                 "url": client.issue_url(str(issue.get("id") or "")),
             }
-            for issue in issues
-            if issue.get("id") not in (None, "")
-        ]
+            if included_fields:
+                row["custom_fields"] = _custom_field_summary(issue, included_fields)
+            safe_issues.append(row)
+        safe_issues, redactions = _redacted(safe_issues)
         return _success(
             {
                 "schema_version": CONTRACT_SCHEMA_VERSION,
                 "operation_id": operation_id,
                 "environment": selected,
                 "project_id": project,
+                "total_count": response["total_count"],
+                "offset": page_offset,
                 "issue_count": len(safe_issues),
                 "issues": safe_issues,
+                "redactions": redactions,
             }
         )
     except Exception as exc:
         return _failure(operation_id, "search", exc)
+
+
+def _named_ref(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    return {"id": value.get("id"), "name": str(value.get("name") or "").strip()}
+
+
+def _safe_issue_detail(
+    issue: dict[str, Any],
+    client: RedmineClient,
+    status_names: dict[str, str],
+) -> dict[str, Any]:
+    custom_fields = []
+    for field in issue.get("custom_fields") if isinstance(issue.get("custom_fields"), list) else []:
+        if not isinstance(field, dict):
+            continue
+        custom_fields.append(
+            {
+                "id": field.get("id"),
+                "name": str(field.get("name") or "").strip(),
+                "value": field.get("value"),
+            }
+        )
+    field_names = {str(field["id"]): field["name"] for field in custom_fields}
+    journals = []
+    for journal in issue.get("journals") if isinstance(issue.get("journals"), list) else []:
+        if not isinstance(journal, dict):
+            continue
+        details = []
+        for detail in journal.get("details") if isinstance(journal.get("details"), list) else []:
+            if not isinstance(detail, dict):
+                continue
+            prop = str(detail.get("property") or "")
+            name = str(detail.get("name") or "")
+            is_status = prop == "attr" and name == "status_id"
+            details.append(
+                {
+                    "property": prop,
+                    "name": name,
+                    "field_name": field_names.get(name) if prop == "cf" else None,
+                    "old_value": detail.get("old_value"),
+                    "new_value": detail.get("new_value"),
+                    "old_label": status_names.get(str(detail.get("old_value"))) if is_status else None,
+                    "new_label": status_names.get(str(detail.get("new_value"))) if is_status else None,
+                }
+            )
+        journals.append(
+            {
+                "id": journal.get("id"),
+                "user": _named_ref(journal.get("user")),
+                "notes": str(journal.get("notes") or ""),
+                "private": bool(journal.get("private_notes")),
+                "created_on": journal.get("created_on"),
+                "details": details,
+            }
+        )
+    attachments = []
+    for attachment in issue.get("attachments") if isinstance(issue.get("attachments"), list) else []:
+        if not isinstance(attachment, dict):
+            continue
+        attachments.append(
+            {
+                "id": attachment.get("id"),
+                "filename": str(attachment.get("filename") or ""),
+                "filesize": attachment.get("filesize"),
+                "content_type": str(attachment.get("content_type") or ""),
+                "created_on": attachment.get("created_on"),
+            }
+        )
+    issue_id = str(issue.get("id") or "")
+    return {
+        "id": issue_id,
+        "url": client.issue_url(issue_id),
+        "subject": str(issue.get("subject") or ""),
+        "description": str(issue.get("description") or ""),
+        "status": _named_ref(issue.get("status")),
+        "tracker": _named_ref(issue.get("tracker")),
+        "priority": _named_ref(issue.get("priority")),
+        "project": _named_ref(issue.get("project")),
+        "author": _named_ref(issue.get("author")),
+        "assigned_to": _named_ref(issue.get("assigned_to")),
+        "fixed_version": _named_ref(issue.get("fixed_version")),
+        "category": _named_ref(issue.get("category")),
+        "done_ratio": issue.get("done_ratio"),
+        "start_date": issue.get("start_date"),
+        "due_date": issue.get("due_date"),
+        "created_on": issue.get("created_on"),
+        "updated_on": issue.get("updated_on"),
+        "closed_on": issue.get("closed_on"),
+        "custom_fields": custom_fields,
+        "journals": journals,
+        "journal_count": len(journals),
+        "attachments": attachments,
+        "attachment_count": len(attachments),
+    }
+
+
+def redmine_get_issue(
+    *,
+    operation_id: str,
+    environment: str,
+    issue_id: str,
+    env_file: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    try:
+        settings, client = _runtime(env_file, timeout)
+        selected = validate_environment(environment, settings.environment)
+        selected_issue_id = _require_text("issue_id", issue_id)
+        issue = client.get_issue(selected_issue_id, include="journals,attachments")
+        status_names = {
+            str(status.get("id")): str(status.get("name") or "")
+            for status in client.get_issue_statuses()
+        }
+        detail, redactions = _redacted(_safe_issue_detail(issue, client, status_names))
+        return _success(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "issue": detail,
+                "redactions": redactions,
+            }
+        )
+    except Exception as exc:
+        return _failure(operation_id, "get-issue", exc)
+
+
+def redmine_list_projects(
+    *,
+    operation_id: str,
+    environment: str,
+    query: str | None = None,
+    env_file: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    try:
+        settings, client = _runtime(env_file, timeout)
+        selected = validate_environment(environment, settings.environment)
+        listing = client.list_projects()
+        needle = str(query or "").strip().casefold()
+        safe_projects = [
+            {
+                "id": project.get("id"),
+                "identifier": str(project.get("identifier") or ""),
+                "name": str(project.get("name") or ""),
+                "status": project.get("status"),
+            }
+            for project in listing["projects"]
+            if project.get("id") not in (None, "")
+            and (
+                not needle
+                or needle in str(project.get("identifier") or "").casefold()
+                or needle in str(project.get("name") or "").casefold()
+            )
+        ]
+        return _success(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "total_count": listing["total_count"],
+                "fetched_count": len(listing["projects"]),
+                "truncated": len(listing["projects"]) < listing["total_count"],
+                "project_count": len(safe_projects),
+                "projects": safe_projects,
+            }
+        )
+    except Exception as exc:
+        return _failure(operation_id, "list-projects", exc)
 
 
 def redmine_get_project_metadata(
@@ -982,6 +1311,8 @@ def redmine_add_comment(**kwargs: Any) -> dict[str, Any]:
 TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "redmine_health": redmine_health,
     "redmine_search_issues": redmine_search_issues,
+    "redmine_get_issue": redmine_get_issue,
+    "redmine_list_projects": redmine_list_projects,
     "redmine_get_project_metadata": redmine_get_project_metadata,
     "redmine_validate_template": redmine_validate_template,
     "redmine_preview_bug": redmine_preview_bug,
@@ -1005,4 +1336,4 @@ def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, A
         return TOOLS[name](**(arguments or {}))
     except TypeError as exc:
         operation_id = str((arguments or {}).get("operation_id") or "unknown-operation")
-        return _failure(operation_id, "arguments", exc)
+        return _failure(operation_id, "arguments", RedmineMcpError(str(exc), code="INVALID_ARGUMENT"))

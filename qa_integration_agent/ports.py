@@ -15,7 +15,6 @@ from .errors import CoordinatorError
 QA_TESTLINK_ENV_POINTER = "QA_TESTLINK_MCP_ENV_FILE"
 QA_REDMINE_ENV_POINTER = "QA_REDMINE_MCP_ENV_FILE"
 QA_MCP_TIMEOUT = "QA_MCP_TIMEOUT_SECONDS"
-_REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 
 
 class IntegrationPorts(Protocol):
@@ -121,6 +120,10 @@ class StdioMcpPorts:
         }
         child_env = self._isolated_environment(env_pointer_name, env_pointer_value)
         try:
+            # No explicit cwd: the child must inherit this process's real working
+            # directory so its default "local/..." audit path lands next to the
+            # coordinator's own local/qa_audit, not inside site-packages when this
+            # package is pip/pipx-installed rather than run from a source checkout.
             completed = subprocess.run(
                 [sys.executable, "-m", module],
                 input=json.dumps(request, ensure_ascii=False) + "\n",
@@ -129,7 +132,6 @@ class StdioMcpPorts:
                 encoding="utf-8",
                 errors="replace",
                 timeout=self.timeout,
-                cwd=str(_REPOSITORY_ROOT),
                 env=child_env,
                 check=False,
             )

@@ -56,6 +56,22 @@ def schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
 
 TOOLS: list[dict[str, Any]] = [
     {
+        "name": "qa_read_preview_artifact",
+        "description": "Read a digest-verified preview page with exact safe payloads; inspect all sections before confirmation.",
+        "inputSchema": schema(
+            {
+                "operation_id": string("Operation identity from preview."),
+                "preview_artifact": string("Exact preview artifact path."),
+                "preview_digest": string("Digest returned by preview."),
+                "section": {"type": "string", "enum": ["items", "warnings", "ignored"], "default": "items"},
+                "offset": {"type": "integer", "minimum": 0, "default": 0},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 5},
+            },
+            ["operation_id", "preview_artifact", "preview_digest"],
+        ),
+        "annotations": {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True},
+    },
+    {
         "name": "qa_preview_report_artifact",
         "description": "Persist an exact QA plan/review artifact and return a bounded preview summary.",
         "inputSchema": schema(PLAN_PROPERTIES, PLAN_REQUIRED),
@@ -168,6 +184,7 @@ TOOLS: list[dict[str, Any]] = [
 TOOLSET_ENV = "QA_INTEGRATION_TOOLSET"
 TOOLSETS: dict[str, set[str]] = {
     "import": {
+        "qa_read_preview_artifact",
         "qa_preview_report_artifact",
         "qa_execute_preview_artifact",
         "qa_resume_preview_artifact",

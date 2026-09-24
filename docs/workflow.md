@@ -29,6 +29,18 @@ The platform and build are exact inputs. A missing requested platform is a targe
 - Any changed report, target, template, custom field, or Redmine opt-in invalidates the digest and requires a new preview.
 - `qa_resume_preview_artifact` uses the same preview artifact plus prior audit identity and completed item states; it is not a fresh bulk retry.
 
+## Paginated Preview Review (Unreleased)
+
+`qa_read_preview_artifact` reads the digest-bound plan using `operation_id`,
+`preview_artifact`, and `preview_digest`. It does not trust the separate stored `review`
+copy. Read `items`, `warnings`, and `ignored` sections with `offset` and `limit`
+(default 5, maximum 50), following `next_offset` until null. `section_counts` shows
+which sections need review. Items contain exact redacted request and preview payloads.
+Each page validates the digest again; a changed artifact requires a fresh preview.
+Pagination limits rows rather than truncating payloads; use limit 1 for large items.
+This local snapshot read does not revalidate remote state or the report file.
+Execute retains the existing report-hash, confirmation, dedupe, and audit protections.
+
 ## Protected Testcase Maintenance
 
 Use `testlink_create_testcase` and `testlink_update_testcase` for formal MCP testcase
@@ -102,23 +114,34 @@ audit so retry/recovery cannot create a duplicate.
 
 ## Report Schema Validation
 
-The current supported automation report schema is:
+The currently supported automation report schemas are:
 
 ```text
 legacy-web-ems-report-v1
+junit-xml-v1
 ```
 
 The parser must fail fast when:
 
 - The report is not valid UTF-8.
-- The report does not contain `Test Results:`.
-- The report does not contain at least one recognized TestLink result row.
+- The report does not contain `Test Results:` (legacy) or a `<testsuite>`/`<testsuites>` element (JUnit XML).
+- The report does not contain at least one recognized TestLink result row (legacy) or one JUnit `<testcase>` carrying a recoverable TestLink external ID (JUnit XML).
 
 Recognized legacy result rows use:
 
 ```text
 [<External ID>][<Automation Test Function>] Result <Pass|Fail|Blocked|Skip|Skipped|Error> (<duration>)
 ```
+
+`junit-xml-v1` accepts standard pytest JUnit XML. JUnit has no dedicated field for the
+TestLink external ID, so it is recovered from the `<testcase>` `name` (checked before
+`classname`), matching either the written-out form (`EMS1-3581`) or the pytest function
+form (`test_ems1_3581_all_port_info`). A `<testcase>` without a recoverable ID is counted
+under `Unmapped Tests` in the header and excluded from the parsed results instead of
+failing the whole report; the report itself only fails when no `<testcase>` in it carries
+a recoverable ID. `<failure>`/`<error>` map to `Fail`/`Error`, `<skipped>` maps to `Skipped`
+(not uploaded by default, same as legacy `Skip`), and a `<testcase>` with none of those
+child elements is `Pass`.
 
 Unknown or changed report formats must be rejected instead of guessed. Add a new schema version and tests before accepting a new format.
 

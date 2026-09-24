@@ -24,6 +24,9 @@ from .commands import (
 from .config import DEFAULT_AUDIT_DIR, DEFAULT_CATALOG_PATH, DEFAULT_PROFILES_PATH, DEFAULT_TIMEOUT_SECONDS
 
 
+from .doctor import command_doctor
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="TestLink XML-RPC helper.")
     parser.add_argument(
@@ -36,6 +39,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
 
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    doctor = subparsers.add_parser("doctor", help="Diagnose MCP installation offline without reading credentials.")
+    doctor.add_argument("--server", choices=("qa", "testlink", "redmine"), default="qa")
+    doctor.add_argument("--testlink-env-file", help="Absolute TestLink credential file path; contents are never read.")
+    doctor.add_argument("--redmine-env-file", help="Absolute Redmine credential file path; contents are never read.")
+    doctor.add_argument("--executable", dest="executable_path", help="Check this absolute executable path instead of PATH; never launch it.")
+    doctor.add_argument("--json", action="store_true", help="Print structured diagnostic results.")
+    doctor.set_defaults(func=command_doctor)
 
     list_projects = subparsers.add_parser("list-projects", help="List visible TestLink projects.")
     list_projects.set_defaults(func=command_list_projects)

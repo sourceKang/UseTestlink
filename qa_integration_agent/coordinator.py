@@ -156,7 +156,7 @@ class QaCoordinator:
         self,
         *,
         operation_id: str,
-        correlation_id: str | None,
+        correlation_id: str | None = None,
         environment: str,
         project: str,
         plan: str,

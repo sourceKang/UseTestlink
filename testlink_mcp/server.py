@@ -13,14 +13,14 @@ from .tools import tools_for_toolset
 
 
 def _result_response(request_id: Any, result: Any) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": request_id, "result": result}
+    return {"jsonrpc": "2.0", "id": redact_secrets(request_id), "result": result}
 
 
 def _error_response(request_id: Any, code: int, message: str, data: Any | None = None) -> dict[str, Any]:
     error: dict[str, Any] = {"code": code, "message": str(redact_secrets(message))}
     if data is not None:
         error["data"] = redact_secrets(data)
-    return {"jsonrpc": "2.0", "id": request_id, "error": error}
+    return {"jsonrpc": "2.0", "id": redact_secrets(request_id), "error": error}
 
 
 def handle_request(message: dict[str, Any]) -> dict[str, Any] | None:
@@ -33,7 +33,7 @@ def handle_request(message: dict[str, Any]) -> dict[str, Any] | None:
         return _result_response(
             request_id,
             {
-                "protocolVersion": params.get("protocolVersion", "2024-11-05"),
+                "protocolVersion": redact_secrets(params.get("protocolVersion", "2024-11-05")),
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "testlink-mcp", "version": __version__},
             },
@@ -90,13 +90,16 @@ def _read_message() -> tuple[dict[str, Any] | None, str]:
 
 
 def _write_response(response: dict[str, Any], framing: str) -> None:
-    payload = json.dumps(redact_secrets(response), ensure_ascii=False).encode("utf-8")
+    # Response builders redact structured data before encoding tool text as JSON.
+    # Masking the serialized text again can corrupt its JSON delimiters.
+    payload = json.dumps(response, ensure_ascii=False).encode("utf-8")
     if framing == "content-length":
         sys.stdout.buffer.write(f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii"))
         sys.stdout.buffer.write(payload)
         sys.stdout.buffer.flush()
         return
-    print(payload.decode("utf-8"), flush=True)
+    sys.stdout.buffer.write(payload + b"\n")
+    sys.stdout.buffer.flush()
 
 
 def startup_health_check() -> dict[str, Any]:

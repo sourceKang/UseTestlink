@@ -115,6 +115,18 @@ Manager-only Redmine fields remain blocked by default. Never put
 `REDMINE_ALLOW_MANAGER_FIELDS=true` in a shared environment file; it is allowed only on
 an approved manager-owned machine.
 
+## Claude And Offline Diagnostics (Unreleased)
+
+Claude Code and Claude Desktop setup templates and a Traditional Chinese walkthrough
+are in [docs/claude-setup.md](docs/claude-setup.md). `CLAUDE.md` imports the shared
+`AGENTS.md` instructions for Claude Code working in this repository.
+
+The current development checkout adds `testlink-agent doctor` for offline installation
+diagnostics (use `--executable` when the client launches an absolute path) and `qa_read_preview_artifact` for digest-verified preview pagination.
+These additions are not included in the existing v1.7.0 release tag. Client settings
+contain credential-file paths only, never API keys. See
+[the implementation plan](docs/usability-plan.md) for scope and validation.
+
 ## Codex MCP Registration
 
 For cross-project use, copy `docs/codex-mcp-config.example.toml` into the user-level
@@ -150,7 +162,8 @@ verification, and `docs/token-budget.md` for measured schema/instruction budgets
    TestLink `discovery` profile only when the values are not already authoritative.
 2. Call `qa_preview_report_artifact` with a stable `operation_id`, explicit environment,
    exact target, and report path. Preview performs zero external writes.
-3. Review the compact counts and the exact persisted `preview_artifact`, including
+3. Review the compact counts and the exact persisted `preview_artifact` (use the
+   development `qa_read_preview_artifact` tool to page through items, warnings, and ignored entries), including
    Redmine create/reuse decisions, warnings, and returned `preview_digest`.
 4. Only after explicit confirmation, call `qa_execute_preview_artifact` with the artifact
    path, `write: true`, and the matching digest. The original report hash is rechecked.
@@ -204,6 +217,7 @@ are bound into the preview. The server rechecks dedupe immediately before creati
 Use for cross-system automation-report workflows:
 
 - `qa_preview_report_artifact`
+- `qa_read_preview_artifact` (unreleased; paginated exact plan review)
 - `qa_preview_report_import`
 - `qa_execute_preview_artifact`
 - `qa_resume_preview_artifact`
