@@ -1336,4 +1336,4 @@ def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, A
         return TOOLS[name](**(arguments or {}))
     except TypeError as exc:
         operation_id = str((arguments or {}).get("operation_id") or "unknown-operation")
-        return _failure(operation_id, "arguments", exc)
+        return _failure(operation_id, "arguments", RedmineMcpError(str(exc), code="INVALID_ARGUMENT"))

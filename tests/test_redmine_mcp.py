@@ -1003,6 +1003,18 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertEqual("FILTER_NOT_APPLIED", result["error"]["error"]["code"])
         self.assertNotIn("leaked-other-build", json.dumps(result))
 
+    def test_unknown_tool_argument_is_rejected_before_redmine_call(self) -> None:
+        client = FakeRedmineClient()
+        with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+            result = api.call_tool(
+                "redmine_search_issues",
+                {"operation_id": "operation-unknown-arg", "environment": "sandbox", "cf_filter": "43"},
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("INVALID_ARGUMENT", result["error"]["error"]["code"])
+        self.assertEqual([], client.search_queries)
+
     def test_search_rejects_non_numeric_custom_field_id_and_bad_dates(self) -> None:
         client = FakeRedmineClient()
         with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
