@@ -59,7 +59,7 @@ For MCPs shared by other Codex projects, install a tagged GitHub release into an
 isolated user environment. Do not point those projects at `D:\UseTestlink`:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.7.0"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.8.0"
 ```
 
 This installs the following console entrypoints:
@@ -115,15 +115,15 @@ Manager-only Redmine fields remain blocked by default. Never put
 `REDMINE_ALLOW_MANAGER_FIELDS=true` in a shared environment file; it is allowed only on
 an approved manager-owned machine.
 
-## Claude And Offline Diagnostics (Unreleased)
+## Claude And Offline Diagnostics
 
 Claude Code and Claude Desktop setup templates and a Traditional Chinese walkthrough
 are in [docs/claude-setup.md](docs/claude-setup.md). `CLAUDE.md` imports the shared
 `AGENTS.md` instructions for Claude Code working in this repository.
 
-The current development checkout adds `testlink-agent doctor` for offline installation
+Starting with v1.8.0, the release includes `testlink-agent doctor` for offline installation
 diagnostics (use `--executable` when the client launches an absolute path) and `qa_read_preview_artifact` for digest-verified preview pagination.
-These additions are not included in the existing v1.7.0 release tag. Client settings
+Earlier tags such as v1.7.0 do not include them. Client settings
 contain credential-file paths only, never API keys. See
 [the implementation plan](docs/usability-plan.md) for scope and validation.
 
@@ -219,7 +219,7 @@ are bound into the preview. The server rechecks dedupe immediately before creati
 Use for cross-system automation-report workflows:
 
 - `qa_preview_report_artifact`
-- `qa_read_preview_artifact` (unreleased; paginated exact plan review)
+- `qa_read_preview_artifact` (paginated exact plan review)
 - `qa_preview_report_import`
 - `qa_execute_preview_artifact`
 - `qa_resume_preview_artifact`

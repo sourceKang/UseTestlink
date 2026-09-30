@@ -40,7 +40,7 @@ binding, Redmine dedupe/reuse, report hash validation, write confirmation, audit
 readback verification, secret redaction, or offline tests. These are correctness contracts,
 not optional prompt text.
 
-## Unreleased Preview Reader
+## Preview Reader
 
 The digest-verified `qa_read_preview_artifact` tool adds paginated access to exact
 plan items, warnings, and ignored entries. The current QA import surface is about

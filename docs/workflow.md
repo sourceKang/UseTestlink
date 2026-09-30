@@ -81,7 +81,7 @@ single-report preview keeps the v1 plan, audit, and digest unchanged.
 - Any changed report (any one of `reports`), target, template, custom field, or Redmine opt-in invalidates the digest and requires a new preview.
 - `qa_resume_preview_artifact` uses the same preview artifact plus prior audit identity and completed item states; it is not a fresh bulk retry.
 
-## Paginated Preview Review (Unreleased)
+## Paginated Preview Review
 
 `qa_read_preview_artifact` reads the digest-bound plan using `operation_id`,
 `preview_artifact`, and `preview_digest`. It does not trust the separate stored `review`

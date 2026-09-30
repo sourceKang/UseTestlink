@@ -5,9 +5,8 @@
 
 ## 版本與驗證範圍
 
-`doctor` 與 `qa_read_preview_artifact` 是本次尚未發布的開發變更，
-既有 v1.7.0 tag 不包含這些新增功能。待變更審查並發布新版後，
-共用環境才依 `deployment.md` 安裝該 tag。不要將其他專案指向開發 checkout。
+`doctor` 與 `qa_read_preview_artifact` 從 v1.8.0 tag 開始提供，v1.7.0 以前的 tag 沒有這兩項功能。
+共用環境依 `deployment.md` 安裝 v1.8.0 以上的 tag。不要將其他專案指向開發 checkout。
 交接報告已提供 commit `a6e7c01` 在 Linux／Python 3.11、Claude Code 2.1.274
 非互動模式的實際 MCP 接入證據（合成 artifact 分頁、中文及拒絕情境）。
 同次測試發現內層 JSON 遮蔽缺陷，本批修正另以離線回歸驗證；
