@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:qa-mcp-contracts:v2:qa-report-preview",
+  "title": "QA multi-report import preview",
+  "description": "Preview of one TestLink execution per testcase merged from one automation report per node. The review preview carries items; the compact tool response omits items and adds preview_artifact and review_path.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation_id",
+    "correlation_id",
+    "environment",
+    "mode",
+    "preview_digest",
+    "planned_write",
+    "input_digest",
+    "reports",
+    "target",
+    "parsed_count",
+    "write_count",
+    "ignored_count",
+    "warnings",
+    "warning_count",
+    "warnings_truncated",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "operation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "correlation_id": {"type": "string", "minLength": 8, "maxLength": 128},
+    "environment": {"enum": ["corp", "sandbox"]},
+    "mode": {"const": "preview"},
+    "preview_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "planned_write": {"type": "boolean"},
+    "input_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "Canonical payload digest of [{label, sha256}] for every report, in reports order."
+    },
+    "reports": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/report"}},
+    "target": {"$ref": "#/$defs/target"},
+    "parsed_count": {"type": "integer", "minimum": 0},
+    "write_count": {"type": "integer", "minimum": 0},
+    "ignored_count": {"type": "integer", "minimum": 0},
+    "items": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "warnings": {"type": "array", "items": {"type": "string", "maxLength": 2000}},
+    "warning_count": {"type": "integer", "minimum": 0},
+    "warnings_truncated": {"type": "boolean"},
+    "summary": {"$ref": "#/$defs/summary"},
+    "preview_artifact": {"type": "string", "minLength": 1},
+    "review_path": {"const": "review"}
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "plan", "platform", "build"],
+      "properties": {
+        "project": {"type": "string", "minLength": 1},
+        "plan": {"type": "string", "minLength": 1},
+        "platform": {"type": "string", "minLength": 1},
+        "build": {"type": "string", "minLength": 1}
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "path", "report_file", "sha256", "report_schema", "header"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1, "maxLength": 64},
+        "path": {"type": "string", "minLength": 1},
+        "report_file": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "report_schema": {"enum": ["legacy-web-ems-report-v1", "junit-xml-v1"]},
+        "header": {"$ref": "#/$defs/reportHeader"}
+      }
+    },
+    "reportHeader": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "Report generated on": {"type": "string"},
+        "EMS Version": {"type": "string"},
+        "Node Name": {"type": "string"},
+        "Node IP": {"type": "string"},
+        "Node Chassis": {"type": "string"},
+        "Summary": {"type": "string"},
+        "Total test time": {"type": "string"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status_counts", "redmine_action_counts", "sample_testcase_external_ids"],
+      "properties": {
+        "status_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "p": {"type": "integer", "minimum": 0},
+            "f": {"type": "integer", "minimum": 0},
+            "b": {"type": "integer", "minimum": 0}
+          }
+        },
+        "redmine_action_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "none": {"type": "integer", "minimum": 0},
+            "create": {"type": "integer", "minimum": 0},
+            "reuse": {"type": "integer", "minimum": 0},
+            "blocked": {"type": "integer", "minimum": 0}
+          }
+        },
+        "sample_testcase_external_ids": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "issue": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["id", "url", "subject", "state"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "url": {"type": "string", "minLength": 1},
+        "subject": {"type": "string"},
+        "state": {"enum": ["open", "closed"]}
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "raw_status", "duration"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1, "maxLength": 64},
+        "raw_status": {"type": "string", "minLength": 1},
+        "duration": {"type": "string"}
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "testcase_external_id",
+        "test_name",
+        "raw_status",
+        "status",
+        "testlink_planned_write",
+        "testlink_preview_digest",
+        "redmine_action",
+        "redmine_preview_digest",
+        "redmine_issue_fields",
+        "redmine_issue_payload",
+        "dedupe_digest",
+        "nodes"
+      ],
+      "properties": {
+        "testcase_external_id": {"type": "string", "minLength": 1},
+        "test_name": {"type": "string", "minLength": 1},
+        "raw_status": {"type": "string", "minLength": 1},
+        "status": {"enum": ["p", "f", "b"]},
+        "testlink_planned_write": {"type": "boolean"},
+        "testlink_preview_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "redmine_action": {"enum": ["none", "create", "reuse", "blocked"]},
+        "redmine_preview_digest": {"type": ["string", "null"]},
+        "redmine_issue_fields": {
+          "type": ["object", "null"],
+          "$comment": "Reproduced verbatim from the redmine-mcp bug preview, which owns its shape."
+        },
+        "redmine_issue_payload": {
+          "type": ["object", "null"],
+          "$comment": "Reproduced verbatim from the redmine-mcp bug preview, which owns its shape."
+        },
+        "dedupe_digest": {"type": ["string", "null"]},
+        "existing_issue": {"$ref": "#/$defs/issue"},
+        "nodes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/node"}}
+      }
+    }
+  }
+}

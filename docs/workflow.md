@@ -37,12 +37,48 @@ is discarded; that item fails with a retryable error and resume handles it.
 The execution duration sent to TestLink is the report duration in minutes (`execduration`,
 rounded to four decimals as in the legacy upload).
 
+### Multi-Node Report Import
+
+When the same testcases ran on several nodes, pass one report per node to
+`qa_preview_report_artifact` as `reports: [{label, path}]` instead of `report`. Exactly one of
+`report` or `reports` is required. Labels must be non-empty, unique (case-insensitive), at most
+64 printable characters, and each entry must point to a different existing file. Every report
+is parsed with the normal report parser; unknown schemas still fail fast. The legacy
+compatibility tools keep the single `report` contract.
+
+Each testcase produces one TestLink execution:
+
+- Every report must contain exactly the same testcases. A testcase missing from any report
+  fails the preview with `INVALID_ARGUMENT` naming the report label and the missing IDs; a
+  testcase repeated inside one report fails with `DUPLICATE_CASE`.
+- Status: any node `Fail`/`Error` -> `f`; otherwise any `Pass` -> `p`; otherwise any `Blocked`
+  -> `b`; otherwise every node skipped and `skip_policy` decides (`ignore` -> ignored,
+  `blocked` -> `b`). The lead node is the first node in `reports` order with the winning status;
+  its raw result becomes the item's `Result`.
+- `execution_duration` is the longest node duration, in minutes.
+- Notes keep the single-report lines (`Report File` lists every file) and add a `Node Results:`
+  block with one line per node:
+  `<label>: Result <raw>; duration <text>; target <Node Name> / <Node IP> / <Node Chassis>; report <file name>`
+  (`-` replaces a missing header value).
+- Redmine dedupe, subject, and template tokens (`header.*`, `result.*`) use the lead failing
+  node's result and header, so the dedupe key matches importing that node's report alone. The
+  issue description adds `Failing Nodes:` and every node line; the retest evidence comment on a
+  reused issue adds every node line.
+
+The plan and the persisted artifact use contracts v2 (`schema_version: "2.0"`). They record
+each report's label, path, file name, SHA-256, schema, and a header subset (Report generated
+on, EMS Version, Node Name, Node IP, Node Chassis, Summary, Total test time). `input_digest`
+is the canonical digest of every `{label, sha256}` in `reports` order. Execute and resume
+re-hash every report and refuse any change (`PREVIEW_MISMATCH` / `RESUME_MISMATCH`) before any
+external write; the v2 workflow audit binds resume to every report hash as well. A
+single-report preview keeps the v1 plan, audit, and digest unchanged.
+
 ## Confirmation Contract
 
 - `qa_preview_report_artifact` is read-only, persists the exact redacted plan/review under `local/`, and returns its path plus canonical `preview_digest`.
 - The conversational response is bounded: aggregate counts, warnings, target, a short testcase sample, artifact path, and digest. Exact per-item payloads stay in the review artifact.
 - `qa_execute_preview_artifact` requires `write: true`, the same `operation_id`, the returned `preview_artifact`, and the matching digest. The coordinator loads that plan instead of rebuilding it from repeated arguments.
-- Any changed report, target, template, custom field, or Redmine opt-in invalidates the digest and requires a new preview.
+- Any changed report (any one of `reports`), target, template, custom field, or Redmine opt-in invalidates the digest and requires a new preview.
 - `qa_resume_preview_artifact` uses the same preview artifact plus prior audit identity and completed item states; it is not a fresh bulk retry.
 
 ## Paginated Preview Review (Unreleased)

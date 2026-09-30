@@ -40,6 +40,26 @@ class QaIntegrationServerTests(unittest.TestCase):
         self.assertNotIn("redmine_custom_fields", execute_properties)
         self.assertFalse(tools["qa_execute_preview_artifact"]["annotations"]["destructiveHint"])
 
+    def test_artifact_preview_accepts_exactly_one_of_report_or_reports(self) -> None:
+        tools = {tool["name"]: tool for tool in TOOLS}
+        preview = tools["qa_preview_report_artifact"]["inputSchema"]
+        reports = preview["properties"]["reports"]
+
+        self.assertNotIn("report", preview["required"])
+        self.assertNotIn("reports", preview["required"])
+        self.assertEqual([{"required": ["report"]}, {"required": ["reports"]}], preview["oneOf"])
+        self.assertEqual("array", reports["type"])
+        self.assertEqual(1, reports["minItems"])
+        self.assertEqual(["label", "path"], reports["items"]["required"])
+        self.assertFalse(reports["items"]["additionalProperties"])
+        self.assertEqual({"label", "path"}, set(reports["items"]["properties"]))
+        # Compatibility tools keep the single-report contract unchanged.
+        for name in ("qa_preview_report_import", "qa_execute_report_import", "qa_resume_report_import"):
+            with self.subTest(tool=name):
+                schema = tools[name]["inputSchema"]
+                self.assertIn("report", schema["required"])
+                self.assertNotIn("reports", schema["properties"])
+
     def test_coordinator_tool_schema_has_no_credentials_or_manager_fields(self) -> None:
         for tool in TOOLS:
             properties = tool["inputSchema"]["properties"]

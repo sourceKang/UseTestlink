@@ -870,5 +870,403 @@ class QaCoordinatorBatchSessionTests(unittest.TestCase):
         self.assertEqual(0, ports.calls_outside_session)
 
 
+def write_node_report(directory: str, name: str, node: str, rows: list[str], *, ip: str = "192.0.2.1") -> Path:
+    report = Path(directory) / name
+    report.write_text(
+        "\n".join(
+            [
+                "Report generated on: 2026-07-13 10:00:00",
+                "EMS Version: 1.2.3",
+                f"Node Name: {node}",
+                f"Node IP: {ip}",
+                "Node Chassis: MSC8000",
+                "Test Results:",
+                "-------------",
+                *rows,
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return report
+
+
+def multi_args(reports: list[tuple[str, Path]], **overrides):
+    values = workflow_args(Path("unused"), **{"redmine_create_bugs": False, **overrides})
+    values.pop("report")
+    values["reports"] = [{"label": label, "path": str(path)} for label, path in reports]
+    return values
+
+
+class MultiReportImportTests(unittest.TestCase):
+    def build(self, rows_by_node: dict[str, list[str]], ports=None, **overrides):
+        ports = ports or FakePorts()
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            reports = [
+                (label, write_node_report(tmpdir, f"{label}.txt", f"OLT-{label}", rows, ip=f"192.0.2.{index + 1}"))
+                for index, (label, rows) in enumerate(rows_by_node.items())
+            ]
+            plan = coordinator.build_plan(**multi_args(reports, **overrides))
+        return plan, ports
+
+    def test_status_aggregation_fail_wins_then_pass_then_blocked(self) -> None:
+        plan, _ = self.build(
+            {
+                "node-a": [
+                    "[EMS-1][test_one] Result Pass (10s)",
+                    "[EMS-2][test_two] Result Pass (10s)",
+                    "[EMS-3][test_three] Result Skip (1s)",
+                    "[EMS-4][test_four] Result Pass (10s)",
+                ],
+                "node-b": [
+                    "[EMS-1][test_one] Result Error (20s)",
+                    "[EMS-2][test_two] Result Pass (30s)",
+                    "[EMS-3][test_three] Result Blocked (2s)",
+                    "[EMS-4][test_four] Result Blocked (10s)",
+                ],
+                "node-c": [
+                    "[EMS-1][test_one] Result Fail (15s)",
+                    "[EMS-2][test_two] Result Skip (1s)",
+                    "[EMS-3][test_three] Result Skip (1s)",
+                    "[EMS-4][test_four] Result Skip (1s)",
+                ],
+            }
+        )
+
+        results = {item["result"]["external_id"]: item["result"] for item in plan["items"]}
+        self.assertEqual("2.0", plan["schema_version"])
+        self.assertEqual({"EMS-1": "f", "EMS-2": "p", "EMS-3": "b", "EMS-4": "p"},
+                         {key: value["status"] for key, value in results.items()})
+        # The first failing node in reports order is the lead: node-b's Error.
+        self.assertEqual("Error", results["EMS-1"]["raw_status"])
+        self.assertEqual("Blocked", results["EMS-3"]["raw_status"])
+        self.assertEqual(["node-a", "node-b", "node-c"], [node["label"] for node in results["EMS-1"]["nodes"]])
+        self.assertEqual([], plan["ignored"])
+
+    def test_all_nodes_skipped_follow_skip_policy(self) -> None:
+        rows = {
+            "node-a": ["[EMS-1][test_one] Result Skip (1s)", "[EMS-2][test_two] Result Pass (1s)"],
+            "node-b": ["[EMS-1][test_one] Result Skipped (1s)", "[EMS-2][test_two] Result Pass (1s)"],
+        }
+        ignored_plan, _ = self.build(rows)
+        blocked_plan, _ = self.build(rows, skip_policy="blocked")
+
+        self.assertEqual(["EMS-2"], [item["result"]["external_id"] for item in ignored_plan["items"]])
+        self.assertEqual(["EMS-1"], [row["external_id"] for row in ignored_plan["ignored"]])
+        self.assertEqual(2, len(ignored_plan["ignored"][0]["nodes"]))
+        blocked = {item["result"]["external_id"]: item["result"] for item in blocked_plan["items"]}
+        self.assertEqual("b", blocked["EMS-1"]["status"])
+        self.assertEqual("Skip", blocked["EMS-1"]["raw_status"])
+        self.assertEqual([], blocked_plan["ignored"])
+
+    def test_notes_list_every_node_and_duration_is_the_longest(self) -> None:
+        plan, ports = self.build(
+            {
+                "node-a": ["[EMS-1][test_one] Result Pass (60s)"],
+                "node-b": ["[EMS-1][test_one] Result Fail (90s)"],
+            }
+        )
+
+        request = plan["items"][0]["testlink_request"]
+        notes = request["notes"].splitlines()
+        self.assertEqual(1.5, request["execution_duration"])
+        self.assertEqual(90.0, plan["items"][0]["result"]["duration_seconds"])
+        self.assertIn("Report File: node-a.txt, node-b.txt", notes)
+        self.assertIn("Result: Fail", notes)
+        start = notes.index("Node Results:")
+        self.assertEqual(
+            [
+                "node-a: Result Pass; duration 60s; target OLT-node-a / 192.0.2.1 / MSC8000; report node-a.txt",
+                "node-b: Result Fail; duration 90s; target OLT-node-b / 192.0.2.2 / MSC8000; report node-b.txt",
+            ],
+            notes[start + 1:start + 3],
+        )
+        self.assertEqual(0, ports.testlink_write_count)
+
+    def test_plan_records_every_report_and_digests_their_hashes(self) -> None:
+        ports = FakePorts()
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            first = write_node_report(tmpdir, "a.txt", "OLT-A", ["[EMS-1][test_one] Result Pass (1s)"])
+            second = write_node_report(tmpdir, "b.txt", "OLT-B", ["[EMS-1][test_one] Result Pass (1s)"])
+            plan = coordinator.build_plan(**multi_args([("node-a", first), ("node-b", second)]))
+            hashes = [hashlib.sha256(path.read_bytes()).hexdigest() for path in (first, second)]
+            swapped = coordinator.build_plan(**multi_args([("node-b", second), ("node-a", first)]))
+
+        self.assertEqual(
+            [
+                {
+                    "label": "node-a",
+                    "path": str(first),
+                    "report_file": "a.txt",
+                    "sha256": hashes[0],
+                    "report_schema": "legacy-web-ems-report-v1",
+                    "header": {
+                        "Report generated on": "2026-07-13 10:00:00",
+                        "EMS Version": "1.2.3",
+                        "Node Name": "OLT-A",
+                        "Node IP": "192.0.2.1",
+                        "Node Chassis": "MSC8000",
+                    },
+                },
+                "node-b",
+            ],
+            [plan["reports"][0], plan["reports"][1]["label"]],
+        )
+        self.assertEqual(
+            payload_digest({"reports": [{"label": "node-a", "sha256": hashes[0]},
+                                        {"label": "node-b", "sha256": hashes[1]}]}),
+            plan["input_digest"],
+        )
+        self.assertNotIn("report", plan)
+        self.assertNotEqual(plan["input_digest"], swapped["input_digest"])
+
+    def test_testcase_missing_from_one_report_fails_before_any_preview(self) -> None:
+        ports = FakePorts()
+        with self.assertRaises(Exception) as context:
+            self.build(
+                {
+                    "node-a": ["[EMS-1][test_one] Result Pass (1s)", "[EMS-2][test_two] Result Pass (1s)"],
+                    "node-b": ["[EMS-1][test_one] Result Pass (1s)"],
+                },
+                ports=ports,
+            )
+
+        self.assertEqual("INVALID_ARGUMENT", context.exception.code)
+        self.assertIn("node-b lacks EMS-2", str(context.exception))
+        self.assertEqual([], ports.redmine_preview_requests)
+
+    def test_duplicate_testcase_within_one_report_is_rejected(self) -> None:
+        with self.assertRaises(Exception) as context:
+            self.build(
+                {
+                    "node-a": ["[EMS-1][test_one] Result Pass (1s)", "[EMS-1][test_one] Result Skip (1s)"],
+                    "node-b": ["[EMS-1][test_one] Result Pass (1s)"],
+                }
+            )
+
+        self.assertEqual("DUPLICATE_CASE", context.exception.code)
+        self.assertIn("node-a", str(context.exception))
+
+    def test_report_labels_and_entries_are_validated(self) -> None:
+        coordinator = QaCoordinator(FakePorts())
+        with TemporaryDirectory() as tmpdir:
+            first = str(write_node_report(tmpdir, "a.txt", "A", ["[EMS-1][t] Result Pass (1s)"]))
+            second = str(write_node_report(tmpdir, "b.txt", "B", ["[EMS-1][t] Result Pass (1s)"]))
+            invalid = {
+                "empty list": [],
+                "blank label": [{"label": "  ", "path": first}],
+                "non-string label": [{"label": 7, "path": first}],
+                "duplicate label": [{"label": "Node", "path": first}, {"label": "node", "path": second}],
+                "control character": [{"label": "node\nB", "path": first}],
+                "long label": [{"label": "n" * 65, "path": first}],
+                "unknown key": [{"label": "a", "path": first, "status": "Pass"}],
+                "repeated file": [{"label": "a", "path": first}, {"label": "b", "path": first}],
+                "not a list": {"label": "a", "path": first},
+            }
+            codes = {}
+            for name, reports in invalid.items():
+                arguments = multi_args([])
+                arguments["reports"] = reports
+                with self.assertRaises(Exception) as context:
+                    coordinator.build_plan(**arguments)
+                codes[name] = context.exception.code
+            arguments = multi_args([])
+            arguments["reports"] = [{"label": "a", "path": str(Path(tmpdir) / "missing.txt")}]
+            with self.assertRaises(Exception) as missing:
+                coordinator.build_plan(**arguments)
+
+        self.assertEqual({"INVALID_ARGUMENT"}, set(codes.values()), codes)
+        self.assertEqual("REPORT_NOT_FOUND", missing.exception.code)
+
+    def test_report_and_reports_are_mutually_exclusive(self) -> None:
+        ports = FakePorts()
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_report(tmpdir)
+            both = workflow_args(report)
+            both["reports"] = [{"label": "a", "path": str(report)}]
+            neither = workflow_args(report)
+            neither.pop("report")
+            refused = [
+                api.qa_preview_report_artifact(coordinator=coordinator, artifact_dir=tmpdir, **arguments)
+                for arguments in (both, neither)
+            ]
+            legacy = api.qa_preview_report_import(coordinator=coordinator, **{**neither, "reports": both["reports"]})
+
+        for response in refused:
+            self.assertFalse(response["ok"])
+            self.assertEqual("INVALID_ARGUMENT", response["error"]["error"]["code"])
+        # The legacy compatibility preview keeps the single-report contract.
+        self.assertFalse(legacy["ok"])
+        self.assertEqual("INVALID_ARGUMENT", legacy["error"]["error"]["code"])
+        self.assertEqual([], ports.redmine_preview_requests)
+
+    def test_single_report_plan_keeps_the_v1_shape(self) -> None:
+        coordinator = QaCoordinator(FakePorts())
+        with TemporaryDirectory() as tmpdir:
+            report = write_report(tmpdir)
+            plan = coordinator.build_plan(**workflow_args(report))
+            preview = coordinator.public_preview(plan)
+            report_hash = hashlib.sha256(report.read_bytes()).hexdigest()
+
+        self.assertEqual("1.0", plan["schema_version"])
+        self.assertEqual(report_hash, plan["input_digest"])
+        self.assertEqual(str(report), plan["report"])
+        self.assertNotIn("reports", plan)
+        self.assertNotIn("nodes", plan["items"][0]["result"])
+        self.assertNotIn("Node Results:", plan["items"][0]["testlink_request"]["notes"])
+        self.assertNotIn("Failing Nodes:", plan["items"][0]["redmine_request"]["description"])
+        self.assertEqual("legacy-web-ems-report-v1", preview["report_schema"])
+        self.assertNotIn("reports", preview)
+
+    def test_redmine_uses_the_first_failing_node_and_lists_all_nodes(self) -> None:
+        ports = FakePorts(redmine_action="create")
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            template = Path(tmpdir) / "redmine-template.json"
+            template.write_text(
+                json.dumps(
+                    {
+                        "project_id": "ems",
+                        "tracker_id": 1,
+                        "priority_id": 2,
+                        "required_custom_fields": [{"id": 40, "name": "Node"}, {"id": 41, "name": "Result"}],
+                        "custom_fields": [
+                            {"id": 40, "name": "Node", "value": "{{header.Node Name}}"},
+                            {"id": 41, "name": "Result", "value": "{{result.raw_status}}"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            reports = [
+                ("node-a", write_node_report(tmpdir, "a.txt", "OLT-A", ["[EMS-1][test_one] Result Pass (1s)"])),
+                ("node-b", write_node_report(tmpdir, "b.txt", "OLT-B", ["[EMS-1][test_one] Result Error (2s)"])),
+                ("node-c", write_node_report(tmpdir, "c.txt", "OLT-C", ["[EMS-1][test_one] Result Fail (3s)"])),
+            ]
+            plan = coordinator.build_plan(
+                **multi_args(
+                    reports,
+                    redmine_create_bugs=True,
+                    redmine_template_file=str(template),
+                )
+            )
+            single_node_b = coordinator.build_plan(
+                **workflow_args(reports[1][1], redmine_create_bugs=True, redmine_template_file=str(template))
+            )
+
+        request = ports.redmine_preview_requests[0]
+        fields = {str(field["id"]): field["value"] for field in request["custom_fields"]}
+        self.assertEqual({"40": "OLT-B", "41": "Error"}, fields)
+        self.assertEqual("[EMS-1] test_one Result Error", request["subject"])
+        description = request["description"].splitlines()
+        self.assertIn("Failing Nodes: node-b, node-c", description)
+        self.assertEqual(3, sum(1 for line in description if line.startswith("node-")))
+        # Dedupe follows the lead failing node, so it matches importing that node's report alone.
+        self.assertEqual(single_node_b["items"][0]["dedupe_digest"], plan["items"][0]["dedupe_digest"])
+
+    def test_reused_issue_evidence_comment_lists_every_node(self) -> None:
+        ports = FakePorts(redmine_action="reuse")
+        comments: list[str] = []
+        original_comment = ports.redmine_comment
+
+        def record_comment(**kwargs):
+            if kwargs.get("write"):
+                comments.append(kwargs["notes"])
+            return original_comment(**kwargs)
+
+        ports.redmine_comment = record_comment
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            reports = [
+                ("node-a", write_node_report(tmpdir, "a.txt", "OLT-A", ["[EMS-1][test_one] Result Fail (4s)"])),
+                ("node-b", write_node_report(tmpdir, "b.txt", "OLT-B", ["[EMS-1][test_one] Result Pass (2s)"])),
+            ]
+            plan = coordinator.build_plan(**multi_args(reports, redmine_create_bugs=True))
+            result = coordinator.execute_plan(
+                plan, confirmed_preview_digest=plan["preview_digest"], audit_dir=tmpdir,
+            )
+
+        self.assertEqual("completed", result["status"])
+        lines = comments[0].splitlines()
+        self.assertIn("Report File: a.txt, b.txt", lines)
+        self.assertIn("node-a: Result Fail; duration 4s; target OLT-A / 192.0.2.1 / MSC8000; report a.txt", lines)
+        self.assertIn("node-b: Result Pass; duration 2s; target OLT-B / 192.0.2.1 / MSC8000; report b.txt", lines)
+        self.assertIn("REDMINE-ID: #12345", ports.testlink_notes[0])
+
+    def test_execute_and_resume_refuse_any_changed_report(self) -> None:
+        ports = FakePorts()
+        ports.testlink_write_failures = 1
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            first = write_node_report(tmpdir, "a.txt", "OLT-A", ["[EMS-1][t1] Result Pass (1s)",
+                                                                  "[EMS-2][t2] Result Pass (1s)"])
+            second = write_node_report(tmpdir, "b.txt", "OLT-B", ["[EMS-1][t1] Result Pass (1s)",
+                                                                   "[EMS-2][t2] Result Pass (1s)"])
+            values = multi_args([("node-a", first), ("node-b", second)])
+            preview = api.qa_preview_report_artifact(coordinator=coordinator, artifact_dir=tmpdir, **values)
+            execute = {
+                "coordinator": coordinator,
+                "operation_id": values["operation_id"],
+                "preview_artifact": preview["result"]["preview_artifact"],
+                "preview_digest": preview["result"]["preview_digest"],
+                "write": True,
+                "audit_dir": tmpdir,
+            }
+            original = second.read_bytes()
+            second.write_bytes(original + b"\n")
+            refused_execute = api.qa_execute_preview_artifact(**execute)
+            second.write_bytes(original)
+            first_run = api.qa_execute_preview_artifact(**execute)
+            writes_after_first_run = ports.testlink_write_count
+            second.write_bytes(original.replace(b"Pass (1s)", b"Fail (1s)", 1))
+            resume = {
+                "coordinator": coordinator,
+                "operation_id": values["operation_id"],
+                "preview_artifact": preview["result"]["preview_artifact"],
+                "audit_file": first_run["result"]["audit_file"],
+                "write": True,
+            }
+            refused_resume = api.qa_resume_preview_artifact(**resume)
+            writes_after_refused_resume = ports.testlink_write_count
+            second.write_bytes(original)
+            resumed = api.qa_resume_preview_artifact(**resume)
+
+        self.assertFalse(refused_execute["ok"])
+        self.assertEqual("PREVIEW_MISMATCH", refused_execute["error"]["error"]["code"])
+        self.assertIn("node-b", refused_execute["error"]["error"]["message"])
+        self.assertEqual("partial-failure", first_run["result"]["status"])
+        self.assertEqual(2, writes_after_first_run)
+        self.assertFalse(refused_resume["ok"])
+        self.assertEqual("RESUME_MISMATCH", refused_resume["error"]["error"]["code"])
+        self.assertEqual(writes_after_first_run, writes_after_refused_resume)
+        self.assertEqual("completed", resumed["result"]["status"])
+        self.assertEqual(3, ports.testlink_write_count)
+
+    def test_resume_rejects_an_audit_bound_to_other_report_hashes(self) -> None:
+        ports = FakePorts()
+        ports.testlink_write_failures = 1
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            first = write_node_report(tmpdir, "a.txt", "OLT-A", ["[EMS-1][t1] Result Pass (1s)"])
+            second = write_node_report(tmpdir, "b.txt", "OLT-B", ["[EMS-1][t1] Result Pass (1s)"])
+            plan = coordinator.build_plan(**multi_args([("node-a", first), ("node-b", second)]))
+            first_run = coordinator.execute_plan(
+                plan, confirmed_preview_digest=plan["preview_digest"], audit_dir=tmpdir,
+            )
+            audit_path = Path(tmpdir) / first_run["audit_id"]
+            audit = json.loads(audit_path.read_text(encoding="utf-8"))
+            audit["workflow"]["reports"][1]["sha256"] = "0" * 64
+            audit_path.write_text(json.dumps(audit), encoding="utf-8")
+            with self.assertRaises(Exception) as context:
+                coordinator.execute_plan(
+                    plan, confirmed_preview_digest=plan["preview_digest"], resume_audit=str(audit_path),
+                )
+
+        self.assertEqual("RESUME_MISMATCH", context.exception.code)
+        self.assertEqual(1, ports.testlink_write_count)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -70,6 +70,102 @@ def in_port_session(method: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
+# A plan built from `reports` (one report per node) uses contracts v2; a plan
+# built from a single `report` keeps the v1 shape and digest byte for byte.
+MULTI_REPORT_SCHEMA_VERSION = "2.0"
+SUPPORTED_PLAN_SCHEMA_VERSIONS = (CONTRACT_SCHEMA_VERSION, MULTI_REPORT_SCHEMA_VERSION)
+REPORT_HEADER_FIELDS = (
+    "Report generated on",
+    "EMS Version",
+    "Node Name",
+    "Node IP",
+    "Node Chassis",
+    "Summary",
+    "Total test time",
+)
+MAX_REPORT_LABEL_LENGTH = 64
+SKIP_RAW_STATUSES = {"skip", "skipped"}
+
+
+def reports_input_digest(reports: list[dict[str, Any]]) -> str:
+    """Canonical digest over every report's label and file hash, in review order."""
+    return payload_digest(
+        {"reports": [{"label": str(entry["label"]), "sha256": str(entry["sha256"])} for entry in reports]}
+    )
+
+
+def _validated_report_list(reports: Any) -> list[tuple[str, Path]]:
+    if not isinstance(reports, list) or not reports:
+        raise CoordinatorError("reports must be a non-empty array of {label, path}.", code="INVALID_ARGUMENT")
+    entries: list[tuple[str, Path]] = []
+    labels: set[str] = set()
+    paths: set[str] = set()
+    for index, entry in enumerate(reports):
+        if not isinstance(entry, dict) or set(entry) - {"label", "path"}:
+            raise CoordinatorError(
+                f"reports[{index}] must be an object with only label and path.", code="INVALID_ARGUMENT"
+            )
+        label = entry.get("label")
+        path = entry.get("path")
+        if not isinstance(label, str) or not label.strip():
+            raise CoordinatorError(f"reports[{index}].label must be a non-empty string.", code="INVALID_ARGUMENT")
+        label = label.strip()
+        if len(label) > MAX_REPORT_LABEL_LENGTH or any(ord(char) < 32 for char in label):
+            raise CoordinatorError(
+                f"reports[{index}].label must be at most {MAX_REPORT_LABEL_LENGTH} printable characters.",
+                code="INVALID_ARGUMENT",
+            )
+        if label.casefold() in labels:
+            raise CoordinatorError(f"reports labels must be unique: {label}", code="INVALID_ARGUMENT")
+        labels.add(label.casefold())
+        if not isinstance(path, str) or not path.strip():
+            raise CoordinatorError(f"reports[{index}].path must be a non-empty string.", code="INVALID_ARGUMENT")
+        report_path = Path(path)
+        if not report_path.exists():
+            raise CoordinatorError(f"Report file does not exist for {label}: {report_path}", code="REPORT_NOT_FOUND")
+        resolved = str(report_path.resolve()).casefold()
+        if resolved in paths:
+            raise CoordinatorError(f"reports[{index}] repeats a report file: {report_path}", code="INVALID_ARGUMENT")
+        paths.add(resolved)
+        entries.append((label, report_path))
+    return entries
+
+
+def _node_entry(label: str, report_path: Path, header: dict[str, str], parsed: Any) -> dict[str, Any]:
+    return {
+        "label": label,
+        "report_file": report_path.name,
+        "raw_status": parsed.raw_status,
+        "status": parsed.status,
+        "duration": parsed.duration_text,
+        "duration_seconds": parsed.duration_seconds,
+        "node_name": header.get("Node Name", ""),
+        "node_ip": header.get("Node IP", ""),
+        "node_chassis": header.get("Node Chassis", ""),
+    }
+
+
+def node_result_lines(nodes: list[dict[str, Any]] | None) -> list[str]:
+    """One traceability line per node report, in review order."""
+    lines = []
+    for node in nodes or []:
+        target = " / ".join(
+            str(node.get(key) or "-") for key in ("node_name", "node_ip", "node_chassis")
+        )
+        lines.append(
+            f"{node['label']}: Result {node['raw_status']}; duration {node.get('duration') or '-'}; "
+            f"target {target}; report {node['report_file']}"
+        )
+    return lines
+
+
+def _row_status(parsed: Any, skip_policy: str) -> str | None:
+    """Single-report status rule; None means the row is ignored."""
+    if parsed.status is None and parsed.raw_status.casefold() in SKIP_RAW_STATUSES:
+        return "b" if skip_policy == "blocked" else None
+    return parsed.status if parsed.status in {"p", "f", "b"} else None
+
+
 class QaCoordinator:
     def __init__(self, ports: IntegrationPorts | None = None):
         self.ports = ports or StdioMcpPorts()
@@ -78,7 +174,7 @@ class QaCoordinator:
     def _base_notes(
         *,
         operation_id: str,
-        report_path: Path,
+        report_file: str,
         report_schema: str,
         project: str,
         plan: str,
@@ -90,7 +186,7 @@ class QaCoordinator:
         lines = [
             f"Operation ID: {operation_id}",
             f"Report Schema: {report_schema}",
-            f"Report File: {report_path.name}",
+            f"Report File: {report_file}",
             f"TestLink Project: {project}",
             f"Test Plan: {plan}",
             f"Platform: {platform}",
@@ -98,6 +194,7 @@ class QaCoordinator:
             f"Test Case: {result['external_id']}",
             f"Automation Test Function: {result['test_name']}",
             f"Result: {result['raw_status']}",
+            *QaCoordinator._node_block(result),
         ]
         if dedupe_marker_value:
             lines.append(f"Dedupe Key: {dedupe_marker_value}")
@@ -107,7 +204,7 @@ class QaCoordinator:
     def _redmine_description(
         *,
         operation_id: str,
-        report_path: Path,
+        report_file: str,
         project: str,
         plan: str,
         platform: str,
@@ -115,6 +212,7 @@ class QaCoordinator:
         result: dict[str, Any],
         marker: str,
     ) -> str:
+        failing = [node["label"] for node in result.get("nodes") or [] if node.get("status") == "f"]
         return "\n".join(
             [
                 "Automation failure coordinated by qa-integration-agent.",
@@ -128,11 +226,18 @@ class QaCoordinator:
                 f"Test Case Name: {result.get('testlink_name') or ''}",
                 f"Automation Test Function: {result['test_name']}",
                 f"Result: {result['raw_status']}",
-                f"Report File: {report_path.name}",
+                *([f"Failing Nodes: {', '.join(failing)}"] if failing else []),
+                *QaCoordinator._node_block(result),
+                f"Report File: {report_file}",
                 "Execution URL:",
                 f"Dedupe Key: {marker}",
             ]
         )
+
+    @staticmethod
+    def _node_block(result: dict[str, Any]) -> list[str]:
+        lines = node_result_lines(result.get("nodes"))
+        return ["Node Results:", *lines] if lines else []
 
     @staticmethod
     def _final_notes(base_notes: str, issue: dict[str, Any] | None) -> str:
@@ -156,7 +261,7 @@ class QaCoordinator:
         platform: str,
         build: str,
         result: dict[str, Any],
-        report_path: Path,
+        report_file: str,
         marker: str,
         execution_id: str | None,
     ) -> str:
@@ -171,7 +276,8 @@ class QaCoordinator:
                 f"Test Case: {result['external_id']}",
                 f"Automation Test Function: {result['test_name']}",
                 f"Result: {result['raw_status']}",
-                f"Report File: {report_path.name}",
+                *QaCoordinator._node_block(result),
+                f"Report File: {report_file}",
                 f"TestLink Execution ID: {execution_id or ''}",
                 f"Dedupe Key: {marker}",
                 "This comment does not change Redmine status, assignee, or fixed version.",
@@ -189,7 +295,8 @@ class QaCoordinator:
         plan: str,
         platform: str,
         build: str,
-        report: str,
+        report: str | None = None,
+        reports: list[dict[str, Any]] | None = None,
         skip_policy: str = "ignore",
         redmine_create_bugs: bool = False,
         redmine_project_id: str | None = None,
@@ -200,6 +307,12 @@ class QaCoordinator:
         redmine_template_file: str | None = None,
         redmine_custom_fields: Any = None,
     ) -> dict[str, Any]:
+        """Plan one TestLink execution per testcase from one report or one report per node.
+
+        `report` keeps the v1 plan. `reports` ([{label, path}], one per node)
+        builds a v2 plan whose items aggregate every node's result for the
+        testcase; see _aggregate_node_reports for the rules.
+        """
         validated_context = validate_operation_context(
             {
                 "schema_version": CONTRACT_SCHEMA_VERSION,
@@ -216,35 +329,31 @@ class QaCoordinator:
         for name, value in (("project", project), ("plan", plan), ("platform", platform), ("build", build)):
             if not str(value or "").strip():
                 raise CoordinatorError(f"{name} is required.", code="INVALID_ARGUMENT")
-        report_path = Path(report)
-        if not report_path.exists():
-            raise CoordinatorError(f"Report file does not exist: {report_path}", code="REPORT_NOT_FOUND")
+        multi = reports is not None
+        if multi == (report not in (None, "")):
+            raise CoordinatorError("Provide exactly one of report or reports.", code="INVALID_ARGUMENT")
+        if multi:
+            report_entries = _validated_report_list(reports)
+        else:
+            report_path = Path(str(report))
+            if not report_path.exists():
+                raise CoordinatorError(f"Report file does not exist: {report_path}", code="REPORT_NOT_FOUND")
+            report_entries = [("", report_path)]
         if skip_policy not in {"ignore", "blocked"}:
             raise CoordinatorError("skip_policy must be ignore or blocked.", code="INVALID_ARGUMENT")
-        header, parsed = parse_report(report_path)
-        report_schema = str(header.get(SCHEMA_HEADER_KEY) or "")
-        writable: list[dict[str, Any]] = []
-        ignored: list[dict[str, Any]] = []
-        for parsed_result in parsed:
-            row = result_to_dict(parsed_result)
-            row["duration_seconds"] = parsed_result.duration_seconds
-            if parsed_result.status is None and parsed_result.raw_status.casefold() in {"skip", "skipped"}:
-                if skip_policy == "blocked":
-                    row["status"] = "b"
-                    writable.append(row)
-                else:
-                    ignored.append(row)
-            elif parsed_result.status in {"p", "f", "b"}:
-                writable.append(row)
-            else:
-                ignored.append(row)
-        duplicates = sorted(
-            external_id
-            for external_id in {row["external_id"] for row in writable}
-            if sum(1 for row in writable if row["external_id"] == external_id) > 1
+        sources: list[dict[str, Any]] = []
+        for label, path in report_entries:
+            header, parsed = parse_report(path)
+            sources.append({"label": label, "path": path, "header": header, "parsed": parsed})
+        warnings: list[str] = []
+        if multi:
+            writable, ignored, leads = self._aggregate_node_reports(sources, skip_policy, warnings)
+        else:
+            writable, ignored, leads = self._single_report_rows(sources[0], skip_policy)
+        report_file = ", ".join(source["path"].name for source in sources)
+        report_schema = ", ".join(
+            dict.fromkeys(str(source["header"].get(SCHEMA_HEADER_KEY) or "") for source in sources)
         )
-        if duplicates:
-            raise CoordinatorError("Duplicate testcase ids: " + ", ".join(duplicates), code="DUPLICATE_CASE")
         context = {
             "project": {"name": project},
             "plan": {"name": plan},
@@ -252,7 +361,6 @@ class QaCoordinator:
             "build": {"name": build},
         }
         items: list[dict[str, Any]] = []
-        warnings: list[str] = []
         for row in writable:
             marker: str | None = None
             digest: str | None = None
@@ -264,12 +372,13 @@ class QaCoordinator:
                         "redmine_project_id is required when Redmine bug creation is enabled.",
                         code="REDMINE_TARGET_REQUIRED",
                     )
-                # Reuse the stable policy implementation while the contract remains v1.
-                parsed_result = next(value for value in parsed if value.external_id == row["external_id"])
+                # Dedupe and template tokens use the first failing node's result and
+                # header (the only one for a single report); the description lists all nodes.
+                lead_header, lead_parsed, lead_result = leads[row["external_id"]]
                 key = build_dedupe_key(
                     redmine_project_id=redmine_project_id,
                     context=context,
-                    result=parsed_result,
+                    result=lead_parsed,
                 )
                 digest = dedupe_digest(key)
                 marker = dedupe_marker(digest)
@@ -280,7 +389,7 @@ class QaCoordinator:
                     "subject": f"[{row['external_id']}] {row['test_name']} Result {row['raw_status']}",
                     "description": self._redmine_description(
                         operation_id=operation_id,
-                        report_path=report_path,
+                        report_file=report_file,
                         project=project,
                         plan=plan,
                         platform=platform,
@@ -296,8 +405,8 @@ class QaCoordinator:
                     "custom_fields": render_custom_fields(
                         template_file=redmine_template_file,
                         custom_fields=redmine_custom_fields,
-                        header=header,
-                        result=row,
+                        header=lead_header,
+                        result=lead_result if lead_result is not None else row,
                         context=context,
                     ),
                     "dedupe_marker": marker,
@@ -310,7 +419,7 @@ class QaCoordinator:
                     warnings.extend(redmine_preview.get("warnings") or [])
             base_notes = self._base_notes(
                 operation_id=operation_id,
-                report_path=report_path,
+                report_file=report_file,
                 report_schema=report_schema,
                 project=project,
                 plan=plan,
@@ -346,22 +455,159 @@ class QaCoordinator:
                     "testlink_preview": testlink_preview,
                 }
             )
-        plan_payload = {
-            "schema_version": CONTRACT_SCHEMA_VERSION,
-            "operation_id": operation_id,
-            "correlation_id": correlation_id or operation_id,
-            "environment": environment,
-            "input_digest": file_sha256(report_path),
-            "report": str(report_path),
-            "report_schema": report_schema,
-            "target": {"project": project, "plan": plan, "platform": platform, "build": build},
-            "redmine_create_bugs": bool(redmine_create_bugs),
-            "items": items,
-            "ignored": ignored,
-            "warnings": warnings,
-        }
+        target = {"project": project, "plan": plan, "platform": platform, "build": build}
+        if multi:
+            report_records = [
+                {
+                    "label": source["label"],
+                    "path": str(source["path"]),
+                    "report_file": source["path"].name,
+                    "sha256": file_sha256(source["path"]),
+                    "report_schema": str(source["header"].get(SCHEMA_HEADER_KEY) or ""),
+                    "header": {
+                        key: source["header"][key] for key in REPORT_HEADER_FIELDS if key in source["header"]
+                    },
+                }
+                for source in sources
+            ]
+            plan_payload = {
+                "schema_version": MULTI_REPORT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "correlation_id": correlation_id or operation_id,
+                "environment": environment,
+                "input_digest": reports_input_digest(report_records),
+                "reports": report_records,
+                "target": target,
+                "redmine_create_bugs": bool(redmine_create_bugs),
+                "items": items,
+                "ignored": ignored,
+                "warnings": warnings,
+            }
+        else:
+            plan_payload = {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "correlation_id": correlation_id or operation_id,
+                "environment": environment,
+                "input_digest": file_sha256(report_path),
+                "report": str(report_path),
+                "report_schema": report_schema,
+                "target": target,
+                "redmine_create_bugs": bool(redmine_create_bugs),
+                "items": items,
+                "ignored": ignored,
+                "warnings": warnings,
+            }
         plan_payload["preview_digest"] = payload_digest(plan_payload)
         return plan_payload
+
+    @staticmethod
+    def _single_report_rows(
+        source: dict[str, Any],
+        skip_policy: str,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, tuple[dict[str, str], Any, None]]]:
+        writable: list[dict[str, Any]] = []
+        ignored: list[dict[str, Any]] = []
+        leads: dict[str, tuple[dict[str, str], Any, None]] = {}
+        for parsed_result in source["parsed"]:
+            row = result_to_dict(parsed_result)
+            row["duration_seconds"] = parsed_result.duration_seconds
+            status = _row_status(parsed_result, skip_policy)
+            if status is None:
+                ignored.append(row)
+            else:
+                row["status"] = status
+                writable.append(row)
+            # The v1 plan keyed dedupe on the first parsed row with the id; keep that.
+            leads.setdefault(parsed_result.external_id, (source["header"], parsed_result, None))
+        duplicates = sorted(
+            external_id
+            for external_id in {row["external_id"] for row in writable}
+            if sum(1 for row in writable if row["external_id"] == external_id) > 1
+        )
+        if duplicates:
+            raise CoordinatorError("Duplicate testcase ids: " + ", ".join(duplicates), code="DUPLICATE_CASE")
+        return writable, ignored, leads
+
+    @staticmethod
+    def _aggregate_node_reports(
+        sources: list[dict[str, Any]],
+        skip_policy: str,
+        warnings: list[str],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, tuple[dict[str, str], Any, dict[str, Any]]]]:
+        """Merge one report per node into one TestLink result per testcase.
+
+        Every report must contain the same testcases, each once. Status: any
+        node f (Fail/Error) -> f; else any p -> p; else any b -> b; else, when
+        every node skipped, skip_policy decides (ignore -> ignored, blocked -> b).
+        The duration is the longest node duration. The lead node, whose result
+        and header feed Redmine dedupe and templates, is the first node in
+        `reports` order with the winning status.
+        """
+        by_report: list[dict[str, Any]] = []
+        for source in sources:
+            cases: dict[str, Any] = {}
+            duplicates: set[str] = set()
+            for parsed in source["parsed"]:
+                if parsed.external_id in cases:
+                    duplicates.add(parsed.external_id)
+                cases.setdefault(parsed.external_id, parsed)
+            if duplicates:
+                raise CoordinatorError(
+                    f"Duplicate testcase ids in report {source['label']}: " + ", ".join(sorted(duplicates)),
+                    code="DUPLICATE_CASE",
+                )
+            by_report.append(cases)
+        order = list(dict.fromkeys(external_id for cases in by_report for external_id in cases))
+        missing = []
+        for source, cases in zip(sources, by_report):
+            absent = [external_id for external_id in order if external_id not in cases]
+            if absent:
+                shown = ", ".join(absent[:10]) + (f" (+{len(absent) - 10} more)" if len(absent) > 10 else "")
+                missing.append(f"{source['label']} lacks {shown}")
+        if missing:
+            raise CoordinatorError(
+                "Every report must contain the same testcases; " + "; ".join(missing),
+                code="INVALID_ARGUMENT",
+            )
+        writable: list[dict[str, Any]] = []
+        ignored: list[dict[str, Any]] = []
+        leads: dict[str, tuple[dict[str, str], Any, dict[str, Any]]] = {}
+        for external_id in order:
+            pairs = [(source, cases[external_id]) for source, cases in zip(sources, by_report)]
+            statuses = [parsed.status for _, parsed in pairs]
+            status: str | None = next((value for value in ("f", "p", "b") if value in statuses), None)
+            if status is not None:
+                lead_index = statuses.index(status)
+            else:
+                lead_index = 0
+                all_skipped = all(
+                    parsed.status is None and parsed.raw_status.casefold() in SKIP_RAW_STATUSES
+                    for _, parsed in pairs
+                )
+                status = "b" if all_skipped and skip_policy == "blocked" else None
+            lead_source, lead = pairs[lead_index]
+            row = result_to_dict(lead)
+            row["test_name"] = pairs[0][1].test_name
+            timed = [parsed for _, parsed in pairs if parsed.duration_seconds is not None]
+            longest = max(timed, key=lambda parsed: parsed.duration_seconds) if timed else None
+            row["duration"] = longest.duration_text if longest is not None else lead.duration_text
+            row["duration_seconds"] = longest.duration_seconds if longest is not None else None
+            row["nodes"] = [
+                _node_entry(source["label"], source["path"], source["header"], parsed) for source, parsed in pairs
+            ]
+            names = list(dict.fromkeys(parsed.test_name for _, parsed in pairs))
+            if len(names) > 1:
+                warnings.append(f"{external_id}: automation test names differ across reports: " + ", ".join(names))
+            if status is None:
+                ignored.append(row)
+            else:
+                row["status"] = status
+                writable.append(row)
+            lead_result = result_to_dict(lead)
+            lead_result["duration_seconds"] = lead.duration_seconds
+            leads[external_id] = (lead_source["header"], lead, lead_result)
+        return writable, ignored, leads
 
     @staticmethod
     def public_preview(plan: dict[str, Any], *, include_items: bool = True) -> dict[str, Any]:
@@ -386,9 +632,14 @@ class QaCoordinator:
             }
             if redmine.get("existing_issue") is not None:
                 public_item["existing_issue"] = redmine["existing_issue"]
+            if item["result"].get("nodes") is not None:
+                public_item["nodes"] = [
+                    {"label": node["label"], "raw_status": node["raw_status"], "duration": node["duration"]}
+                    for node in item["result"]["nodes"]
+                ]
             public_items.append(public_item)
         preview = {
-            "schema_version": CONTRACT_SCHEMA_VERSION,
+            "schema_version": plan.get("schema_version", CONTRACT_SCHEMA_VERSION),
             "operation_id": plan["operation_id"],
             "correlation_id": plan["correlation_id"],
             "environment": plan["environment"],
@@ -396,7 +647,11 @@ class QaCoordinator:
             "preview_digest": plan["preview_digest"],
             "planned_write": bool(plan["items"]) and not blocked,
             "input_digest": plan["input_digest"],
-            "report_schema": plan["report_schema"],
+            **(
+                {"reports": [dict(entry) for entry in plan["reports"]]}
+                if "reports" in plan
+                else {"report_schema": plan["report_schema"]}
+            ),
             "target": plan["target"],
             "parsed_count": len(plan["items"]) + len(plan["ignored"]),
             "write_count": len(plan["items"]),
@@ -424,8 +679,17 @@ class QaCoordinator:
 
     @staticmethod
     def _workflow_from_plan(plan: dict[str, Any]) -> dict[str, Any]:
+        if "reports" in plan:
+            reports = {
+                "reports": [
+                    {key: entry[key] for key in ("label", "report_file", "sha256", "report_schema")}
+                    for entry in plan["reports"]
+                ]
+            }
+        else:
+            reports = {"report_schema": plan["report_schema"]}
         return {
-            "report_schema": plan["report_schema"],
+            **reports,
             "project": plan["target"]["project"],
             "plan": plan["target"]["plan"],
             "platform": plan["target"]["platform"],
@@ -476,11 +740,17 @@ class QaCoordinator:
         plan: dict[str, Any],
         *,
         confirmed_preview_digest: str,
-        report: str,
+        report: str | None = None,
         audit_dir: str = DEFAULT_AUDIT_DIR,
         resume_audit: str | None = None,
     ) -> dict[str, Any]:
-        report_path = Path(report)
+        """Execute a reviewed plan; callers verify every report hash first (see api)."""
+        if plan.get("schema_version", CONTRACT_SCHEMA_VERSION) not in SUPPORTED_PLAN_SCHEMA_VERSIONS:
+            raise CoordinatorError("Unsupported coordinator plan schema.", code="PREVIEW_ARTIFACT_INVALID")
+        if "reports" in plan:
+            report_file = ", ".join(str(entry["report_file"]) for entry in plan["reports"])
+        else:
+            report_file = Path(str(report or plan.get("report") or "")).name
         blocked_items = [
             item["result"]["external_id"]
             for item in plan["items"]
@@ -539,7 +809,7 @@ class QaCoordinator:
                 )
             created_at = utc_now_iso()
             audit = {
-                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "schema_version": plan.get("schema_version", CONTRACT_SCHEMA_VERSION),
                 "operation_id": plan["operation_id"],
                 "correlation_id": plan["correlation_id"],
                 "environment": plan["environment"],
@@ -600,7 +870,7 @@ class QaCoordinator:
                                 platform=plan["target"]["platform"],
                                 build=plan["target"]["build"],
                                 result=result,
-                                report_path=report_path,
+                                report_file=report_file,
                                 marker=str(marker or ""),
                                 execution_id=str(previous.get("testlink_execution_id") or ""),
                             ),
@@ -715,7 +985,7 @@ class QaCoordinator:
                             platform=plan["target"]["platform"],
                             build=plan["target"]["build"],
                             result=result,
-                            report_path=report_path,
+                            report_file=report_file,
                             marker=str(marker or ""),
                             execution_id=str(testlink_result.get("execution_id") or ""),
                         ),
