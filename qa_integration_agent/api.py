@@ -9,7 +9,7 @@ from testlink_agent_core.errors import redact_secrets
 from .artifacts import DEFAULT_PREVIEW_DIR, read_preview_artifact, write_preview_artifact
 from .audit import DEFAULT_AUDIT_DIR, read_workflow_audit
 from .coordinator import QaCoordinator
-from .coordinator import file_sha256
+from .coordinator import file_sha256, reports_input_digest
 from .errors import CoordinatorError, normalize_error
 from .shadow import compare_preview_files
 
@@ -49,7 +49,8 @@ def _audit_summary(record: dict[str, Any], audit_file: str) -> dict[str, Any]:
     }
 
 
-def _plan_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+def _plan_kwargs(kwargs: dict[str, Any], *, allow_reports: bool = False) -> dict[str, Any]:
+    """Keep plan arguments; only the artifact preview accepts multi-node `reports`."""
     allowed = {
         "operation_id",
         "correlation_id",
@@ -69,7 +70,33 @@ def _plan_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
         "redmine_template_file",
         "redmine_custom_fields",
     }
+    if allow_reports:
+        allowed.add("reports")
     return {key: value for key, value in kwargs.items() if key in allowed}
+
+
+def _verified_report(plan: dict[str, Any], *, code: str) -> str | None:
+    """Re-hash every report the reviewed plan was built from; refuse any change.
+
+    Returns the single report path of a v1 plan, or None for a multi-report plan.
+    """
+    reports = plan.get("reports")
+    if reports is None:
+        report = str(plan.get("report") or "")
+        if not report or not Path(report).is_file() or file_sha256(Path(report)) != plan.get("input_digest"):
+            raise CoordinatorError("Report content changed after preview.", code=code)
+        return report
+    if not isinstance(reports, list) or not reports or not all(isinstance(entry, dict) for entry in reports):
+        raise CoordinatorError("Preview report list is invalid.", code="PREVIEW_ARTIFACT_INVALID")
+    for entry in reports:
+        path = Path(str(entry.get("path") or ""))
+        if not str(entry.get("path") or "") or not path.is_file() or file_sha256(path) != entry.get("sha256"):
+            raise CoordinatorError(
+                f"Report content changed after preview: {entry.get('label')}", code=code
+            )
+    if reports_input_digest(reports) != plan.get("input_digest"):
+        raise CoordinatorError("Report set changed after preview.", code=code)
+    return None
 
 
 def qa_preview_report_artifact(
@@ -81,7 +108,7 @@ def qa_preview_report_artifact(
     operation_id = str(kwargs.get("operation_id") or "unknown-operation")
     try:
         selected = coordinator or QaCoordinator()
-        plan = selected.build_plan(**_plan_kwargs(kwargs))
+        plan = selected.build_plan(**_plan_kwargs(kwargs, allow_reports=True))
         review = selected.public_preview(plan, include_items=True)
         artifact = write_preview_artifact(plan, review, artifact_dir)
         compact = selected.public_preview(plan, include_items=False)
@@ -167,9 +194,7 @@ def qa_execute_preview_artifact(
             operation_id=operation_id,
             preview_digest=preview_digest,
         )
-        report = str(plan.get("report") or "")
-        if not report or file_sha256(Path(report)) != plan.get("input_digest"):
-            raise CoordinatorError("Report content changed after preview.", code="PREVIEW_MISMATCH")
+        report = _verified_report(plan, code="PREVIEW_MISMATCH")
         result = selected.execute_plan(
             plan,
             confirmed_preview_digest=preview_digest,
@@ -218,9 +243,7 @@ def qa_resume_preview_artifact(
             operation_id=operation_id,
             preview_digest=preview_digest,
         )
-        report = str(plan.get("report") or "")
-        if not report or file_sha256(Path(report)) != plan.get("input_digest"):
-            raise CoordinatorError("Report content changed after preview.", code="RESUME_MISMATCH")
+        report = _verified_report(plan, code="RESUME_MISMATCH")
         result = selected.execute_plan(
             plan,
             confirmed_preview_digest=preview_digest,

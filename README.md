@@ -161,12 +161,14 @@ verification, and `docs/token-budget.md` for measured schema/instruction budgets
 1. Confirm the exact project, plan, platform, and build before preview; use the
    TestLink `discovery` profile only when the values are not already authoritative.
 2. Call `qa_preview_report_artifact` with a stable `operation_id`, explicit environment,
-   exact target, and report path. Preview performs zero external writes.
+   exact target, and either one `report` path or `reports: [{label, path}]` with one report
+   per node (merged into one execution per testcase; see `docs/workflow.md`). Preview
+   performs zero external writes.
 3. Review the compact counts and the exact persisted `preview_artifact` (use the
    development `qa_read_preview_artifact` tool to page through items, warnings, and ignored entries), including
    Redmine create/reuse decisions, warnings, and returned `preview_digest`.
 4. Only after explicit confirmation, call `qa_execute_preview_artifact` with the artifact
-   path, `write: true`, and the matching digest. The original report hash is rechecked.
+   path, `write: true`, and the matching digest. Every original report hash is rechecked.
 5. Validate TestLink/Redmine traceability and the item-level workflow audit.
 6. For partial failure, call `qa_resume_preview_artifact` with the same operation identity,
    preview artifact, and matching audit; do not rerun the entire import as a new operation.

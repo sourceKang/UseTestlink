@@ -44,6 +44,31 @@ PLAN_PROPERTIES: dict[str, Any] = {
 
 PLAN_REQUIRED = ["operation_id", "environment", "project", "plan", "platform", "build", "report"]
 
+# Only qa_preview_report_artifact accepts one report per node; exactly one of
+# report/reports is required. The legacy compatibility tools keep `report`.
+ARTIFACT_PLAN_PROPERTIES: dict[str, Any] = {
+    **PLAN_PROPERTIES,
+    "report": string("Local automation report path. Use this or reports."),
+    "reports": {
+        "type": "array",
+        "minItems": 1,
+        "description": (
+            "One report per node, merged per testcase (any Fail/Error wins, else Pass, "
+            "else Blocked, else skip_policy). Every report must list the same testcases."
+        ),
+        "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "label": string("Unique node label shown in notes, for example the node name."),
+                "path": string("Local automation report path for that node."),
+            },
+            "required": ["label", "path"],
+        },
+    },
+}
+ARTIFACT_PLAN_REQUIRED = [name for name in PLAN_REQUIRED if name != "report"]
+
 
 def schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
     return {
@@ -73,8 +98,14 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "qa_preview_report_artifact",
-        "description": "Persist an exact QA plan/review artifact and return a bounded preview summary.",
-        "inputSchema": schema(PLAN_PROPERTIES, PLAN_REQUIRED),
+        "description": (
+            "Persist an exact QA plan/review artifact from one report or one report per node "
+            "and return a bounded preview summary."
+        ),
+        "inputSchema": {
+            **schema(ARTIFACT_PLAN_PROPERTIES, ARTIFACT_PLAN_REQUIRED),
+            "oneOf": [{"required": ["report"]}, {"required": ["reports"]}],
+        },
         "annotations": {"readOnlyHint": True},
     },
     {

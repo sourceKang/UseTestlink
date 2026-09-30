@@ -7,8 +7,8 @@ description: Use for previewing, executing, auditing, or resuming automation rep
 
 只使用 `qa-integration-agent` 的 `import` toolset。先讀 `docs/workflow.md`；變更責任邊界時再讀 `docs/architecture.md`。
 
-1. 取得明確的 environment、project、plan、platform、build、report 與 operation ID；不可猜測 target。
-2. 呼叫 `qa_preview_report_artifact`。摘要顯示 target、counts、Fail/Error、skip、Redmine create/reuse、warnings、`preview_artifact` 與 `preview_digest`；逐筆 payload 留在 artifact 的 `review`，不要重貼到對話。
+1. 取得明確的 environment、project、plan、platform、build、report 與 operation ID；不可猜測 target。同一批 testcase 在多個 node 執行時，改傳 `reports: [{label, path}]`（每個 node 一份，label 唯一，與 `report` 二擇一）；每份 report 必須含相同 testcase，任一 Fail/Error 即 f，合併規則見 `docs/workflow.md`。
+2. 呼叫 `qa_preview_report_artifact`。摘要顯示 target、counts、Fail/Error、skip、Redmine create/reuse、warnings、`preview_artifact` 與 `preview_digest`（多節點時另列各 report 的 label 與 node）；逐筆 payload 留在 artifact 的 `review`，不要重貼到對話。
 3. 使用者審閱 artifact 並明確確認後，以 operation ID、artifact path、digest 與 `write=true` 呼叫 `qa_execute_preview_artifact`，不重傳整份計畫。
 4. 驗證 audit 與 traceability；partial failure 以同一 preview artifact、operation identity 和 audit 呼叫 `qa_resume_preview_artifact`，不可另起整批寫入。
 

@@ -5,7 +5,7 @@
 ```mermaid
 flowchart LR
     R["Automation Report"] --> Q["qa-integration-agent"]
-    Q --> C["qa-mcp-contracts v1"]
+    Q --> C["qa-mcp-contracts v1/v2"]
     Q --> T["testlink-mcp"]
     Q --> M["redmine-mcp"]
     T --> TL["TestLink"]
@@ -41,7 +41,7 @@ flowchart LR
 - `redmine-mcp` 是獨立 Redmine/eITS adapter。
 - `qa-integration-agent-mcp` 是跨系統唯一推薦入口。
 - `testlink-agent-mcp` 與舊 CLI 保留一個主要版本作為相容／rollback 路徑。
-- contracts 以 major version 演進；v1 欄位語意凍結，破壞性變更建立 v2 而非靜默修改。
+- contracts 以 major version 演進；v1 欄位語意凍結，破壞性變更建立 v2 而非靜默修改。多節點匯入（`reports: [{label, path}]`）的 plan、preview 與 workflow audit 使用 `contracts/v2`（`schema_version: "2.0"`），記錄每份 report 的 hash；單一 `report` 仍產生 v1 plan 與相同 digest。報表合併與 Redmine lead node 規則屬 coordinator 責任，`testlink-mcp`／`redmine-mcp` 仍只收到逐筆 testcase 的 v1 child contract。
 - Artifact execute/resume 使用新增工具名稱；既有 v1 execute/resume 留在 `legacy`/`all` toolset，避免以 token 優化為由破壞已發布契約。
 
 `testlink-agent` 提供 `testlink-mcp` server，讓 agent 能安全操作 TestLink，並受控地整合公司 Redmine/eITS 流程。

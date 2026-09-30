@@ -13,6 +13,8 @@ from .errors import CoordinatorError
 
 
 DEFAULT_AUDIT_DIR = "local/qa_audit"
+# 1.0: single-report workflow audit; 2.0: multi-report audit (contracts/v2).
+SUPPORTED_AUDIT_SCHEMA_VERSIONS = ("1.0", "2.0")
 
 
 def utc_now_iso() -> str:
@@ -47,6 +49,6 @@ def read_workflow_audit(path: str | Path) -> dict[str, Any]:
         record = json.loads(audit_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise CoordinatorError(f"Workflow audit is not valid JSON: {audit_path}", code="AUDIT_INVALID") from exc
-    if not isinstance(record, dict) or record.get("schema_version") != "1.0":
+    if not isinstance(record, dict) or record.get("schema_version") not in SUPPORTED_AUDIT_SCHEMA_VERSIONS:
         raise CoordinatorError("Unsupported workflow audit schema.", code="AUDIT_INVALID")
     return redact_secrets(record)
