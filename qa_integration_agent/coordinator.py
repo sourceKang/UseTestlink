@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import contextlib
+import functools
 import hashlib
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from qa_mcp_contracts import CONTRACT_SCHEMA_VERSION, payload_digest, validate_operation_context
 from testlink_agent_core.policy import build_dedupe_key, dedupe_digest, dedupe_marker
@@ -42,6 +44,30 @@ def require_result(response: dict[str, Any], stage: str) -> dict[str, Any]:
     if not isinstance(result, dict):
         raise CoordinatorError(f"{stage} returned no structured result.", code="PORT_INVALID_RESPONSE")
     return result
+
+
+def execution_duration_minutes(duration_seconds: float | None) -> float | None:
+    """TestLink execduration is minutes; keep the legacy upload rounding."""
+    if duration_seconds is None:
+        return None
+    return round(float(duration_seconds) / 60.0, 4)
+
+
+def in_port_session(method: Callable[..., Any]) -> Callable[..., Any]:
+    """Run one batch inside a single port session when the ports support it.
+
+    StdioMcpPorts then keeps one child per MCP server for the whole preview or
+    execute batch instead of starting one per testcase. Every item still makes
+    its own preview/write call with its own child operation id and digest.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self: "QaCoordinator", *args: Any, **kwargs: Any) -> Any:
+        session = getattr(self.ports, "session", None)
+        with session() if callable(session) else contextlib.nullcontext():
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class QaCoordinator:
@@ -152,6 +178,7 @@ class QaCoordinator:
             ]
         )
 
+    @in_port_session
     def build_plan(
         self,
         *,
@@ -200,6 +227,7 @@ class QaCoordinator:
         ignored: list[dict[str, Any]] = []
         for parsed_result in parsed:
             row = result_to_dict(parsed_result)
+            row["duration_seconds"] = parsed_result.duration_seconds
             if parsed_result.status is None and parsed_result.raw_status.casefold() in {"skip", "skipped"}:
                 if skip_policy == "blocked":
                     row["status"] = "b"
@@ -301,11 +329,7 @@ class QaCoordinator:
                 "testcase_external_id": row["external_id"],
                 "status": row["status"],
                 "notes": base_notes,
-                "execution_duration": (
-                    float(row["duration_seconds"]) / 60.0
-                    if row.get("duration_seconds") is not None
-                    else None
-                ),
+                "execution_duration": execution_duration_minutes(row.get("duration_seconds")),
             }
             testlink_preview = require_result(
                 self.ports.testlink_execution(**testlink_request),
@@ -446,6 +470,7 @@ class QaCoordinator:
             "reused": item.get("redmine_action") == "reused",
         }
 
+    @in_port_session
     def execute_plan(
         self,
         plan: dict[str, Any],

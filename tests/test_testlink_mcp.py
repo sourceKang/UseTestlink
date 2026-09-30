@@ -630,5 +630,136 @@ class TestLinkMcpApiTests(unittest.TestCase):
         self.assertIn("*****", audit_text)
 
 
+class CountingTestLinkClient:
+    """Offline XML-RPC stand-in that counts authentication and name-resolution calls."""
+
+    def __init__(self) -> None:
+        self.calls: dict[str, int] = {}
+        self.payloads: list[dict] = []
+
+    def _count(self, name: str) -> None:
+        self.calls[name] = self.calls.get(name, 0) + 1
+
+    def check_devkey(self) -> bool:
+        self._count("check_devkey")
+        return True
+
+    def get_projects(self):
+        self._count("get_projects")
+        return [{"id": "10", "name": "EMS"}]
+
+    def get_project_test_plans(self, project_id):
+        self._count("get_project_test_plans")
+        return [{"id": "20", "name": "Regression"}]
+
+    def get_builds(self, plan_id):
+        self._count("get_builds")
+        return [{"id": "40", "name": "build-1"}]
+
+    def get_platforms(self, plan_id):
+        self._count("get_platforms")
+        return [{"id": "30", "name": "Default Platform"}]
+
+    def report_result(self, payload):
+        self._count("report_result")
+        self.payloads.append(payload)
+        return [{"status": True, "operation": "reportTCResult", "id": 9000 + len(self.payloads)}]
+
+
+class TestLinkMcpBatchSessionTests(unittest.TestCase):
+    CASES = 6
+
+    def setUp(self) -> None:
+        api._batch_session.clear()
+        self.runtime = SimpleNamespace(
+            environment="sandbox",
+            settings=TestLinkSettings(url="https://testlink.invalid", devkey="synthetic-devkey", timeout=60),
+        )
+        self.client = CountingTestLinkClient()
+
+    def tearDown(self) -> None:
+        api._batch_session.clear()
+
+    def _run_batch(self, *, session: bool, audit_dir: str) -> list[dict]:
+        env = {"TESTLINK_AGENT_PROFILE": "sandbox", api.BATCH_SESSION_ENV: "1" if session else ""}
+        results = []
+        with patch.dict(os.environ, env), \
+                patch("testlink_mcp.api.load_runtime", return_value=self.runtime), \
+                patch("testlink_mcp.api.write_client", return_value=self.client) as write_factory, \
+                patch("testlink_agent_core.api._client", return_value=self.client) as legacy_factory:
+            for index in range(self.CASES):
+                case_args = args(
+                    operation_id=f"operation-batch-{index}",
+                    testcase_external_id=f"EMS-{index + 1}",
+                    execution_duration=1.5,
+                )
+                preview = api.testlink_report_execution(**case_args)
+                self.assertTrue(preview["ok"], preview)
+                written = api.testlink_report_execution(
+                    **case_args,
+                    write=True,
+                    preview_digest=preview["result"]["preview_digest"],
+                    audit_dir=audit_dir,
+                )
+                self.assertTrue(written["ok"], written)
+                results.append({"preview": preview["result"], "write": written["result"]})
+        # Each factory call is one authenticated client, i.e. one tl.checkDevKey.
+        self.authentications = write_factory.call_count + legacy_factory.call_count
+        return results
+
+    def test_batch_session_authenticates_and_resolves_the_target_once(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            results = self._run_batch(session=True, audit_dir=tmpdir)
+
+        self.assertEqual(1, self.authentications)
+        for name in ("get_projects", "get_project_test_plans", "get_builds", "get_platforms"):
+            self.assertEqual(1, self.client.calls[name], name)
+        self.assertEqual(self.CASES, self.client.calls["report_result"])
+        self.assertEqual(
+            [f"EMS-{index + 1}" for index in range(self.CASES)],
+            [payload["testcaseexternalid"] for payload in self.client.payloads],
+        )
+        self.assertEqual({"success"}, {result["write"]["status"] for result in results})
+        self.assertEqual({1.5}, {result["preview"]["execution"]["duration_minutes"] for result in results})
+
+    def test_without_session_every_call_resolves_again(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            self._run_batch(session=False, audit_dir=tmpdir)
+
+        # One preview and one write per testcase, each resolving again; the write
+        # also authenticates a second client for reportTCResult.
+        self.assertEqual(3 * self.CASES, self.authentications)
+        self.assertEqual(2 * self.CASES, self.client.calls["get_projects"])
+        self.assertEqual(2 * self.CASES, self.client.calls["get_builds"])
+        self.assertEqual({}, api._batch_session)
+
+    def test_session_preview_digest_matches_the_one_shot_path(self) -> None:
+        with TemporaryDirectory() as first_dir, TemporaryDirectory() as second_dir:
+            session_results = self._run_batch(session=True, audit_dir=first_dir)
+            api._batch_session.clear()
+            one_shot_results = self._run_batch(session=False, audit_dir=second_dir)
+
+        self.assertEqual(
+            [result["preview"]["preview_digest"] for result in one_shot_results],
+            [result["preview"]["preview_digest"] for result in session_results],
+        )
+
+    def test_changed_credentials_do_not_reuse_the_session_connection(self) -> None:
+        env = {"TESTLINK_AGENT_PROFILE": "sandbox", api.BATCH_SESSION_ENV: "1"}
+        other_runtime = SimpleNamespace(
+            environment="sandbox",
+            settings=TestLinkSettings(url="https://testlink.invalid", devkey="other-devkey", timeout=60),
+        )
+        with patch.dict(os.environ, env), \
+                patch("testlink_mcp.api.load_runtime", side_effect=[self.runtime, other_runtime]), \
+                patch("testlink_mcp.api.write_client", return_value=self.client) as factory:
+            first = api.testlink_report_execution(**args())
+            second = api.testlink_report_execution(**args())
+
+        self.assertTrue(first["ok"] and second["ok"])
+        self.assertEqual(2, factory.call_count)
+        self.assertEqual(2, self.client.calls["get_projects"])
+
+
 if __name__ == "__main__":
     unittest.main()

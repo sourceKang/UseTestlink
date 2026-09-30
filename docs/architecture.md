@@ -28,6 +28,8 @@ flowchart LR
 
 - TestLink 與 Redmine 憑證不得交叉放入另一個 MCP，也不得出現在 coordinator tool arguments。
 - coordinator 只持有 `QA_TESTLINK_MCP_ENV_FILE`／`QA_REDMINE_MCP_ENV_FILE` 路徑，透過隔離的 stdio child process 呼叫 ownership-specific MCP；child environment 會移除另一系統與 parent 中的 credential variables。
+- 一次 preview、execute 或 resume 批次中，coordinator 對每個 ownership-specific MCP 只啟動一個 stdio child（`StdioMcpPorts.session()`）；逐筆 testcase 仍各自以 `tools/call` 送出，保有自己的 child operation id、preview digest 與 operation audit。批次結束即關閉 child；逾時或異常退出的 child 不再重用。
+- 只有 coordinator 啟動的 TestLink batch child 會帶 `TESTLINK_MCP_BATCH_SESSION=1`：該 child 在自身行程內只做一次 `checkDevKey` 與 project/plan/platform/build 名稱解析並重用。認證與解析仍留在 `testlink-mcp`，coordinator 不取得 credential，也不自行傳入 TestLink ID。使用者長駐的 `testlink-mcp` 不設定此變數，每次呼叫照常重新解析。execute 批次會重新解析一次，並逐筆與 preview 時的 target digest 比對。
 - 三個服務各自 health check、audit 與 release；單一服務故障不得造成另一系統重複寫入。
 - coordinator 只交換 contracts 定義的資料，不依賴自然語言 handoff。
 - 每筆操作以 `operation_id`、`correlation_id`、payload digest 與 dedupe key 串起三層 audit。
