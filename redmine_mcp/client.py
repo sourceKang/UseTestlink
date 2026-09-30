@@ -138,6 +138,33 @@ class RedmineClient:
             "statuses": self.request_json("GET", "/issue_statuses.json").get("issue_statuses") or [],
         }
 
+    def list_projects(self, *, max_pages: int = 20) -> dict[str, Any]:
+        projects: list[dict[str, Any]] = []
+        total_count = 0
+        for _ in range(max_pages):
+            response = self.request_json(
+                "GET",
+                "/projects.json",
+                query={"limit": 100, "offset": len(projects)},
+            )
+            page = [project for project in response.get("projects") or [] if isinstance(project, dict)]
+            projects.extend(page)
+            total_count = int(response.get("total_count") or len(projects))
+            if not page or len(projects) >= total_count:
+                break
+        return {"projects": projects, "total_count": total_count}
+
+    def get_issue_statuses(self) -> list[dict[str, Any]]:
+        statuses = self.request_json("GET", "/issue_statuses.json").get("issue_statuses") or []
+        return [status for status in statuses if isinstance(status, dict)]
+
+    def search_issues(self, query: dict[str, Any]) -> dict[str, Any]:
+        response = self.request_json("GET", "/issues.json", query=query)
+        return {
+            "issues": [issue for issue in response.get("issues") or [] if isinstance(issue, dict)],
+            "total_count": int(response.get("total_count") or 0),
+        }
+
     def find_issues(
         self,
         *,
@@ -196,10 +223,14 @@ class RedmineClient:
             reused=False,
         )
 
-    def get_issue(self, issue_id: str | int) -> dict[str, Any]:
+    def get_issue(self, issue_id: str | int, *, include: str | None = None) -> dict[str, Any]:
         if not str(issue_id).strip():
             raise RedmineMcpError("Redmine issue ID is required.", code="INVALID_ARGUMENT")
-        response = self.request_json("GET", f"/issues/{issue_id}.json")
+        response = self.request_json(
+            "GET",
+            f"/issues/{issue_id}.json",
+            query={"include": include} if include else None,
+        )
         issue = response.get("issue")
         if not isinstance(issue, dict) or "id" not in issue:
             raise RedmineMcpError(

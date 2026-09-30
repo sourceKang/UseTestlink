@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "qa-integration-agent": {
+      "type": "stdio",
+      "command": "C:/Users/<username>/.local/bin/qa-integration-agent-mcp.exe",
+      "env": {
+        "PYTHONUTF8": "1",
+        "QA_INTEGRATION_TOOLSET": "import",
+        "QA_TESTLINK_MCP_ENV_FILE": "C:/Users/<username>/.config/testlink-agent/testlink_mcp.env",
+        "QA_REDMINE_MCP_ENV_FILE": "C:/Users/<username>/.config/testlink-agent/redmine_mcp.env"
+      }
+    }
+  }
+}

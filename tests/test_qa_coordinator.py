@@ -308,6 +308,17 @@ def workflow_args(report: Path, **overrides):
 
 
 class QaCoordinatorTests(unittest.TestCase):
+    def test_build_plan_defaults_correlation_id_to_operation_id(self) -> None:
+        ports = FakePorts()
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_report(tmpdir)
+            args = workflow_args(report)
+            args.pop("correlation_id")
+            plan = coordinator.build_plan(**args)
+
+        self.assertEqual(plan["operation_id"], plan["correlation_id"])
+
     def test_preview_digest_is_stable_across_requested_at_changes(self) -> None:
         ports = FakePorts()
         coordinator = QaCoordinator(ports)

@@ -103,6 +103,47 @@ def qa_preview_report_import(*, coordinator: QaCoordinator | None = None, **kwar
         return _failure(operation_id, "qa-preview", exc)
 
 
+def qa_read_preview_artifact(
+    *,
+    operation_id: str,
+    preview_artifact: str,
+    preview_digest: str,
+    section: str = "items",
+    offset: int = 0,
+    limit: int = 5,
+) -> dict[str, Any]:
+    """Read digest-bound plan data, never the unverified review copy."""
+    try:
+        if section not in ("items", "warnings", "ignored"):
+            raise CoordinatorError("section must be items, warnings, or ignored.", code="INVALID_PAGE")
+        if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 50:
+            raise CoordinatorError("offset must be nonnegative; limit must be 1..50.", code="INVALID_PAGE")
+        plan = read_preview_artifact(
+            preview_artifact, operation_id=operation_id, preview_digest=preview_digest,
+        )
+        if any(not isinstance(plan.get(key), list) for key in ("items", "warnings", "ignored")):
+            raise CoordinatorError("Preview collections are invalid.", code="PREVIEW_ARTIFACT_INVALID")
+        entries = plan[section]
+        if offset > len(entries):
+            raise CoordinatorError("offset exceeds this section's total.", code="INVALID_PAGE")
+        end = min(offset + limit, len(entries))
+        return _success({
+            "operation_id": operation_id,
+            "preview_digest": preview_digest,
+            "environment": plan.get("environment"),
+            "target": plan.get("target"),
+            "redmine_create_bugs": plan.get("redmine_create_bugs"),
+            "section_counts": {key: len(plan[key]) for key in ("items", "warnings", "ignored")},
+            "section": section,
+            "offset": offset,
+            "total": len(entries),
+            "entries": entries[offset:end],
+            "next_offset": end if end < len(entries) else None,
+        })
+    except Exception as exc:
+        return _failure(operation_id, "qa-read-preview", exc)
+
+
 def qa_execute_preview_artifact(
     *,
     operation_id: str,
@@ -312,6 +353,7 @@ def qa_compare_shadow_previews(
 
 
 TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
+    "qa_read_preview_artifact": qa_read_preview_artifact,
     "qa_preview_report_artifact": qa_preview_report_artifact,
     "qa_preview_report_import": qa_preview_report_import,
     "qa_execute_preview_artifact": qa_execute_preview_artifact,

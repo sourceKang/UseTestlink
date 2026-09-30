@@ -43,6 +43,31 @@ def _failure(operation_id: str, stage: str, error: BaseException) -> dict[str, A
     }
 
 
+def _execution_outcome(response: Any) -> tuple[str | None, str | None]:
+    """Return (execution_id, rejection_reason) for a reportTCResult response.
+
+    TestLink's XML-RPC answers with a list of structs, for example
+    [{"status": true, "operation": "reportTCResult", "message": "Success!", "id": 3043053}],
+    so reading the id off the response as if it were a bare mapping silently
+    loses it and records a successful write with execution_id null. The same
+    envelope carries rejections: an error struct has a "code", and a test plan
+    whose platform is missing or ambiguous is answered with the platform list
+    instead of a result, which must not be recorded as a successful execution.
+    A bare mapping is still accepted for deployments and fakes that return one.
+    """
+    records = response if isinstance(response, list) else [response]
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if record.get("code") is not None or record.get("status") is False:
+            reason = record.get("message") or record.get("code")
+            return None, str(reason or "TestLink rejected the execution.")
+        execution_id = record.get("execution_id") or record.get("executionId") or record.get("id")
+        if execution_id not in (None, ""):
+            return str(execution_id), None
+    return None, "the response carried no execution id."
+
+
 def _named_target(value: Any, label: str) -> dict[str, str]:
     if not isinstance(value, dict):
         raise TestLinkError(f"Resolved {label} target is missing.")
@@ -571,9 +596,9 @@ def testlink_report_execution(
         )
         audit_id = started.name
         response = write_client(runtime).report_result(contract_plan["payload"])
-        execution_id = None
-        if isinstance(response, dict):
-            execution_id = response.get("execution_id") or response.get("executionId") or response.get("id")
+        execution_id, rejection = _execution_outcome(response)
+        if rejection is not None:
+            raise TestLinkError(f"TestLink did not record the execution: {rejection}")
         completed = write_operation_audit(
             {
                 "schema_version": CONTRACT_SCHEMA_VERSION,

@@ -39,3 +39,11 @@ Token reduction must not remove preview-first behavior, exact target validation,
 binding, Redmine dedupe/reuse, report hash validation, write confirmation, audit/resume,
 readback verification, secret redaction, or offline tests. These are correctness contracts,
 not optional prompt text.
+
+## Unreleased Preview Reader
+
+The digest-verified `qa_read_preview_artifact` tool adds paginated access to exact
+plan items, warnings, and ignored entries. The current QA import surface is about
+1,321 estimated tokens (5,283 characters), 88.4% below the current all-server
+surface. Pagination limits row counts, not individual payload length; callers can
+use limit 1 for large entries. No payload is silently truncated.

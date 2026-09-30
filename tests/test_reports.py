@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from testlink_agent_core.errors import TestLinkError
-from testlink_agent_core.reports import choose_latest_open_build, parse_report
+from testlink_agent_core.reports import choose_latest_open_build, junit_external_id, parse_report
 
 
 class ReportParserTests(unittest.TestCase):
@@ -34,6 +34,54 @@ Test Results:
         self.assertEqual(results[2].raw_status, "Error")
         self.assertEqual(results[2].duration_seconds, 1.5)
         self.assertEqual(results[3].status, "p")
+
+
+    def test_parses_junit_xml_and_recovers_external_ids(self):
+        content = """<?xml version="1.0" encoding="utf-8"?>
+<testsuites><testsuite name="pytest" tests="4" timestamp="2026-08-31T15:12:14.922374+08:00">
+<testcase classname="tests.test_port_inventory_ui" name="test_ems1_3581_all_port_info" time="0.429"><failure message="boom">detail</failure></testcase>
+<testcase classname="tests.test_port_inventory_ui" name="test_ems1_3535_all_port_filter" time="5.050"/>
+<testcase classname="tests.test_ont_inventory_ui" name="test_ems1_4514_all_ont_page" time="6.166"><skipped message="needs device"/></testcase>
+<testcase classname="tests.test_helpers" name="test_local_helper_only" time="0.010"/>
+</testsuite></testsuites>
+"""
+        with TemporaryDirectory() as tmpdir:
+            report = Path(tmpdir) / "results.xml"
+            report.write_text(content, encoding="utf-8")
+            header, results = parse_report(report)
+
+        self.assertEqual(header["_schema_version"], "junit-xml-v1")
+        self.assertEqual(header["Summary"], "2 Pass / 1 Fail / 1 Skipped")
+        self.assertEqual(header["Unmapped Tests"], "1")
+        self.assertEqual([item.external_id for item in results], ["EMS1-3581", "EMS1-3535", "EMS1-4514"])
+        self.assertEqual(results[0].status, "f")
+        self.assertEqual(results[0].duration_seconds, 0.429)
+        self.assertEqual(results[1].status, "p")
+        self.assertEqual(results[2].raw_status, "Skipped")
+        self.assertIsNone(results[2].status)
+
+    def test_junit_external_id_accepts_both_spellings(self):
+        self.assertEqual("EMS1-3581", junit_external_id("test_ems1_3581_all_port_info", ""))
+        self.assertEqual("EMS1-3581", junit_external_id("test_all_port_info[EMS1-3581]", ""))
+        self.assertEqual("GW-42", junit_external_id("", "tests.gw.test_gw_42_login"))
+        self.assertIsNone(junit_external_id("test_get_port_by_devicename", "tests.helpers"))
+
+    def test_rejects_junit_without_any_external_id(self):
+        content = '<testsuite name="pytest"><testcase classname="t" name="test_plain" time="1"/></testsuite>'
+        with TemporaryDirectory() as tmpdir:
+            report = Path(tmpdir) / "results.xml"
+            report.write_text(content, encoding="utf-8")
+
+            with self.assertRaisesRegex(TestLinkError, "no testcase carried a TestLink external ID"):
+                parse_report(report)
+
+    def test_rejects_malformed_junit_xml(self):
+        with TemporaryDirectory() as tmpdir:
+            report = Path(tmpdir) / "results.xml"
+            report.write_text('<testsuite name="pytest"><testcase name="test_ems1_1_x"', encoding="utf-8")
+
+            with self.assertRaisesRegex(TestLinkError, "not well formed"):
+                parse_report(report)
 
     def test_selects_latest_open_build(self):
         selected = choose_latest_open_build(

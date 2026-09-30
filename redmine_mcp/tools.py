@@ -106,14 +106,70 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "redmine_search_issues",
-        "description": "Search Redmine issues using safe summary fields.",
+        "description": (
+            "Search Redmine issues and return safe summary fields. Custom field filters are verified "
+            "against every returned issue; if Redmine ignored a filter the call fails with "
+            "FILTER_NOT_APPLIED instead of returning unfiltered results."
+        ),
         "inputSchema": schema(
             {
                 "project_id": string("Redmine project identifier. Defaults to REDMINE_PROJECT_ID."),
-                "status_id": string("Redmine status filter, such as open or closed."),
+                "status_id": string("Redmine status filter: open, closed, *, or a status ID."),
                 "tracker_id": string("Optional tracker ID."),
+                "subject_contains": string("Case-insensitive subject keyword."),
+                "custom_field_filters": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "id": string("Numeric custom field ID."),
+                            "value": string("Value to match."),
+                            "match": {"type": "string", "enum": ["exact", "contains"], "default": "exact"},
+                        },
+                        "required": ["id", "value"],
+                    },
+                },
+                "include_custom_fields": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Numeric custom field IDs whose values are returned for each issue.",
+                },
+                "author_id": string("Author user ID, or me."),
+                "assigned_to_id": string("Assignee user ID, or me."),
+                "category_id": string("Redmine issue category ID."),
+                "updated_from": string("Inclusive YYYY-MM-DD lower bound on updated_on."),
+                "updated_to": string("Inclusive YYYY-MM-DD upper bound on updated_on."),
+                "closed_from": string("Inclusive YYYY-MM-DD lower bound on closed_on."),
+                "closed_to": string("Inclusive YYYY-MM-DD upper bound on closed_on."),
                 "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 100},
+                "offset": {"type": "integer", "minimum": 0, "default": 0},
             },
+            ["operation_id", "environment"],
+        ),
+        "annotations": {"readOnlyHint": True},
+    },
+    {
+        "name": "redmine_get_issue",
+        "description": (
+            "Read full Redmine issue content: description, status, custom fields, "
+            "and journal/comment history. Excludes watchers and other internal fields; "
+            "embedded credentials and email local parts are masked."
+        ),
+        "inputSchema": schema(
+            {"issue_id": string("Existing Redmine issue ID to read.")},
+            ["operation_id", "environment", "issue_id"],
+        ),
+        "annotations": {"readOnlyHint": True},
+    },
+    {
+        "name": "redmine_list_projects",
+        "description": (
+            "List all Redmine projects (paginated server-side) with identifier and name so callers "
+            "can resolve project_id instead of guessing."
+        ),
+        "inputSchema": schema(
+            {"query": string("Optional case-insensitive substring matched against name or identifier.")},
             ["operation_id", "environment"],
         ),
         "annotations": {"readOnlyHint": True},
@@ -182,6 +238,8 @@ TOOLSETS: dict[str, set[str]] = {
     "integration": {"redmine_create_bug", "redmine_add_comment"},
     "issue": {
         "redmine_search_issues",
+        "redmine_get_issue",
+        "redmine_list_projects",
         "redmine_preview_bug",
         "redmine_create_bug",
         "redmine_preview_comment",
@@ -189,6 +247,7 @@ TOOLSETS: dict[str, set[str]] = {
     },
     "metadata": {
         "redmine_health",
+        "redmine_list_projects",
         "redmine_get_project_metadata",
         "redmine_validate_template",
     },

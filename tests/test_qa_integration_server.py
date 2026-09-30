@@ -18,6 +18,7 @@ class QaIntegrationServerTests(unittest.TestCase):
         tools = {tool["name"]: tool for tool in TOOLS}
         self.assertEqual(
             {
+                "qa_read_preview_artifact",
                 "qa_preview_report_artifact",
                 "qa_preview_report_import",
                 "qa_execute_preview_artifact",

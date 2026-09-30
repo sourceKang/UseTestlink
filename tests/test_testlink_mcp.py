@@ -53,10 +53,11 @@ def args(**overrides):
 
 
 class FakeWriteClient:
-    def __init__(self, *, fail: bool = False, last_execution=None, testcase_readback=None):
+    def __init__(self, *, fail: bool = False, last_execution=None, testcase_readback=None, response=None):
         self.fail = fail
         self.last_execution = last_execution
         self.testcase_readback = testcase_readback
+        self.response = response if response is not None else {"execution_id": "9001"}
         self.payloads = []
         self.testcase_payloads = []
         self.last_queries = []
@@ -65,7 +66,7 @@ class FakeWriteClient:
         self.payloads.append(payload)
         if self.fail:
             raise TestLinkError("write failed with TESTLINK_DEVKEY=testlink-secret")
-        return {"execution_id": "9001"}
+        return self.response
 
     def get_last_execution_result(self, **kwargs):
         self.last_queries.append(kwargs)
@@ -184,6 +185,66 @@ class TestLinkMcpApiTests(unittest.TestCase):
         self.assertEqual("9001", result["result"]["execution_id"])
         self.assertEqual(1, len(client.payloads))
         self.assertEqual("success", audit["status"])
+
+    def test_xmlrpc_list_response_records_the_execution_id(self) -> None:
+        # TestLink answers reportTCResult with a list of structs, not a mapping.
+        runtime = SimpleNamespace(environment="sandbox")
+        client = FakeWriteClient(
+            response=[{"status": True, "operation": "reportTCResult", "message": "Success!", "id": 3043053}]
+        )
+        with TemporaryDirectory() as tmpdir:
+            with patch("testlink_mcp.api.load_runtime", return_value=runtime):
+                with patch("testlink_mcp.api._legacy_preview", return_value=legacy_preview()):
+                    with patch("testlink_mcp.api.write_client", return_value=client):
+                        preview = api.testlink_report_execution(**args())["result"]
+                        result = api.testlink_report_execution(
+                            **args(write=True, preview_digest=preview["preview_digest"], audit_dir=tmpdir)
+                        )
+
+            audit = json.loads((Path(tmpdir) / result["result"]["audit_id"]).read_text(encoding="utf-8"))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual("3043053", result["result"]["execution_id"])
+        self.assertEqual("3043053", str(audit["execution_id"]))
+        self.assertEqual("success", audit["status"])
+
+    def test_response_without_execution_id_is_not_recorded_as_success(self) -> None:
+        # A plan whose platform is ambiguous is answered with the platform list,
+        # which must not be filed as a completed execution.
+        runtime = SimpleNamespace(environment="sandbox")
+        client = FakeWriteClient(response=[{"49": "NetAtlas EMS", "48": "OLT1408A"}])
+        with TemporaryDirectory() as tmpdir:
+            with patch("testlink_mcp.api.load_runtime", return_value=runtime):
+                with patch("testlink_mcp.api._legacy_preview", return_value=legacy_preview()):
+                    with patch("testlink_mcp.api.write_client", return_value=client):
+                        preview = api.testlink_report_execution(**args())["result"]
+                        result = api.testlink_report_execution(
+                            **args(write=True, preview_digest=preview["preview_digest"], audit_dir=tmpdir)
+                        )
+
+            audits = [json.loads(path.read_text(encoding="utf-8")) for path in Path(tmpdir).glob("*.json")]
+
+        self.assertFalse(result["ok"])
+        self.assertIn("did not record the execution", result["error"]["error"]["message"])
+        self.assertEqual(["failed"], [audit["status"] for audit in audits])
+
+    def test_error_struct_response_is_not_recorded_as_success(self) -> None:
+        runtime = SimpleNamespace(environment="sandbox")
+        client = FakeWriteClient(response=[{"code": 2000, "message": "(reportTCResult) - Invalid build id"}])
+        with TemporaryDirectory() as tmpdir:
+            with patch("testlink_mcp.api.load_runtime", return_value=runtime):
+                with patch("testlink_mcp.api._legacy_preview", return_value=legacy_preview()):
+                    with patch("testlink_mcp.api.write_client", return_value=client):
+                        preview = api.testlink_report_execution(**args())["result"]
+                        result = api.testlink_report_execution(
+                            **args(write=True, preview_digest=preview["preview_digest"], audit_dir=tmpdir)
+                        )
+
+            audits = [json.loads(path.read_text(encoding="utf-8")) for path in Path(tmpdir).glob("*.json")]
+
+        self.assertFalse(result["ok"])
+        self.assertIn("Invalid build id", result["error"]["error"]["message"])
+        self.assertEqual(["failed"], [audit["status"] for audit in audits])
 
     def test_changed_payload_rejects_write_and_creates_failure_audit(self) -> None:
         runtime = SimpleNamespace(environment="sandbox")

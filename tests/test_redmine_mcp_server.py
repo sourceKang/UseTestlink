@@ -22,6 +22,8 @@ class RedmineMcpServerTests(unittest.TestCase):
             {
                 "redmine_health",
                 "redmine_search_issues",
+                "redmine_get_issue",
+                "redmine_list_projects",
                 "redmine_get_project_metadata",
                 "redmine_validate_template",
                 "redmine_preview_bug",
@@ -81,6 +83,8 @@ class RedmineMcpServerTests(unittest.TestCase):
             )
 
         self.assertIn("redmine_create_bug", names)
+        self.assertIn("redmine_get_issue", names)
+        self.assertIn("redmine_list_projects", names)
         self.assertNotIn("redmine_get_project_metadata", names)
         self.assertEqual(-32602, blocked["error"]["code"])
 
