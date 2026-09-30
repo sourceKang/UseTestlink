@@ -77,6 +77,11 @@ Set `TESTLINK_MCP_TOOLSET` to `discovery`, `execution`, `maintenance`, `integrat
 `all`. Codex should enable only the task-specific surface; `integration` is reserved for
 the coordinator child process.
 
+`TESTLINK_MCP_BATCH_SESSION=1` is also reserved for that child: qa-integration-agent sets it
+only on the child it keeps open for one preview/execute batch, so the child authenticates and
+resolves the exact target once for that batch. Do not set it on a long-running server; without
+it every call resolves the target again.
+
 The v2 server excludes:
 
 - `testlink_upload_report`

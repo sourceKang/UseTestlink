@@ -21,6 +21,22 @@ The recommended integrated path is `qa-integration-agent` -> ownership-specific 
 
 The platform and build are exact inputs. A missing requested platform is a target validation failure; the coordinator must not replace it with another existing platform without a new user-selected preview.
 
+### Batch Sessions
+
+A preview, execute, or resume batch keeps one stdio child per ownership-specific MCP open
+for the whole batch instead of starting one child per testcase. Each testcase still makes its
+own `testlink_report_execution` preview/write call with its own child operation id, preview
+digest, and TestLink operation audit, and the workflow audit is still persisted after every
+item. The TestLink child of a batch authenticates and resolves the exact
+project/plan/platform/build once, so child processes and name-resolution calls per batch are
+constant instead of growing with the number of testcases. Execute starts a new batch child,
+resolves once again, and still rejects any item whose resolved target digest differs from the
+reviewed preview. A child that times out (`QA_MCP_TIMEOUT_SECONDS`, applied per call) or exits
+is discarded; that item fails with a retryable error and resume handles it.
+
+The execution duration sent to TestLink is the report duration in minutes (`execduration`,
+rounded to four decimals as in the legacy upload).
+
 ## Confirmation Contract
 
 - `qa_preview_report_artifact` is read-only, persists the exact redacted plan/review under `local/`, and returns its path plus canonical `preview_digest`.

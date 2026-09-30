@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from pathlib import Path
 from typing import Any, Callable
 
@@ -8,7 +9,9 @@ from qa_mcp_contracts import CONTRACT_SCHEMA_VERSION, assert_safe_contract, payl
 from testlink_agent_core.api import call_tool as legacy_call_tool
 from testlink_agent_core.api import report_result as legacy_report_result
 from testlink_agent_core.errors import TestLinkError, normalize_testlink_error, redact_secrets
+from testlink_agent_core.handlers import report as report_handlers
 from testlink_agent_core.policy import validate_testcase_row_policy
+from testlink_agent_core.resolver import NameResolver
 from testlink_agent_core.testcases import compare_testcase_readback, validate_testcase_steps
 
 from .audit import find_operation_audits, utc_now_iso, write_operation_audit
@@ -17,6 +20,44 @@ from .tools import EXCLUDED_LEGACY_TOOLS, TOOLS
 
 
 ALLOWED_TOOL_NAMES = {tool["name"] for tool in TOOLS}
+
+# Set only by qa-integration-agent for the short-lived child it keeps open for
+# one preview or execute batch. The child then authenticates once and resolves
+# project/plan/platform/build names once, instead of once per testcase. A
+# long-running testlink-mcp started by a user never sets it, so it never serves
+# a stale target.
+BATCH_SESSION_ENV = "TESTLINK_MCP_BATCH_SESSION"
+_batch_session: dict[str, Any] = {}
+
+
+def batch_session_enabled() -> bool:
+    return os.environ.get(BATCH_SESSION_ENV, "").strip() == "1"
+
+
+def _session_connection(runtime: Any) -> tuple[Any, NameResolver]:
+    """Return this batch child's authenticated client and name resolver.
+
+    The key covers the endpoint, credential digest, timeout and environment, so
+    a changed env file never reuses a connection made with other credentials.
+    """
+    settings = runtime.settings
+    key = (
+        str(settings.url),
+        hashlib.sha256(str(settings.devkey).encode("utf-8")).hexdigest(),
+        int(settings.timeout),
+        str(runtime.environment),
+    )
+    if _batch_session.get("key") != key:
+        client = write_client(runtime)
+        _batch_session.clear()
+        _batch_session.update({"key": key, "client": client, "resolver": NameResolver(client)})
+    return _batch_session["client"], _batch_session["resolver"]
+
+
+def _execution_client(runtime: Any) -> Any:
+    if batch_session_enabled():
+        return _session_connection(runtime)[0]
+    return write_client(runtime)
 
 
 def _success(result: dict[str, Any]) -> dict[str, Any]:
@@ -231,7 +272,7 @@ def _recover_or_skip_previous_operation(
                 "audit_id": path.name,
             }
         if record.get("status") == "started":
-            client = write_client(runtime)
+            client = _execution_client(runtime)
             latest = _last_execution_row(
                 client.get_last_execution_result(
                     testplan_id=str(payload.get("testplanid") or ""),
@@ -271,7 +312,11 @@ def _recover_or_skip_previous_operation(
     return None
 
 
-def _legacy_preview(**kwargs: Any) -> dict[str, Any]:
+def _legacy_preview(*, runtime: Any = None, **kwargs: Any) -> dict[str, Any]:
+    if runtime is not None and batch_session_enabled():
+        client, resolver = _session_connection(runtime)
+        arguments = {key: value for key, value in kwargs.items() if key not in {"env_file", "timeout"}}
+        return redact_secrets(report_handlers.report_result(client, resolver, write=False, **arguments))
     result = legacy_report_result(write=False, **kwargs)
     if not result.get("ok"):
         error = result.get("error") or {}
@@ -565,7 +610,7 @@ def testlink_report_execution(
             "env_file": env_file,
             "timeout": timeout,
         }
-        contract_plan = _build_plan(operation_id, selected, _legacy_preview(**preview_kwargs))
+        contract_plan = _build_plan(operation_id, selected, _legacy_preview(runtime=runtime, **preview_kwargs))
         if not write:
             return _success(_preview_result(contract_plan))
         validate_preview_digest(contract_plan, str(preview_digest or ""))
@@ -595,7 +640,7 @@ def testlink_report_execution(
             audit_dir,
         )
         audit_id = started.name
-        response = write_client(runtime).report_result(contract_plan["payload"])
+        response = _execution_client(runtime).report_result(contract_plan["payload"])
         execution_id, rejection = _execution_outcome(response)
         if rejection is not None:
             raise TestLinkError(f"TestLink did not record the execution: {rejection}")

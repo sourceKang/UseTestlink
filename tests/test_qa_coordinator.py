@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import copy
@@ -731,6 +732,142 @@ class QaCoordinatorTests(unittest.TestCase):
         self.assertTrue(executed["ok"])
         self.assertIn("items", preview["result"])
         self.assertIn("audit", executed["result"])
+
+    def test_report_duration_becomes_testlink_execution_minutes(self) -> None:
+        ports = FakePorts()
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_report(tmpdir)
+            plan = coordinator.build_plan(**workflow_args(report, redmine_create_bugs=False))
+
+        item = plan["items"][0]
+        self.assertEqual(60.0, item["result"]["duration_seconds"])
+        self.assertEqual(1.0, item["testlink_request"]["execution_duration"])
+
+
+class SessionFakePorts(FakePorts):
+    """FakePorts that records port sessions and which calls ran inside one."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.sessions_opened = 0
+        self.active = False
+        self.calls_outside_session = 0
+        self.testlink_calls = 0
+
+    @contextlib.contextmanager
+    def session(self):
+        self.sessions_opened += 1
+        self.active = True
+        try:
+            yield self
+        finally:
+            self.active = False
+
+    def _track(self) -> None:
+        if not self.active:
+            self.calls_outside_session += 1
+
+    def testlink_execution(self, **kwargs):
+        self._track()
+        self.testlink_calls += 1
+        return super().testlink_execution(**kwargs)
+
+    def redmine_bug(self, **kwargs):
+        self._track()
+        return super().redmine_bug(**kwargs)
+
+    def redmine_comment(self, **kwargs):
+        self._track()
+        return super().redmine_comment(**kwargs)
+
+
+def write_bulk_report(directory: str, count: int, *, fail_every: int = 0) -> Path:
+    report = Path(directory) / "bulk-report.txt"
+    rows = [
+        f"[EMS-{index}][test_case_{index}] Result "
+        f"{'Fail' if fail_every and index % fail_every == 0 else 'Pass'} ({index}s)"
+        for index in range(1, count + 1)
+    ]
+    report.write_text(
+        "\n".join(["Report generated on: 2026-07-13", "Test Results:", "-------------", *rows]),
+        encoding="utf-8",
+    )
+    return report
+
+
+class QaCoordinatorBatchSessionTests(unittest.TestCase):
+    def test_preview_and_execute_each_run_in_one_port_session(self) -> None:
+        cases = 40
+        ports = SessionFakePorts(redmine_action="create")
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_bulk_report(tmpdir, cases, fail_every=10)
+            plan = coordinator.build_plan(**workflow_args(report))
+            self.assertEqual(1, ports.sessions_opened)
+            self.assertEqual(cases, ports.testlink_calls)
+            result = coordinator.execute_plan(
+                plan,
+                confirmed_preview_digest=plan["preview_digest"],
+                report=str(report),
+                audit_dir=tmpdir,
+            )
+
+        self.assertEqual(2, ports.sessions_opened)
+        self.assertEqual(0, ports.calls_outside_session)
+        self.assertEqual("completed", result["status"])
+        self.assertEqual(cases, ports.testlink_write_count)
+        # Per item: one preview at plan time, one final preview and one write at execute time.
+        self.assertEqual(3 * cases, ports.testlink_calls)
+        self.assertEqual(
+            [f"EMS-{index}" for index in range(1, cases + 1)],
+            [item["testcase_external_id"] for item in result["audit"]["items"]],
+        )
+        self.assertEqual(
+            len({item["testlink_request"]["operation_id"] for item in plan["items"]}),
+            cases,
+        )
+
+    def test_partial_failure_in_a_session_batch_resumes_only_missing_items(self) -> None:
+        ports = SessionFakePorts(redmine_action="create")
+        ports.testlink_write_failures = 1
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_bulk_report(tmpdir, 5)
+            values = workflow_args(report, redmine_create_bugs=False)
+            preview = api.qa_preview_report_artifact(coordinator=coordinator, artifact_dir=tmpdir, **values)
+            first = api.qa_execute_preview_artifact(
+                coordinator=coordinator,
+                operation_id=values["operation_id"],
+                preview_artifact=preview["result"]["preview_artifact"],
+                preview_digest=preview["result"]["preview_digest"],
+                write=True,
+                audit_dir=tmpdir,
+            )
+            audit_after_failure = read_workflow_audit(first["result"]["audit_file"])
+            resumed = api.qa_resume_preview_artifact(
+                coordinator=coordinator,
+                operation_id=values["operation_id"],
+                preview_artifact=preview["result"]["preview_artifact"],
+                audit_file=first["result"]["audit_file"],
+                write=True,
+            )
+            audit_after_resume = read_workflow_audit(first["result"]["audit_file"])
+
+        self.assertEqual("partial-failure", first["result"]["status"])
+        self.assertEqual(
+            ["failed", "success", "success", "success", "success"],
+            [item["testlink_write"] for item in audit_after_failure["items"]],
+        )
+        self.assertEqual("completed", resumed["result"]["status"])
+        self.assertEqual(
+            ["success", "skipped-resume", "skipped-resume", "skipped-resume", "skipped-resume"],
+            [item["testlink_write"] for item in audit_after_resume["items"]],
+        )
+        # Five first-run writes (one failed) plus exactly one retried write.
+        self.assertEqual(6, ports.testlink_write_count)
+        self.assertEqual(3, ports.sessions_opened)
+        self.assertEqual(0, ports.calls_outside_session)
 
 
 if __name__ == "__main__":
