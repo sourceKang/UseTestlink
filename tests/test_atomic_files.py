@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from qa_mcp_contracts.files import atomic_replace
+from qa_mcp_contracts.files import LocalPathError, atomic_replace, ensure_directory, write_text_atomically
 
 
 class AtomicReplaceTests(unittest.TestCase):
@@ -46,6 +47,60 @@ class AtomicReplaceTests(unittest.TestCase):
 
             self.assertTrue(temp.exists())
             self.assertFalse(target.exists())
+
+
+class LocalPathErrorTests(unittest.TestCase):
+    """Every audit and preview writer names the absolute path it could not use."""
+
+    def _writers(self):
+        from qa_integration_agent.artifacts import write_preview_artifact
+        from qa_integration_agent.audit import write_workflow_audit
+        from redmine_mcp.audit import write_operation_audit as write_redmine_audit
+        from testlink_mcp.audit import write_operation_audit as write_testlink_audit
+
+        record = {"operation_id": "operation-unwritable", "action": "append-execution"}
+        return {
+            "TestLink audit": lambda directory: write_testlink_audit(record, directory),
+            "Redmine audit": lambda directory: write_redmine_audit(record, directory),
+            "Workflow audit": lambda directory: write_workflow_audit(record, directory),
+            "Preview artifact": lambda directory: write_preview_artifact(record, {}, directory),
+        }
+
+    def test_unwritable_directory_error_carries_the_absolute_path(self) -> None:
+        # The bare OS error names only "local"; the absolute path is what makes it diagnosable.
+        relative = Path("local") / "audit"
+        for label, write in self._writers().items():
+            with self.subTest(writer=label), \
+                    patch("pathlib.Path.mkdir", side_effect=PermissionError(5, "Access is denied", "local")):
+                with self.assertRaises(LocalPathError) as context:
+                    write(relative)
+                message = str(context.exception)
+                self.assertIn(f"{label} directory is not writable: {os.path.abspath(relative)}", message)
+                self.assertIn("Access is denied", message)
+                self.assertIsInstance(context.exception, OSError)
+
+    def test_file_write_failure_names_the_absolute_target(self) -> None:
+        with TemporaryDirectory() as tmpdir, patch(
+            "pathlib.Path.write_text", side_effect=PermissionError(13, "Permission denied")
+        ):
+            target = Path(tmpdir) / "audit.json"
+            with self.assertRaises(LocalPathError) as context:
+                write_text_atomically(target, "{}", label="TestLink audit")
+
+        self.assertIn(f"TestLink audit file could not be written: {target}", str(context.exception))
+
+    def test_failed_replace_removes_the_temp_file(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "audit.json"
+            with patch("qa_mcp_contracts.files.atomic_replace", side_effect=PermissionError("locked")):
+                with self.assertRaises(LocalPathError):
+                    write_text_atomically(target, "{}", label="Redmine audit")
+            self.assertEqual([], list(Path(tmpdir).iterdir()))
+
+    def test_ensure_directory_creates_nested_directories(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            created = ensure_directory(Path(tmpdir) / "a" / "b", label="TestLink audit")
+            self.assertTrue(created.is_dir())
 
 
 if __name__ == "__main__":

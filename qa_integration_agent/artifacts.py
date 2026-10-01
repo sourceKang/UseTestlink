@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from qa_mcp_contracts import CONTRACT_SCHEMA_VERSION, atomic_replace, payload_digest
+from qa_mcp_contracts import CONTRACT_SCHEMA_VERSION, ensure_directory, payload_digest, write_text_atomically
 from testlink_agent_core.errors import redact_secrets
 
 from .errors import CoordinatorError
@@ -19,8 +19,7 @@ def write_preview_artifact(
     review: dict[str, Any],
     artifact_dir: str | Path = DEFAULT_PREVIEW_DIR,
 ) -> Path:
-    directory = Path(artifact_dir)
-    directory.mkdir(parents=True, exist_ok=True)
+    directory = ensure_directory(artifact_dir, label="Preview artifact")
     operation_id = str(plan.get("operation_id") or "operation")
     path = directory / f"{operation_id}-qa-preview-{uuid.uuid4().hex}.json"
     payload = redact_secrets(
@@ -33,9 +32,7 @@ def write_preview_artifact(
             "review": review,
         }
     )
-    temp_path = path.with_suffix(".json.tmp")
-    temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    atomic_replace(temp_path, path)
+    write_text_atomically(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n", label="Preview artifact")
     return path
 
 

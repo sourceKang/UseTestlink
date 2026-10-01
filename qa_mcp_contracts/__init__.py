@@ -9,7 +9,7 @@ from .core import (
     validate_operation_context,
     validate_preview_digest,
 )
-from .files import atomic_replace
+from .files import LocalPathError, atomic_replace, ensure_directory, write_text_atomically
 
 __all__ = [
     "CONTRACT_SCHEMA_VERSION",
@@ -20,4 +20,7 @@ __all__ = [
     "validate_operation_context",
     "validate_preview_digest",
     "atomic_replace",
+    "LocalPathError",
+    "ensure_directory",
+    "write_text_atomically",
 ]
