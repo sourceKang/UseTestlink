@@ -260,10 +260,10 @@ class StdioMcpPorts:
         if self._session_children is not None:
             return self._session_call(module=module, tool_name=tool_name, arguments=arguments, child_env=child_env)
         try:
-            # No explicit cwd: the child must inherit this process's real working
-            # directory so its default "local/..." audit path lands next to the
-            # coordinator's own local/qa_audit, not inside site-packages when this
-            # package is pip/pipx-installed rather than run from a source checkout.
+            # No explicit cwd: the child inherits this process's working directory,
+            # which the MCP client chooses (C:\Windows\System32 under Claude Desktop).
+            # Writes therefore never rely on the child's relative default audit
+            # path; the coordinator passes an absolute audit_dir on every write.
             completed = subprocess.run(
                 [sys.executable, "-m", module],
                 input=json.dumps(request, ensure_ascii=False) + "\n",
@@ -302,7 +302,7 @@ class StdioMcpPorts:
             if module == "testlink_mcp.server":
                 child_env[TESTLINK_BATCH_SESSION_ENV] = "1"
             try:
-                # Same cwd inheritance as the one-shot path, for the same audit-path reason.
+                # Same cwd inheritance as the one-shot path; writes carry an absolute audit_dir.
                 child = _SessionChild(module, child_env)
             except OSError as exc:
                 raise CoordinatorError(f"{tool_name} MCP could not start: {exc}", code="MCP_START_FAILED") from exc

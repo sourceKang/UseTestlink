@@ -3,10 +3,17 @@ from __future__ import annotations
 import contextlib
 import functools
 import hashlib
+import os
 from pathlib import Path
 from typing import Any, Callable
 
-from qa_mcp_contracts import CONTRACT_SCHEMA_VERSION, payload_digest, validate_operation_context
+from qa_mcp_contracts import (
+    CONTRACT_SCHEMA_VERSION,
+    LocalPathError,
+    ensure_directory,
+    payload_digest,
+    validate_operation_context,
+)
 from testlink_agent_core.policy import build_dedupe_key, dedupe_digest, dedupe_marker
 from testlink_agent_core.reports import SCHEMA_HEADER_KEY, parse_report, result_to_dict
 
@@ -84,6 +91,8 @@ REPORT_HEADER_FIELDS = (
     "Total test time",
 )
 MAX_REPORT_LABEL_LENGTH = 64
+# Child operation audits live beside the workflow audit: <audit_dir>/testlink, <audit_dir>/redmine.
+CHILD_AUDIT_SUBDIRS = {"testlink": "testlink", "redmine": "redmine"}
 SKIP_RAW_STATUSES = {"skip", "skipped"}
 
 
@@ -678,6 +687,33 @@ class QaCoordinator:
         return preview
 
     @staticmethod
+    def _prepare_audit_dirs(root: Path, *, redmine: bool) -> dict[str, str]:
+        """Resolve one absolute audit root per operation and create it before any write.
+
+        Child MCPs inherit the client's working directory (Claude Desktop uses
+        C:\\Windows\\System32), so their relative default audit paths are not
+        stable or even writable. Every child write therefore receives an explicit
+        directory under the workflow audit root, which a resume derives from the
+        resumed audit file, so child idempotency checks always see prior audits.
+        """
+        absolute = Path(os.path.abspath(root))
+        dirs = {
+            "workflow": absolute,
+            "testlink": absolute / CHILD_AUDIT_SUBDIRS["testlink"],
+            "redmine": absolute / CHILD_AUDIT_SUBDIRS["redmine"],
+        }
+        labels = {"workflow": "Workflow audit", "testlink": "TestLink audit", "redmine": "Redmine audit"}
+        try:
+            for name, directory in dirs.items():
+                if name != "redmine" or redmine:
+                    ensure_directory(directory, label=labels[name])
+        except LocalPathError as exc:
+            raise CoordinatorError(
+                f"{exc}; no TestLink or Redmine write was attempted.", code="AUDIT_DIR_NOT_WRITABLE"
+            ) from exc
+        return {name: str(directory) for name, directory in dirs.items()}
+
+    @staticmethod
     def _workflow_from_plan(plan: dict[str, Any]) -> dict[str, Any]:
         if "reports" in plan:
             reports = {
@@ -761,6 +797,10 @@ class QaCoordinator:
                 "Redmine policy blocks these testcases: " + ", ".join(blocked_items),
                 code="WRITE_BLOCKED",
             )
+        audit_dirs = self._prepare_audit_dirs(
+            Path(resume_audit).parent if resume_audit else Path(audit_dir),
+            redmine=any(item.get("redmine_request") is not None for item in plan["items"]),
+        )
 
         audit_path: Path
         if resume_audit:
@@ -823,7 +863,7 @@ class QaCoordinator:
                 "errors": [],
                 "resolved_errors": [],
             }
-            audit_path = write_workflow_audit(audit, audit_dir)
+            audit_path = write_workflow_audit(audit, audit_dirs["workflow"])
             previous_by_id = {}
 
         audit_items = {
@@ -884,6 +924,7 @@ class QaCoordinator:
                                 **comment_request,
                                 write=True,
                                 preview_digest=comment_preview["preview_digest"],
+                                audit_dir=audit_dirs["redmine"],
                             ),
                             f"Redmine comment write {external_id}",
                         )
@@ -908,6 +949,7 @@ class QaCoordinator:
                         **plan_item["redmine_request"],
                         write=True,
                         preview_digest=redmine_preview["preview_digest"],
+                        audit_dir=audit_dirs["redmine"],
                     )
                     if not redmine_response.get("ok"):
                         response_error = redmine_response.get("error")
@@ -965,6 +1007,7 @@ class QaCoordinator:
                         **final_request,
                         write=True,
                         preview_digest=final_preview["preview_digest"],
+                        audit_dir=audit_dirs["testlink"],
                     ),
                     f"TestLink write {external_id}",
                 )
@@ -999,6 +1042,7 @@ class QaCoordinator:
                             **comment_request,
                             write=True,
                             preview_digest=comment_preview["preview_digest"],
+                            audit_dir=audit_dirs["redmine"],
                         ),
                         f"Redmine comment write {external_id}",
                     )

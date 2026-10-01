@@ -37,6 +37,30 @@ is discarded; that item fails with a retryable error and resume handles it.
 The execution duration sent to TestLink is the report duration in minutes (`execduration`,
 rounded to four decimals as in the legacy upload).
 
+### Audit Locations
+
+All three audit layers of one operation live under one absolute root: the execute call's
+`audit_dir`, or, on resume, the directory of the resumed workflow audit file.
+
+```text
+<audit_dir>/<operation_id>-qa-workflow-<id>.json   workflow audit (qa-integration-agent)
+<audit_dir>/testlink/                              TestLink operation audits
+<audit_dir>/redmine/                               Redmine bug/comment operation audits
+```
+
+The coordinator resolves the root to an absolute path and creates the directories it needs
+before any TestLink or Redmine write. If one cannot be created, execute stops with
+`AUDIT_DIR_NOT_WRITABLE` and the resolved absolute path, and nothing is written upstream. Each
+child write then receives its directory explicitly as `audit_dir`; preview calls and preview
+digests do not include it. MCP children inherit the client's working directory (Claude Desktop
+uses `C:\Windows\System32`, which is not writable), so their relative default audit paths are
+never used for coordinated writes. Because a resume derives the same root, child idempotency
+checks always find earlier child audits. Any audit or preview file that cannot be written fails
+the call with the absolute path in the error; the required audit is never skipped.
+
+Operations executed before this layout wrote child audits relative to the child's working
+directory. Their completed items are still skipped from the workflow audit on resume.
+
 ### Multi-Node Report Import
 
 When the same testcases ran on several nodes, pass one report per node to

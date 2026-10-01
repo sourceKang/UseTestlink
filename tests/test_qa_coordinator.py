@@ -273,6 +273,26 @@ class FakePorts:
         }
 
 
+class RecordingPorts(FakePorts):
+    """FakePorts that also records (tool, kwargs) for every port call."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.calls: list[tuple[str, dict]] = []
+
+    def testlink_execution(self, **kwargs):
+        self.calls.append(("testlink_execution", dict(kwargs)))
+        return super().testlink_execution(**kwargs)
+
+    def redmine_bug(self, **kwargs):
+        self.calls.append(("redmine_bug", dict(kwargs)))
+        return super().redmine_bug(**kwargs)
+
+    def redmine_comment(self, **kwargs):
+        self.calls.append(("redmine_comment", dict(kwargs)))
+        return super().redmine_comment(**kwargs)
+
+
 def write_report(directory: str, status: str = "Fail") -> Path:
     report = Path(directory) / "report.txt"
     report.write_text(
@@ -460,6 +480,49 @@ class QaCoordinatorTests(unittest.TestCase):
         self.assertEqual(1, ports.comment_write_count)
         self.assertEqual("added", result["audit"]["items"][0]["evidence_comment"])
         self.assertTrue(coordinator.validate_traceability(result["audit"])["valid"])
+
+    def test_writes_carry_absolute_child_audit_dirs_and_previews_carry_none(self) -> None:
+        for redmine_action, write_tools in (("create", {"redmine_bug", "testlink_execution"}),
+                                            ("reuse", {"redmine_bug", "testlink_execution", "redmine_comment"})):
+            with self.subTest(redmine_action=redmine_action), TemporaryDirectory() as tmpdir:
+                ports = RecordingPorts(redmine_action=redmine_action)
+                coordinator = QaCoordinator(ports)
+                report = write_report(tmpdir)
+                plan = coordinator.build_plan(**workflow_args(report))
+                planned_digest = plan["preview_digest"]
+                # An unnormalized caller path still yields one canonical absolute root.
+                coordinator.execute_plan(
+                    plan,
+                    confirmed_preview_digest=planned_digest,
+                    report=str(report),
+                    audit_dir=str(Path(tmpdir) / "nested" / ".." / "audit"),
+                )
+                root = Path(tmpdir).resolve() / "audit"
+                expected = {"testlink_execution": root / "testlink", "redmine_bug": root / "redmine",
+                            "redmine_comment": root / "redmine"}
+
+                writes = [(name, kwargs) for name, kwargs in ports.calls if kwargs.get("write")]
+                self.assertEqual(write_tools, {name for name, _ in writes})
+                for name, kwargs in writes:
+                    self.assertTrue(Path(kwargs["audit_dir"]).is_absolute(), name)
+                    self.assertEqual(expected[name], Path(kwargs["audit_dir"]).resolve(), name)
+                self.assertTrue(all("audit_dir" not in kwargs for _, kwargs in ports.calls if not kwargs.get("write")))
+                self.assertEqual(planned_digest, plan["preview_digest"])
+                self.assertTrue((root / "testlink").is_dir())
+                self.assertTrue((root / "redmine").is_dir())
+
+    def test_plan_without_redmine_creates_no_redmine_audit_dir(self) -> None:
+        ports = RecordingPorts()
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_report(tmpdir, status="Pass")
+            plan = coordinator.build_plan(**workflow_args(report))
+            coordinator.execute_plan(
+                plan, confirmed_preview_digest=plan["preview_digest"], report=str(report),
+                audit_dir=str(Path(tmpdir) / "audit"),
+            )
+            self.assertTrue((Path(tmpdir) / "audit" / "testlink").is_dir())
+            self.assertFalse((Path(tmpdir) / "audit" / "redmine").exists())
 
     def test_created_issue_without_readback_verification_stops_before_testlink_write(self) -> None:
         ports = FakePorts(redmine_action="create", include_field_verification=False)

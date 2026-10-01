@@ -72,7 +72,9 @@ Desktop 不會因註冊 MCP 自動讀取 repository 的 `CLAUDE.md`。
 
 - 回覆使用繁體中文；先取得明確 environment、project、plan、platform、build、report。
 - 報表使用 MCP 所在電腦的絕對路徑；聊天上傳的附件不會自動變成該路徑。
-  `artifact_dir` 也建議指定可寫入的本機絕對路徑，避免 GUI 工作目錄差異。
+  `artifact_dir` 與 `audit_dir` 必須指定可寫入的本機絕對路徑：Claude Desktop 啟動 MCP 時的
+  工作目錄是 `C:\Windows\System32`（不可寫），相對路徑會落在那裡而失敗。
+  TestLink／Redmine child audit 會自動寫在 `<audit_dir>/testlink`、`<audit_dir>/redmine`。
 - 呼叫 `qa_preview_report_artifact`，取得 operation ID、artifact 路徑與 digest。
 - 呼叫 `qa_read_preview_artifact`，使用同一組身分、路徑與 digest。
   預設 `section=items`、`offset=0`、`limit=5`；持續使用回傳的 `next_offset`，

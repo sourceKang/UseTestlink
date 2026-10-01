@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from qa_mcp_contracts import atomic_replace
+from qa_mcp_contracts import ensure_directory, write_text_atomically
 
 from .config import DEFAULT_AUDIT_DIR
 from .errors import redact_secrets
@@ -22,8 +22,7 @@ def write_operation_audit(
     *,
     audit_id: str | None = None,
 ) -> Path:
-    directory = Path(audit_dir or DEFAULT_AUDIT_DIR)
-    directory.mkdir(parents=True, exist_ok=True)
+    directory = ensure_directory(audit_dir or DEFAULT_AUDIT_DIR, label="Redmine audit")
     safe = redact_secrets(record)
     operation_id = str(safe.get("operation_id") or "operation")
     action = str(safe.get("action") or "redmine")
@@ -32,9 +31,9 @@ def write_operation_audit(
     else:
         attempt_id = str(safe.get("attempt_id") or uuid.uuid4().hex)
         path = directory / f"{operation_id}-{action}-{attempt_id}.json"
-    temp_path = path.with_suffix(".json.tmp")
-    temp_path.write_text(json.dumps(safe, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
-    atomic_replace(temp_path, path)
+    write_text_atomically(
+        path, json.dumps(safe, indent=2, ensure_ascii=False, default=str) + "\n", label="Redmine audit"
+    )
     return path
 
 

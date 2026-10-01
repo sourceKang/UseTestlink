@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from qa_mcp_contracts import atomic_replace
+from qa_mcp_contracts import ensure_directory, write_text_atomically
 from testlink_agent_core.errors import redact_secrets
 
 from .errors import CoordinatorError
@@ -27,17 +27,16 @@ def write_workflow_audit(
     *,
     audit_id: str | None = None,
 ) -> Path:
-    directory = Path(audit_dir or DEFAULT_AUDIT_DIR)
-    directory.mkdir(parents=True, exist_ok=True)
+    directory = ensure_directory(audit_dir or DEFAULT_AUDIT_DIR, label="Workflow audit")
     safe = redact_secrets(record)
     if audit_id:
         path = directory / Path(audit_id).name
     else:
         operation_id = str(safe.get("operation_id") or "operation")
         path = directory / f"{operation_id}-qa-workflow-{uuid.uuid4().hex}.json"
-    temp_path = path.with_suffix(".json.tmp")
-    temp_path.write_text(json.dumps(safe, indent=2, ensure_ascii=False, default=str) + "\n", encoding="utf-8")
-    atomic_replace(temp_path, path)
+    write_text_atomically(
+        path, json.dumps(safe, indent=2, ensure_ascii=False, default=str) + "\n", label="Workflow audit"
+    )
     return path
 
 
