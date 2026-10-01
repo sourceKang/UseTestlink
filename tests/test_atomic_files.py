@@ -89,6 +89,14 @@ class LocalPathErrorTests(unittest.TestCase):
 
         self.assertIn(f"TestLink audit file could not be written: {target}", str(context.exception))
 
+    def test_failed_replace_removes_the_temp_file(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "audit.json"
+            with patch("qa_mcp_contracts.files.atomic_replace", side_effect=PermissionError("locked")):
+                with self.assertRaises(LocalPathError):
+                    write_text_atomically(target, "{}", label="Redmine audit")
+            self.assertEqual([], list(Path(tmpdir).iterdir()))
+
     def test_ensure_directory_creates_nested_directories(self) -> None:
         with TemporaryDirectory() as tmpdir:
             created = ensure_directory(Path(tmpdir) / "a" / "b", label="TestLink audit")

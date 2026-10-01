@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 from pathlib import Path
@@ -29,11 +30,13 @@ def write_text_atomically(path: str | Path, text: str, *, label: str) -> None:
     """Write `text` via a temp file and atomic replace, naming the absolute path on failure."""
 
     target = Path(path)
-    temp_path = target.with_suffix(".json.tmp")
+    temp_path = target.with_name(target.name + ".tmp")
     try:
         temp_path.write_text(text, encoding="utf-8")
         atomic_replace(temp_path, target)
     except OSError as exc:
+        with contextlib.suppress(OSError):
+            temp_path.unlink(missing_ok=True)
         raise LocalPathError(f"{label} file could not be written: {os.path.abspath(target)} ({exc})") from exc
 
 

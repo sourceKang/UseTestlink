@@ -59,7 +59,11 @@ checks always find earlier child audits. Any audit or preview file that cannot b
 the call with the absolute path in the error; the required audit is never skipped.
 
 Operations executed before this layout wrote child audits relative to the child's working
-directory. Their completed items are still skipped from the workflow audit on resume.
+directory. Their completed items are still skipped from the workflow audit on resume. An item
+whose earlier write was interrupted after its child `started` audit (the workflow audit shows it
+failed or unfinished, not `success`) cannot be recovered from that old location: before resuming
+such an operation, check the case's latest TestLink execution (and the Redmine issue) by hand.
+Items whose child audit never existed, such as writes that failed creating it, are safe to resume.
 
 ### Multi-Node Report Import
 

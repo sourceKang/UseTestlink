@@ -224,6 +224,8 @@ class ChildAuditDirectoryTests(unittest.TestCase):
         self.assertEqual(1, len(list(self.audit_dir.glob("*-qa-workflow-*.json"))))
         # Nothing may leak into the working directory the children inherited.
         self.assertEqual(["local"], sorted(path.name for path in self.blocked_cwd.iterdir()))
+        # The coordinator never pins a child cwd; correctness must not depend on it.
+        self.assertEqual({None}, set(self.spawn_cwds))
 
     def test_resume_reuses_the_audit_directory_of_the_resumed_workflow(self) -> None:
         plan, first = self._run(audit_dir=str(self.audit_dir))

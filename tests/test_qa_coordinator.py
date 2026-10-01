@@ -511,6 +511,21 @@ class QaCoordinatorTests(unittest.TestCase):
                 self.assertTrue((root / "testlink").is_dir())
                 self.assertTrue((root / "redmine").is_dir())
 
+    def test_rejected_execute_creates_no_audit_directories(self) -> None:
+        ports = RecordingPorts()
+        coordinator = QaCoordinator(ports)
+        with TemporaryDirectory() as tmpdir:
+            report = write_report(tmpdir)
+            plan = coordinator.build_plan(**workflow_args(report))
+            with self.assertRaises(Exception) as context:
+                coordinator.execute_plan(
+                    plan, confirmed_preview_digest="0" * 64, report=str(report),
+                    audit_dir=str(Path(tmpdir) / "audit"),
+                )
+            self.assertEqual("PREVIEW_MISMATCH", getattr(context.exception, "code", None))
+            self.assertFalse((Path(tmpdir) / "audit").exists())
+        self.assertFalse(any(kwargs.get("write") for _, kwargs in ports.calls))
+
     def test_plan_without_redmine_creates_no_redmine_audit_dir(self) -> None:
         ports = RecordingPorts()
         coordinator = QaCoordinator(ports)

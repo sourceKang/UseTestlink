@@ -91,8 +91,13 @@ REPORT_HEADER_FIELDS = (
     "Total test time",
 )
 MAX_REPORT_LABEL_LENGTH = 64
-# Child operation audits live beside the workflow audit: <audit_dir>/testlink, <audit_dir>/redmine.
-CHILD_AUDIT_SUBDIRS = {"testlink": "testlink", "redmine": "redmine"}
+# (name, subdirectory, error label): child operation audits live beside the workflow
+# audit, in <audit_dir>/testlink and <audit_dir>/redmine.
+AUDIT_LAYOUT = (
+    ("workflow", "", "Workflow audit"),
+    ("testlink", "testlink", "TestLink audit"),
+    ("redmine", "redmine", "Redmine audit"),
+)
 SKIP_RAW_STATUSES = {"skip", "skipped"}
 
 
@@ -697,16 +702,11 @@ class QaCoordinator:
         resumed audit file, so child idempotency checks always see prior audits.
         """
         absolute = Path(os.path.abspath(root))
-        dirs = {
-            "workflow": absolute,
-            "testlink": absolute / CHILD_AUDIT_SUBDIRS["testlink"],
-            "redmine": absolute / CHILD_AUDIT_SUBDIRS["redmine"],
-        }
-        labels = {"workflow": "Workflow audit", "testlink": "TestLink audit", "redmine": "Redmine audit"}
+        dirs = {name: absolute / subdir for name, subdir, _ in AUDIT_LAYOUT}
         try:
-            for name, directory in dirs.items():
+            for name, _, label in AUDIT_LAYOUT:
                 if name != "redmine" or redmine:
-                    ensure_directory(directory, label=labels[name])
+                    ensure_directory(dirs[name], label=label)
         except LocalPathError as exc:
             raise CoordinatorError(
                 f"{exc}; no TestLink or Redmine write was attempted.", code="AUDIT_DIR_NOT_WRITABLE"
@@ -797,11 +797,6 @@ class QaCoordinator:
                 "Redmine policy blocks these testcases: " + ", ".join(blocked_items),
                 code="WRITE_BLOCKED",
             )
-        audit_dirs = self._prepare_audit_dirs(
-            Path(resume_audit).parent if resume_audit else Path(audit_dir),
-            redmine=any(item.get("redmine_request") is not None for item in plan["items"]),
-        )
-
         audit_path: Path
         if resume_audit:
             audit = read_workflow_audit(resume_audit)
@@ -863,8 +858,15 @@ class QaCoordinator:
                 "errors": [],
                 "resolved_errors": [],
             }
-            audit_path = write_workflow_audit(audit, audit_dirs["workflow"])
             previous_by_id = {}
+
+        # After every digest/resume check and before any write, including the workflow audit.
+        audit_dirs = self._prepare_audit_dirs(
+            Path(resume_audit).parent if resume_audit else Path(audit_dir),
+            redmine=any(item.get("redmine_request") is not None for item in plan["items"]),
+        )
+        if not resume_audit:
+            audit_path = write_workflow_audit(audit, audit_dirs["workflow"])
 
         audit_items = {
             str(item["testcase_external_id"]): item
