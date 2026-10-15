@@ -1463,6 +1463,109 @@ class RedmineMcpApiTests(unittest.TestCase):
 
         self.assertFalse(result["ok"])
         self.assertEqual("TEMPLATE_UNRESOLVED", result["error"]["error"]["code"])
+        self.assertIn("FW Ver (id 10)", result["error"]["error"]["message"])
+
+    def _token_template(self, tmpdir: str) -> Path:
+        template_path = Path(tmpdir) / "redmine-template.json"
+        template_path.write_text(
+            json.dumps(
+                {
+                    "project_id": "ems",
+                    "tracker_id": 1,
+                    "text_format": {"engine": "markdown", "validation": "strict", "policy_version": 1},
+                    "severity": {
+                        "transport_field": "priority_id",
+                        "default": "L2",
+                        "values": {"L3": 4, "L2": 5, "L1": 6},
+                    },
+                    "priority": {"transport_field": "custom_fields", "custom_field_id": 119, "allowed_values": []},
+                    "required_custom_fields": [{"id": 5, "name": "FW Ver"}, {"id": 15, "name": "Product Line"}],
+                    "custom_fields": [
+                        {"id": 5, "name": "FW Ver", "value": "{{header.EMS Version}}"},
+                        {"id": 15, "name": "Product Line", "value": "EMS"},
+                        {"id": 18, "name": "Report Date", "value": "{{report_date}}"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return template_path
+
+    def test_direct_preview_reports_each_unresolved_template_field(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template_path = self._token_template(tmpdir)
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                result = api.redmine_preview_bug(
+                    **bug_args(
+                        tracker_id=None,
+                        priority_id=None,
+                        template_file=str(template_path),
+                        custom_fields=[{"id": 166, "value": "EMS-NBI"}],
+                    )
+                )
+
+        self.assertFalse(result["ok"])
+        error = result["error"]["error"]
+        self.assertEqual("TEMPLATE_UNRESOLVED", error["code"])
+        self.assertIn("FW Ver (id 5)", error["message"])
+        self.assertIn("Report Date (id 18)", error["message"])
+        self.assertNotIn("Product Line", error["message"])
+
+    def test_caller_custom_fields_override_template_tokens_by_id(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template_path = self._token_template(tmpdir)
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                result = api.redmine_preview_bug(
+                    **bug_args(
+                        tracker_id=None,
+                        priority_id=None,
+                        severity="L2",
+                        template_file=str(template_path),
+                        custom_fields=[
+                            {"id": "5", "value": "V2.00(ABCD.0)"},
+                            {"id": 18, "value": "2026-10-14"},
+                            {"id": 166, "value": "EMS-NBI"},
+                            {"id": 168, "value": "Abnormal"},
+                            {"id": 35, "value": "Design issue"},
+                        ],
+                    )
+                )
+
+        self.assertTrue(result["ok"], result)
+        preview = result["result"]
+        self.assertEqual(
+            [
+                {"id": "5", "value": "V2.00(ABCD.0)"},
+                {"id": 15, "value": "EMS"},
+                {"id": 18, "value": "2026-10-14"},
+                {"id": 166, "value": "EMS-NBI"},
+                {"id": 168, "value": "Abnormal"},
+                {"id": 35, "value": "Design issue"},
+            ],
+            preview["issue_payload"]["custom_fields"],
+        )
+        self.assertEqual("5", preview["issue_payload"]["priority_id"])
+        self.assertIsNone(preview["issue_fields"]["priority"]["value"])
+        self.assertIsNone(client.last_issue_payload)
+
+    def test_duplicate_caller_custom_field_ids_are_rejected(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            template_path = self._token_template(tmpdir)
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                result = api.redmine_preview_bug(
+                    **bug_args(
+                        tracker_id=None,
+                        priority_id=None,
+                        template_file=str(template_path),
+                        custom_fields=[{"id": 5, "value": "a"}, {"id": "5", "value": "b"}],
+                    )
+                )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("INVALID_ARGUMENT", result["error"]["error"]["code"])
 
     def test_template_cannot_set_status(self) -> None:
         client = FakeRedmineClient()
