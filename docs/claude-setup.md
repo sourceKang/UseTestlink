@@ -76,6 +76,9 @@ Desktop 不會因註冊 MCP 自動讀取 repository 的 `CLAUDE.md`。
   工作目錄是 `C:\Windows\System32`（不可寫），相對路徑會落在那裡而失敗。
   v1.8.1 起，TestLink／Redmine child audit 會自動寫在 `<audit_dir>/testlink`、`<audit_dir>/redmine`；
   v1.8.0 以前從 Claude Desktop 執行寫入會因 System32 不可寫而失敗。
+- 直接呼叫 `redmine_preview_bug`／`redmine_create_bug` 時，v1.8.2 起 `custom_fields` 依 ID
+  覆蓋 template 欄位並保留其餘預設值；template 中 `{{...}}` token 欄位須由呼叫端傳入已渲染值，
+  否則 `TEMPLATE_UNRESOLVED` 會列出未解析的欄位名稱與 ID。
 - 呼叫 `qa_preview_report_artifact`，取得 operation ID、artifact 路徑與 digest。
 - 呼叫 `qa_read_preview_artifact`，使用同一組身分、路徑與 digest。
   預設 `section=items`、`offset=0`、`limit=5`；持續使用回傳的 `next_offset`，
