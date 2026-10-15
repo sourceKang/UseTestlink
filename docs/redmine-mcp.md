@@ -56,6 +56,9 @@ dates (`YYYY-MM-DD`). `include_custom_fields` returns the listed custom field va
 Redmine silently ignores a filter on a custom field that is not filterable or not visible, so every
 returned issue is checked against each custom field filter; any mismatch fails the whole call with
 `FILTER_NOT_APPLIED` rather than returning unfiltered results.
+`status_id` is passed to Redmine unchanged: `open` and `closed` follow each status's server-side
+`is_closed` flag, not its name. On the corporate Redmine, `Resolved` is not closed, so `open`
+returns New and Resolved issues alike; pass a specific status ID to narrow the result.
 
 ### Content redaction on read
 

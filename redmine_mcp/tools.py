@@ -114,7 +114,11 @@ TOOLS: list[dict[str, Any]] = [
         "inputSchema": schema(
             {
                 "project_id": string("Redmine project identifier. Defaults to REDMINE_PROJECT_ID."),
-                "status_id": string("Redmine status filter: open, closed, *, or a status ID."),
+                "status_id": string(
+                    "Redmine status filter: open, closed, *, or a status ID. open means every status "
+                    "whose Redmine is_closed flag is false, so it can include Resolved; pass a specific "
+                    "status ID to narrow further."
+                ),
                 "tracker_id": string("Optional tracker ID."),
                 "subject_contains": string("Case-insensitive subject keyword."),
                 "custom_field_filters": {
