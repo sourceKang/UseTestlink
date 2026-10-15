@@ -86,7 +86,15 @@ class TestLinkMcpServerTests(unittest.TestCase):
                 return [{"id": "40", "name": "build-1"}]
 
             def get_plan_cases_by_external_id(self, testplan_id, platform_id):
-                return {"EMS-1": {"id": "50", "name": "Login"}}
+                # TestLink 1.9 getTestCasesForTestPlan row shape: no generic id/name keys.
+                return {
+                    "EMS-1": {
+                        "tcase_id": "50",
+                        "tcase_name": "Login",
+                        "tcversion_id": "60",
+                        "full_external_id": "EMS-1",
+                    }
+                }
 
         arguments = {
             "operation_id": "resolve-1",
@@ -105,7 +113,10 @@ class TestLinkMcpServerTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual("40", result["result"]["target"]["build"]["id"])
-        self.assertEqual("EMS-1", result["result"]["target"]["testcase"]["external_id"])
+        self.assertEqual(
+            {"external_id": "EMS-1", "id": "50", "name": "Login", "version_id": "60"},
+            result["result"]["target"]["testcase"],
+        )
 
     def test_single_call_resolver_rejects_non_unique_exact_name(self) -> None:
         class DuplicateProjectClient:

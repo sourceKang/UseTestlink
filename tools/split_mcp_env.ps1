@@ -92,7 +92,9 @@ $testlinkKeys = @(
     "TESTLINK_AGENT_PROFILE",
     "TESTLINK_URL",
     "TESTLINK_DEVKEY",
-    "TESTLINK_AUTHOR_LOGIN"
+    "TESTLINK_AUTHOR_LOGIN",
+    "TESTLINK_TESTER_ID",
+    "TESTLINK_WEB_BASE_URL"
 )
 $redmineKeys = @(
     "REDMINE_ENV",

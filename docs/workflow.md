@@ -121,6 +121,28 @@ Pagination limits rows rather than truncating payloads; use limit 1 for large it
 This local snapshot read does not revalidate remote state or the report file.
 Execute retains the existing report-hash, confirmation, dedupe, and audit protections.
 
+## Protected Bug Linking
+
+`testlink_link_bug` links Redmine bug IDs to one TestLink testcase through the corporate
+`CA_set_result.php` endpoint. It is a direct `testlink-mcp` tool and is not yet used by
+`qa-integration-agent` report imports.
+
+```text
+1. Resolve the exact project/plan/platform/build and confirm the testcase is in the plan/platform
+2. Read each bug's Redmine status with redmine-mcp; flag Resolved/Closed issues to the user
+   Preview: target, testcase id/name, bug IDs, status written with the link, tester_id, notes,
+   execution duration (minutes), endpoint
+3. Review the side effects: one new execution, an automatic Redmine note on the first link per
+   build, and no server confirmation of the link
+4. After explicit confirmation, write once with the unchanged preview_digest
+5. Require the echoed response, read back the latest execution, record submitted/link_unverified
+6. Check the link on the TestLink page; never report it as verified
+```
+
+An unresolved attempt (`started` or `indeterminate`) blocks every later write of that
+`operation_id` with `LINK_BUG_INDETERMINATE`. The tool never closes issues or changes Redmine
+status. See `docs/testlink-mcp-v2.md` for the full contract.
+
 ## Protected Testcase Maintenance
 
 Use `testlink_create_testcase` and `testlink_update_testcase` for formal MCP testcase

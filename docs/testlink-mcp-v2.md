@@ -14,9 +14,18 @@ TESTLINK_AGENT_PROFILE=corp|sandbox
 TESTLINK_URL=<TestLink URL>
 TESTLINK_DEVKEY=<personal devKey>
 TESTLINK_AUTHOR_LOGIN=<login>
+TESTLINK_TESTER_ID=<your numeric TestLink user ID>      # required by testlink_link_bug only
+TESTLINK_WEB_BASE_URL=<TestLink web root>              # optional, same host as TESTLINK_URL
 ```
 
 `TESTLINK_AGENT_PROFILE` is mandatory and fails closed when omitted. Do not place Redmine credentials in the TestLink MCP env file.
+
+`TESTLINK_TESTER_ID` is the TestLink user recorded as the tester of executions written by
+`testlink_link_bug`. Set it to your own user ID; it has no default, and the tool fails with
+`CONFIG_MISSING` (or `CONFIG_INVALID` when it is not numeric) instead of falling back to a
+shared account. It is not a tool argument. `TESTLINK_WEB_BASE_URL` is only needed when the
+web root cannot be derived from `TESTLINK_URL` (the part before `/lib/api/` or
+`/index.php`); it must use http(s) on the same host and port as `TESTLINK_URL`.
 
 ## Protected Execution
 
@@ -44,6 +53,61 @@ returns instead of a result when the platform is missing or ambiguous. Either ca
 failure instead of recording a successful execution.
 
 Every attempted write creates a redacted `started` audit under `local/testlink_audit/` and updates the same record to success or failure.
+
+## Protected Bug Linking
+
+`testlink_link_bug` (execution toolset only, not `integration`) links Redmine bug IDs to one
+testcase through the corporate custom endpoint `CA_set_result.php`, because the bug link
+table (`execution_spr`) has no native XML-RPC write. The endpoint is an HTTP GET without a
+devKey, sent directly (no proxy) to the web root derived from `TESTLINK_URL`.
+
+Inputs: caller-generated `operation_id`, explicit `environment`, exact project, plan,
+platform, and build names, a plain external testcase ID (`PRJ-1234`; a `_<n>` step suffix is
+rejected because the endpoint would report only that step), 1-20 numeric Redmine `bug_ids`,
+`status` (`p`, `f`, `b`), optional `notes`, and `execution_duration` (minutes, default 5).
+The target is resolved with the same exact XML-RPC lookup as
+`testlink_resolve_execution_target`; zero or multiple matches fail, and the testcase must be
+in the selected plan/platform. The `CA_get_*` name endpoints are not used.
+
+The first call is a preview and performs no write. It shows the resolved target, the testcase
+(`id`, `name`, and `version_id` read from the plan row's `tcase_id`, `tcase_name`, and
+`tcversion_id`), bug IDs, the status that will be written, `tester_id` (from
+`TESTLINK_TESTER_ID`), notes, `execution_duration_minutes`, endpoint, and `preview_digest`,
+plus these side effects:
+
+- Linking always appends one TestLink execution with the given status; there is no
+  link-only mode. A status other than `f` adds a preview warning. The execution duration is
+  written in minutes and defaults to 5, as in the corporate reference script.
+- The first link of a Redmine issue in a build makes TestLink add the Redmine note
+  "The bug is still exist on <project> <build>, please double check the issue" to that issue.
+  This also happens when the issue is Resolved or Closed, where RD may read it as a failed
+  retest. The note does not change the issue's `updated_on`, so anything that detects Redmine
+  changes by `updated_on` misses it; read the issue's journals to see it.
+- TestLink does not confirm the link. Bug IDs unknown to the plan's issue tracker are skipped
+  silently.
+
+The preview also lists `pre_write_checks`. testlink-mcp holds no Redmine credentials, so the
+caller reads each bug's status with redmine-mcp `redmine_get_issue` and tells the user when an
+issue is Resolved or Closed. A missing testcase id or name adds a warning; verify the testcase
+on the TestLink page before writing.
+
+A write needs a boolean `write: true` (any other value stays a preview) and the unchanged
+`preview_digest`. It records a redacted `started` audit, calls the endpoint once, requires the
+response to echo the request (`issue_id:`), and reads the latest execution back with
+`getLastExecutionResult` to compare status and tester. The result and audit are
+`status=submitted`, `verification_status=link_unverified`: no known API reads
+`execution_spr`, so the link must be checked on the TestLink page. A readback that does not
+match adds a warning but does not change the outcome.
+
+Resume and failure rules for one `operation_id`:
+
+- Same digest already `submitted`: returns `skipped-resume` without sending again.
+- Any `started` or `indeterminate` attempt (no echo, HTTP error, interrupted call):
+  every later write fails closed with `LINK_BUG_INDETERMINATE`; check the testcase on the
+  TestLink page, then use a new `operation_id` only if the link is missing.
+- `submitted` with a different digest: `LINK_BUG_OPERATION_REUSED`; use a new `operation_id`.
+
+This tool never closes Redmine issues or changes their status, assignee, or version.
 
 ## Protected Testcase Maintenance
 
@@ -87,7 +151,7 @@ The v2 server excludes:
 - `testlink_upload_report`
 - legacy `report_result`
 - legacy `report_results_batch`
-- `link_bug`
+- legacy `link_bug` (replaced by the protected `testlink_link_bug`)
 - `overwrite_result`
 - legacy `create_test_case`
 - legacy `update_test_case`

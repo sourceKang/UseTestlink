@@ -185,9 +185,69 @@ RESOLVE_EXECUTION_TARGET_TOOL: dict[str, Any] = {
 }
 
 
+LINK_BUG_TOOL: dict[str, Any] = {
+    "name": "testlink_link_bug",
+    "description": (
+        "Preview or link Redmine bug IDs to one TestLink testcase through the corporate CA_set_result.php "
+        "endpoint. Linking always appends one execution with the given status, the first link per build adds "
+        "a Redmine note, and TestLink does not confirm the link. Write requires the reviewed preview_digest."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "operation_id": string("Caller-generated operation identity used for audit and resume."),
+            "environment": {"type": "string", "enum": ["corp", "sandbox"]},
+            "project": string("Exact TestLink project name."),
+            "plan": string("Exact TestLink test plan name."),
+            "platform": string("Exact TestLink platform name."),
+            "build": string("Exact TestLink build name."),
+            "testcase_external_id": string("Plain external testcase ID such as PRJ-1234, without a step suffix."),
+            "bug_ids": {
+                "type": "array",
+                "items": {"type": "string", "pattern": "^[1-9][0-9]{0,9}$"},
+                "minItems": 1,
+                "maxItems": 20,
+                "description": "Numeric Redmine issue IDs to link.",
+            },
+            "status": {
+                "type": "string",
+                "enum": ["p", "f", "b"],
+                "description": "Execution result written together with the link; normally f.",
+            },
+            "notes": {"type": "string", "description": "Execution notes written with the link."},
+            "execution_duration": {
+                "type": "integer",
+                "minimum": 0,
+                "default": 5,
+                "description": "Execution duration in minutes written with the link (default 5).",
+            },
+            "write": {"type": "boolean", "default": False},
+            "preview_digest": string("Digest returned by the reviewed preview."),
+            "audit_dir": string("Local directory for redacted TestLink operation audit."),
+            "env_file": string("Optional TestLink env file path."),
+            "timeout": {"type": "integer", "minimum": 1, "default": 60},
+        },
+        "required": [
+            "operation_id",
+            "environment",
+            "project",
+            "plan",
+            "platform",
+            "build",
+            "testcase_external_id",
+            "bug_ids",
+            "status",
+        ],
+    },
+    "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+}
+
+
 TOOLS = [
     RESOLVE_EXECUTION_TARGET_TOOL,
     REPORT_EXECUTION_TOOL,
+    LINK_BUG_TOOL,
     CREATE_TESTCASE_TOOL,
     UPDATE_TESTCASE_TOOL,
     *(tool for tool in LEGACY_TOOLS if tool["name"] not in EXCLUDED_LEGACY_TOOLS),
@@ -200,6 +260,7 @@ TOOLSETS: dict[str, set[str]] = {
     "execution": {
         "testlink_resolve_execution_target",
         "testlink_report_execution",
+        "testlink_link_bug",
         "testlink_list_projects",
         "testlink_list_plans",
         "testlink_list_platforms",
