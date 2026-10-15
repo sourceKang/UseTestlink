@@ -82,6 +82,18 @@ priority_id
 custom_fields, when required by the corporate tracker
 ```
 
+## Template Custom Field Merge
+
+Caller `custom_fields` are overlaid on the template `custom_fields` by field ID: a caller
+entry replaces the template entry with the same ID, template-only fields are kept, and new IDs
+are appended. Duplicate caller IDs fail with `INVALID_ARGUMENT`.
+
+Template values that contain `{{...}}` tokens (for example `{{header.EMS Version}}`,
+`{{result.external_id}}`, `{{report_date}}`) are rendered only by the `qa-integration-agent`
+Coordinator. A direct `redmine_preview_bug` / `redmine_create_bug` call must pass rendered
+values for those IDs in `custom_fields`; otherwise it fails closed with `TEMPLATE_UNRESOLVED`
+before dedupe and policy checks, and the error lists each unresolved field name and ID.
+
 ## Text Format Contract
 
 Redmine stores raw issue descriptions and journal notes, then renders them with the

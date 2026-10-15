@@ -395,6 +395,32 @@ def validate_template(template: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _merge_custom_fields(template_fields: Any, custom_fields: Any) -> Any:
+    """Overlay caller custom_fields on template defaults by field ID."""
+    if custom_fields is None:
+        return template_fields
+    if not isinstance(template_fields, list) or not template_fields or not isinstance(custom_fields, list):
+        return custom_fields
+    overrides: dict[str, Any] = {}
+    for field in custom_fields:
+        if isinstance(field, dict) and field.get("id") not in (None, ""):
+            field_id = str(field.get("id")).strip()
+            if field_id in overrides:
+                raise RedmineMcpError(f"Duplicate custom field ID: {field_id}", code="INVALID_ARGUMENT")
+            overrides[field_id] = field
+    merged: list[Any] = []
+    for field in template_fields:
+        field_id = str(field.get("id")).strip() if isinstance(field, dict) else ""
+        merged.append(overrides.pop(field_id) if field_id in overrides else field)
+    merged.extend(
+        field
+        for field in custom_fields
+        if not (isinstance(field, dict) and field.get("id") not in (None, ""))
+        or str(field.get("id")).strip() in overrides
+    )
+    return merged
+
+
 def merge_template_values(
     template: dict[str, Any],
     *,
@@ -413,15 +439,20 @@ def merge_template_values(
         "required_custom_fields": [],
         "text_format": None,
     }
-    selected_custom_fields = custom_fields if custom_fields is not None else template.get("custom_fields")
+    selected_custom_fields = _merge_custom_fields(template.get("custom_fields"), custom_fields)
     if selected_custom_fields is not None:
-        for field in selected_custom_fields:
-            value = field.get("value") if isinstance(field, dict) else None
-            if isinstance(value, str) and "{{" in value:
-                raise RedmineMcpError(
-                    "Redmine template contains unresolved custom field tokens; the Coordinator must render them first.",
-                    code="TEMPLATE_UNRESOLVED",
-                )
+        unresolved = [
+            f"{str(field.get('name') or '').strip() or 'custom field'} (id {field.get('id')})"
+            for field in selected_custom_fields
+            if isinstance(field, dict) and isinstance(field.get("value"), str) and "{{" in field["value"]
+        ]
+        if unresolved:
+            raise RedmineMcpError(
+                "Redmine template contains unresolved custom field tokens: "
+                + ", ".join(unresolved)
+                + "; render them via the Coordinator or pass rendered values in custom_fields by id.",
+                code="TEMPLATE_UNRESOLVED",
+            )
     resolved_priority_id, severity_summary = _resolve_severity(
         template,
         severity=severity,
