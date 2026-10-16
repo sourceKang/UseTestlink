@@ -59,7 +59,7 @@ For MCPs shared by other Codex projects, install a tagged GitHub release into an
 isolated user environment. Do not point those projects at `D:\UseTestlink`:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.8.2"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.0"
 ```
 
 This installs the following console entrypoints:
@@ -81,6 +81,7 @@ TESTLINK_AGENT_PROFILE=corp
 TESTLINK_URL=https://your-testlink.example.com/testlink
 TESTLINK_DEVKEY=<personal TestLink API key>
 TESTLINK_AUTHOR_LOGIN=<TestLink login>
+TESTLINK_TESTER_ID=<your numeric TestLink user ID; required only by testlink_link_bug>
 ```
 
 Create `local\redmine_mcp.env`:
@@ -194,8 +195,14 @@ row policy and payload into `preview_digest`, and verify the written testcase wi
 `getTestCase` before reporting success. The pure server does not expose the legacy
 `create_test_case` or `update_test_case` bypass names.
 
+`testlink_link_bug` (execution toolset) previews or links Redmine bug IDs to one testcase
+through the corporate `CA_set_result.php` endpoint. It always appends an execution with the
+given status, TestLink adds a Redmine note on the first link per build, and the link itself
+cannot be read back, so a write ends as `submitted` with `verification_status=link_unverified`.
+It requires `TESTLINK_TESTER_ID` in the TestLink MCP env file.
+
 The pure server does not expose the integrated `testlink_upload_report`, legacy
-`report_result`/`report_results_batch`, `link_bug`, or `overwrite_result` paths. See
+`report_result`/`report_results_batch`, legacy `link_bug`, or `overwrite_result` paths. See
 `docs/testlink-mcp-v2.md` for the complete boundary and configuration.
 
 ### `redmine-mcp`

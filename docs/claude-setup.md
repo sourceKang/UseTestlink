@@ -79,6 +79,9 @@ Desktop 不會因註冊 MCP 自動讀取 repository 的 `CLAUDE.md`。
 - 直接呼叫 `redmine_preview_bug`／`redmine_create_bug` 時，v1.8.2 起 `custom_fields` 依 ID
   覆蓋 template 欄位並保留其餘預設值；template 中 `{{...}}` token 欄位須由呼叫端傳入已渲染值，
   否則 `TEMPLATE_UNRESOLVED` 會列出未解析的欄位名稱與 ID。
+- v1.9.0 起 testlink-mcp 的 `execution` toolset 提供 `testlink_link_bug`（把 Redmine bug 關聯到 TestLink TC）。
+  需在 testlink-mcp env 檔設定本人的 `TESTLINK_TESTER_ID`；寫入時 `audit_dir` 同樣要給可寫入的絕對路徑。
+  預覽要先檢查 `pre_write_checks`，寫入結果只會是 `submitted`／`link_unverified`，關聯須到 TestLink 頁面確認。
 - 呼叫 `qa_preview_report_artifact`，取得 operation ID、artifact 路徑與 digest。
 - 呼叫 `qa_read_preview_artifact`，使用同一組身分、路徑與 digest。
   預設 `section=items`、`offset=0`、`limit=5`；持續使用回傳的 `next_offset`，
