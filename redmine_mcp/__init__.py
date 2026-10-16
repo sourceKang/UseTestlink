@@ -1,3 +1,3 @@
 from __future__ import annotations
 
-__version__ = "0.3.0"
+from qa_mcp_contracts.release import PACKAGE_VERSION as __version__

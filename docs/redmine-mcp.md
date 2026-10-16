@@ -133,11 +133,29 @@ the normal integrated profile registers `qa-integration-agent` alone.
 command = "redmine-mcp"
 
 [mcp_servers.redmine-mcp.env]
-REDMINE_MCP_TOOLSET = "issue" # issue, metadata, integration, all
+REDMINE_MCP_TOOLSET = "issue" # discovery, issue, metadata, integration, all, or a preset
 REDMINE_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\redmine_mcp.env"
 ```
 
 Restart the Codex task after changing MCP registration so the `tools/list` snapshot is refreshed.
+
+## Toolsets
+
+`REDMINE_MCP_TOOLSET` takes one name or a comma-separated list; the server exposes the union and
+fails closed on unknown or empty names.
+
+- `discovery`: read-only — `redmine_search_issues`, `redmine_get_issue`, `redmine_list_projects`,
+  `redmine_health`, `redmine_get_project_metadata`, `redmine_validate_template`.
+- `issue`: lookups plus bug/comment preview and write.
+- `metadata`: project metadata and template validation.
+- `integration`: reserved for the qa-integration-agent child process.
+- `all`: every tool.
+
+Presets shared with testlink-mcp: `batch-import` → `discovery` (bugs are filed through
+qa-integration-agent), `manual-qa` → `issue`, `bug-tracking` → `discovery`.
+
+When the variable is unset the server exposes only `discovery`. Releases up to v1.9.0 defaulted
+to `all`, so a registration without the variable could create bugs and comments.
 
 ## Validation
 

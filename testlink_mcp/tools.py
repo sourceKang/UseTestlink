@@ -3,10 +3,12 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from qa_mcp_contracts.toolsets import resolve_tool_names
 from testlink_agent_core.tools import TOOLS as LEGACY_TOOLS
 
 
 EXCLUDED_LEGACY_TOOLS = {
+    "create_build",
     "create_test_case",
     "link_bug",
     "overwrite_result",
@@ -244,10 +246,42 @@ LINK_BUG_TOOL: dict[str, Any] = {
 }
 
 
+CREATE_BUILD_TOOL: dict[str, Any] = {
+    "name": "testlink_create_build",
+    "description": (
+        "Preview or create one TestLink build in an exact project/plan. Refuses an existing build name, "
+        "requires the reviewed preview_digest to write, and verifies the build by readback."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "operation_id": string("Caller-generated operation identity used for audit and resume."),
+            "environment": {"type": "string", "enum": ["corp", "sandbox"]},
+            "project": string("Exact TestLink project name."),
+            "plan": string("Exact TestLink test plan name."),
+            "name": string("New build name, without leading or trailing spaces."),
+            "notes": {"type": "string", "description": "Build notes."},
+            "release_date": string("Optional release date, YYYY-MM-DD."),
+            "active": {"type": "boolean", "default": True},
+            "open": {"type": "boolean", "default": True},
+            "write": {"type": "boolean", "default": False},
+            "preview_digest": string("Digest returned by the reviewed preview."),
+            "audit_dir": string("Local directory for redacted TestLink operation audit."),
+            "env_file": string("Optional TestLink env file path."),
+            "timeout": {"type": "integer", "minimum": 1, "default": 60},
+        },
+        "required": ["operation_id", "environment", "project", "plan", "name"],
+    },
+    "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
+}
+
+
 TOOLS = [
     RESOLVE_EXECUTION_TARGET_TOOL,
     REPORT_EXECUTION_TOOL,
     LINK_BUG_TOOL,
+    CREATE_BUILD_TOOL,
     CREATE_TESTCASE_TOOL,
     UPDATE_TESTCASE_TOOL,
     *(tool for tool in LEGACY_TOOLS if tool["name"] not in EXCLUDED_LEGACY_TOOLS),
@@ -264,6 +298,7 @@ TOOLSETS: dict[str, set[str]] = {
         "testlink_resolve_execution_target",
         "testlink_report_execution",
         "testlink_link_bug",
+        "testlink_create_build",
         "testlink_list_projects",
         "testlink_list_plans",
         "testlink_list_platforms",
@@ -289,12 +324,19 @@ TOOLSETS: dict[str, set[str]] = {
     },
     "all": {tool["name"] for tool in TOOLS},
 }
+# Usage-profile presets shared by name with redmine-mcp; see docs/claude-setup.md.
+PRESETS: dict[str, tuple[str, ...]] = {
+    "batch-import": ("execution", "maintenance"),
+    "manual-qa": ("execution",),
+    "bug-tracking": ("discovery",),
+}
 
 
 def tools_for_toolset(toolset: str | None = None) -> list[dict[str, Any]]:
-    selected = str(toolset or os.environ.get(TOOLSET_ENV, DEFAULT_TOOLSET)).strip().casefold()
-    if selected not in TOOLSETS:
-        choices = ", ".join(sorted(TOOLSETS))
-        raise ValueError(f"{TOOLSET_ENV} must be one of: {choices}.")
-    allowed = TOOLSETS[selected]
+    allowed = resolve_tool_names(
+        toolset or os.environ.get(TOOLSET_ENV, DEFAULT_TOOLSET),
+        toolsets=TOOLSETS,
+        presets=PRESETS,
+        env_name=TOOLSET_ENV,
+    )
     return [tool for tool in TOOLS if tool["name"] in allowed]

@@ -7,6 +7,7 @@ from unittest.mock import patch
 from redmine_mcp import server
 from redmine_mcp.server import handle_request
 from redmine_mcp.tools import TOOLS
+from qa_mcp_contracts.release import PACKAGE_VERSION
 
 
 class RedmineMcpServerTests(unittest.TestCase):
@@ -14,7 +15,7 @@ class RedmineMcpServerTests(unittest.TestCase):
         response = handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
 
         self.assertEqual("redmine-mcp", response["result"]["serverInfo"]["name"])
-        self.assertEqual("0.3.0", response["result"]["serverInfo"]["version"])
+        self.assertEqual(PACKAGE_VERSION, response["result"]["serverInfo"]["version"])
 
     def test_expected_tools_are_exposed(self) -> None:
         tools = {tool["name"]: tool for tool in TOOLS}

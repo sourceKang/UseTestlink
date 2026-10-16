@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from qa_mcp_contracts.toolsets import resolve_tool_names
+
 
 def string(description: str) -> dict[str, Any]:
     return {"type": "string", "description": description}
@@ -238,7 +240,18 @@ TOOLS: list[dict[str, Any]] = [
 
 
 TOOLSET_ENV = "REDMINE_MCP_TOOLSET"
+# An unset toolset exposes only reads; bug creation and comments ("issue",
+# "integration", "all") are explicit opt-ins.
+DEFAULT_TOOLSET = "discovery"
 TOOLSETS: dict[str, set[str]] = {
+    "discovery": {
+        "redmine_search_issues",
+        "redmine_get_issue",
+        "redmine_list_projects",
+        "redmine_health",
+        "redmine_get_project_metadata",
+        "redmine_validate_template",
+    },
     "integration": {"redmine_create_bug", "redmine_add_comment"},
     "issue": {
         "redmine_search_issues",
@@ -257,12 +270,20 @@ TOOLSETS: dict[str, set[str]] = {
     },
     "all": {tool["name"] for tool in TOOLS},
 }
+# Usage-profile presets shared by name with testlink-mcp; see docs/claude-setup.md.
+# batch-import files Redmine bugs through qa-integration-agent, so it only reads here.
+PRESETS: dict[str, tuple[str, ...]] = {
+    "batch-import": ("discovery",),
+    "manual-qa": ("issue",),
+    "bug-tracking": ("discovery",),
+}
 
 
 def tools_for_toolset(toolset: str | None = None) -> list[dict[str, Any]]:
-    selected = str(toolset or os.environ.get(TOOLSET_ENV, "all")).strip().casefold()
-    if selected not in TOOLSETS:
-        choices = ", ".join(sorted(TOOLSETS))
-        raise ValueError(f"{TOOLSET_ENV} must be one of: {choices}.")
-    allowed = TOOLSETS[selected]
+    allowed = resolve_tool_names(
+        toolset or os.environ.get(TOOLSET_ENV, DEFAULT_TOOLSET),
+        toolsets=TOOLSETS,
+        presets=PRESETS,
+        env_name=TOOLSET_ENV,
+    )
     return [tool for tool in TOOLS if tool["name"] in allowed]

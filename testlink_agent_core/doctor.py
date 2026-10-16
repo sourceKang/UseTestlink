@@ -9,13 +9,15 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
+from qa_mcp_contracts.toolsets import toolset_parts
+
 from .errors import redact_secrets
 
 
 SERVERS = {
     "qa": ("qa-integration-agent-mcp", "QA_INTEGRATION_TOOLSET", "import"),
     "testlink": ("testlink-mcp", "TESTLINK_MCP_TOOLSET", "discovery"),
-    "redmine": ("redmine-mcp", "REDMINE_MCP_TOOLSET", "all"),
+    "redmine": ("redmine-mcp", "REDMINE_MCP_TOOLSET", "discovery"),
 }
 RECOMMENDED_TOOLSETS = {"qa": "import", "testlink": "execution", "redmine": "issue"}
 
@@ -75,8 +77,9 @@ def diagnose(*, server: str = "qa", testlink_env_file: str | None = None,
         if not selected:
             raise ValueError("empty toolset")
         selected_tools = {"qa": qa_tools, "testlink": testlink_tools, "redmine": redmine_tools}[server](selected)
-        add("toolset", "warning" if selected == "all" else "ok", "已確認本次環境的工具集合。",
-            f"建議依任務設定 {toolset_key}={RECOMMENDED_TOOLSETS[server]}。" if selected == "all" else "",
+        uses_all = "all" in toolset_parts(selected)
+        add("toolset", "warning" if uses_all else "ok", "已確認本次環境的工具集合。",
+            f"建議依任務設定 {toolset_key}={RECOMMENDED_TOOLSETS[server]}。" if uses_all else "",
             toolset=selected, tools=[tool["name"] for tool in selected_tools])
     except ValueError:
         add("toolset", "error", "工具集合設定無效。", f"檢查 {toolset_key}；建議值為 {RECOMMENDED_TOOLSETS[server]}。")

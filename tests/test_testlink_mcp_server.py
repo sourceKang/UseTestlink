@@ -8,6 +8,7 @@ from unittest.mock import patch
 from testlink_mcp.api import call_tool
 from testlink_mcp.server import handle_request
 from testlink_mcp.tools import TOOLS
+from qa_mcp_contracts.release import PACKAGE_VERSION
 
 
 class TestLinkMcpServerTests(unittest.TestCase):
@@ -15,7 +16,7 @@ class TestLinkMcpServerTests(unittest.TestCase):
         response = handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
 
         self.assertEqual("testlink-mcp", response["result"]["serverInfo"]["name"])
-        self.assertEqual("2.1.0", response["result"]["serverInfo"]["version"])
+        self.assertEqual(PACKAGE_VERSION, response["result"]["serverInfo"]["version"])
 
     def test_tool_surface_excludes_redmine_and_upload_orchestration(self) -> None:
         tools = {tool["name"]: tool for tool in TOOLS}

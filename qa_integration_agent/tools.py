@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from qa_mcp_contracts.toolsets import resolve_tool_names
+
 
 def string(description: str) -> dict[str, Any]:
     return {"type": "string", "description": description}
@@ -234,10 +236,16 @@ TOOLSETS: dict[str, set[str]] = {
 }
 
 
+DEFAULT_TOOLSET = "import"
+# Only the batch-import profile uses the coordinator; manual-qa and bug-tracking do not register it.
+PRESETS: dict[str, tuple[str, ...]] = {"batch-import": ("import",)}
+
+
 def tools_for_toolset(toolset: str | None = None) -> list[dict[str, Any]]:
-    selected = str(toolset or os.environ.get(TOOLSET_ENV, "import")).strip().casefold()
-    if selected not in TOOLSETS:
-        choices = ", ".join(sorted(TOOLSETS))
-        raise ValueError(f"{TOOLSET_ENV} must be one of: {choices}.")
-    allowed = TOOLSETS[selected]
+    allowed = resolve_tool_names(
+        toolset or os.environ.get(TOOLSET_ENV, DEFAULT_TOOLSET),
+        toolsets=TOOLSETS,
+        presets=PRESETS,
+        env_name=TOOLSET_ENV,
+    )
     return [tool for tool in TOOLS if tool["name"] in allowed]

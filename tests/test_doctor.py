@@ -81,7 +81,7 @@ class DoctorTests(unittest.TestCase):
     def test_direct_servers_use_actual_default_toolset_and_only_own_pointer(self):
         cases = (
             ("testlink", "TESTLINK_MCP_ENV_FILE", "discovery", "ok"),
-            ("redmine", "REDMINE_MCP_ENV_FILE", "all", "warning"),
+            ("redmine", "REDMINE_MCP_ENV_FILE", "discovery", "ok"),
         )
         for server, key, expected_toolset, expected_status in cases:
             with patch.dict(os.environ, {key: str(self.env_file)}):

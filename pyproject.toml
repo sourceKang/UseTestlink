@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "testlink-agent"
-version = "1.9.0"
+dynamic = ["version"]
 description = "TestLink XML-RPC helper with CLI and MCP server entrypoints."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,6 +16,9 @@ testlink-agent-mcp = "testlink_agent_core.server:main"
 testlink-mcp = "testlink_mcp.server:main"
 redmine-mcp = "redmine_mcp.server:main"
 qa-integration-agent-mcp = "qa_integration_agent.server:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "qa_mcp_contracts.release.PACKAGE_VERSION"}
 
 [tool.setuptools]
 packages = [

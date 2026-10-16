@@ -18,9 +18,11 @@ python scripts/token_budget_report.py
 | `AGENTS.md` | ~1,207 tokens | ~336 tokens | 72.2% |
 | Router `testlink-agent/SKILL.md` | ~1,371 tokens | ~166 tokens | 87.9% |
 
-Direct task profiles remain below 2,200 estimated schema tokens: TestLink execution ~1,739,
-testcase maintenance ~2,174, and Redmine issue work ~2,128. The budget test requires every
-task profile to stay at least 70% smaller than the all-server surface.
+Direct task profiles were below 2,200 estimated schema tokens at 1.6.0: TestLink execution ~1,739,
+testcase maintenance ~2,174, and Redmine issue work ~2,128. With `testlink_link_bug` and
+`testlink_create_build` the execution profile is ~2,623, and Redmine issue work is ~2,950; trimming
+those schemas is tracked as follow-up work. The budget test requires every task profile to stay at
+least 70% smaller than the all-server surface.
 
 ## Runtime Controls
 
