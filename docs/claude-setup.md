@@ -96,6 +96,8 @@ Desktop 不會因註冊 MCP 自動讀取 repository 的 `CLAUDE.md`。
 - 直接註冊 `testlink-mcp` 或 `redmine-mcp` 時，請在 `env` 依上方情境表明確設定 `*_TOOLSET`
   （例如 `"manual-qa"`）。未設定時只提供唯讀的 `discovery`；v1.9.0 以前未設定會開放 `all`，
   testlink 包含 `delete_execution` 等舊工具，redmine 可直接建 bug 與留言。
+- 回填後抽查或確認多筆結果時，用 `testlink_get_latest_results`（`all_in_plan=true` 或列出 TC，搭配
+  `expected_status`），一次呼叫只列出不符合的項目，不要逐筆呼叫 `get_last_result`。
 - 建 build 請用 `testlink_create_build`（在 `execution`、`manual-qa`、`batch-import` 中），
   先預覽、確認後帶 digest 寫入；同名 build 會被拒絕，寫入後讀回驗證。
 - v1.9.0 起 testlink-mcp 的 `execution` toolset 提供 `testlink_link_bug`（把 Redmine bug 關聯到 TestLink TC）。
