@@ -1,4 +1,4 @@
 ﻿"""Core modules for TestLink MCP and CLI."""
 
-__version__ = "1.6.0"
+from qa_mcp_contracts.release import PACKAGE_VERSION as __version__
 

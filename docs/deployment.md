@@ -12,7 +12,8 @@ GitHub, committed to the repository, or embedded in a package.
 
 ## Release Preparation
 
-1. Update the version in `pyproject.toml`.
+1. Update `PACKAGE_VERSION` in `qa_mcp_contracts/release.py`. `pyproject.toml` reads it, and
+   every MCP server reports it as its `serverInfo` version and in its startup health line.
 2. Synchronize documentation and entrypoint names.
 3. Run the complete offline suite:
 

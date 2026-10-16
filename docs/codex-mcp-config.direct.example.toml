@@ -15,5 +15,5 @@ TESTLINK_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\testlink
 # command = "redmine-mcp"
 #
 # [mcp_servers."redmine-mcp".env]
-# REDMINE_MCP_TOOLSET = "issue" # issue, metadata, integration, all
+# REDMINE_MCP_TOOLSET = "issue" # discovery, issue, metadata, integration, all, or a preset
 # REDMINE_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\redmine_mcp.env"

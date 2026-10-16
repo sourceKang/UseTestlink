@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
@@ -1378,7 +1379,338 @@ def testlink_link_bug(
         return _failure(operation_id, "testlink-link-bug-write" if write else "testlink-link-bug-preview", exc)
 
 
+CREATE_BUILD_ACTION = "create-build"
+
+
+def _build_name_key(name: Any) -> str:
+    # TestLink build names are stored as typed, sometimes with stray or doubled spaces.
+    return " ".join(str(name or "").split()).casefold()
+
+
+def _matching_builds(builds: Any, name: str) -> list[dict[str, str]]:
+    key = _build_name_key(name)
+    return [
+        {"id": str(build.get("id") or ""), "name": str(build.get("name") or "")}
+        for build in (builds if isinstance(builds, list) else [])
+        if isinstance(build, dict) and _build_name_key(build.get("name")) == key
+    ]
+
+
+def _created_id(response: Any) -> tuple[str | None, str | None]:
+    """Return (id, rejection) from a TestLink XML-RPC create response.
+
+    An error struct is an explicit rejection. A response without either leaves the
+    outcome to readback instead of being treated as success or failure.
+    """
+    records = response if isinstance(response, list) else [response]
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if record.get("code") is not None or record.get("status") is False:
+            return None, str(record.get("message") or record.get("code") or "TestLink rejected the request.")
+        created = record.get("id")
+        if created not in (None, ""):
+            return str(created), None
+    return None, None
+
+
+def _validate_build_inputs(name: Any, release_date: Any, active: Any, open_: Any) -> str:
+    build_name = str(name or "")
+    if not build_name.strip():
+        raise TestLinkError("Build name is required.", code="INVALID_ARGUMENT")
+    if build_name != build_name.strip():
+        raise TestLinkError("Build name must not start or end with spaces.", code="INVALID_ARGUMENT")
+    if release_date not in (None, ""):
+        try:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(release_date)):
+                raise ValueError
+            date.fromisoformat(str(release_date))
+        except ValueError:
+            raise TestLinkError("release_date must be a valid YYYY-MM-DD date.", code="INVALID_ARGUMENT") from None
+    for label, value in (("active", active), ("open", open_)):
+        if not isinstance(value, bool):
+            raise TestLinkError(f"{label} must be true or false.", code="INVALID_ARGUMENT")
+    return build_name
+
+
+def _build_create_plan(
+    *,
+    operation_id: str,
+    environment: str,
+    project_row: dict[str, Any],
+    plan_row: dict[str, Any],
+    name: str,
+    notes: str,
+    release_date: str | None,
+    active: bool,
+    open_: bool,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "testplanid": str(plan_row.get("id") or ""),
+        "buildname": name,
+        "buildnotes": notes,
+        "active": 1 if active else 0,
+        "open": 1 if open_ else 0,
+    }
+    if release_date:
+        payload["releasedate"] = release_date
+    plan = {
+        "schema_version": CONTRACT_SCHEMA_VERSION,
+        "operation_id": str(operation_id),
+        "environment": environment,
+        "action": CREATE_BUILD_ACTION,
+        "target": {
+            "project": _named_target(project_row, "project"),
+            "plan": _named_target(plan_row, "plan"),
+        },
+        "payload": payload,
+    }
+    assert_safe_contract(plan)
+    return plan
+
+
+def _create_build_preview_result(plan: dict[str, Any], duplicates: list[dict[str, str]]) -> dict[str, Any]:
+    payload = plan["payload"]
+    warnings: list[str] = []
+    if duplicates:
+        warnings.append("A build with this name already exists in the plan; nothing will be created.")
+    return {
+        "schema_version": CONTRACT_SCHEMA_VERSION,
+        "operation_id": plan["operation_id"],
+        "environment": plan["environment"],
+        "mode": "preview",
+        "preview_digest": payload_digest(plan),
+        "planned_write": not duplicates,
+        "target": plan["target"],
+        "build": {
+            "name": payload["buildname"],
+            "notes": payload["buildnotes"],
+            "release_date": payload.get("releasedate"),
+            "active": bool(payload["active"]),
+            "open": bool(payload["open"]),
+        },
+        "duplicate_found": bool(duplicates),
+        "duplicates": duplicates,
+        "warnings": warnings,
+    }
+
+
+def _previous_create_build_operation(
+    *,
+    operation_id: str,
+    preview_digest: str,
+    environment: str,
+    contract_plan: dict[str, Any],
+    client: Any,
+    audit_dir: str,
+) -> dict[str, Any] | None:
+    payload = contract_plan["payload"]
+    for path, record in find_operation_audits(operation_id, audit_dir, action=CREATE_BUILD_ACTION):
+        if record.get("preview_digest") != preview_digest:
+            continue
+        if record.get("status") == "success":
+            return {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": environment,
+                "preview_digest": preview_digest,
+                "status": "skipped-resume",
+                "verification_status": "verified",
+                "build": record.get("build"),
+                "audit_id": path.name,
+            }
+        if record.get("status") in {"started", "indeterminate", "verification_failed"}:
+            matches = _matching_builds(client.get_builds(payload["testplanid"]), payload["buildname"])
+            if len(matches) == 1:
+                recovered = {
+                    **record,
+                    "status": "success",
+                    "verification_status": "verified",
+                    "recovered": True,
+                    "build": matches[0],
+                    "finished_at": utc_now_iso(),
+                }
+                write_operation_audit(recovered, audit_dir, audit_id=path.name)
+                return {
+                    "schema_version": CONTRACT_SCHEMA_VERSION,
+                    "operation_id": operation_id,
+                    "environment": environment,
+                    "preview_digest": preview_digest,
+                    "status": "skipped-resume",
+                    "verification_status": "verified",
+                    "build": matches[0],
+                    "audit_id": path.name,
+                }
+            raise TestLinkError(
+                "A previous build creation for this operation is indeterminate and the build cannot be found "
+                "unambiguously; check the plan's builds on the TestLink page before retrying.",
+                code="BUILD_WRITE_INDETERMINATE",
+                raw={"audit_id": path.name, "matches": matches},
+            )
+    return None
+
+
+def testlink_create_build(
+    *,
+    operation_id: str,
+    environment: str,
+    project: str,
+    plan: str,
+    name: str,
+    notes: str = "",
+    release_date: str | None = None,
+    active: bool = True,
+    open: bool = True,
+    write: bool = False,
+    preview_digest: str | None = None,
+    audit_dir: str = DEFAULT_AUDIT_DIR,
+    env_file: str | None = None,
+    timeout: int = 60,
+) -> dict[str, Any]:
+    audit_id: str | None = None
+    contract_plan: dict[str, Any] | None = None
+    write_attempted = False
+    response: Any = None
+    try:
+        runtime = load_runtime(env_file=env_file, timeout=timeout)
+        selected = validate_environment(environment, runtime.environment)
+        build_name = _validate_build_inputs(name, release_date, active, open)
+        client = write_client(runtime)
+        project_row = _resolve_exact_named("project", project, client.get_projects())
+        plan_row = _resolve_exact_named(
+            "plan",
+            plan,
+            client.get_project_test_plans(str(project_row.get("id") or "")),
+        )
+        contract_plan = _build_create_plan(
+            operation_id=operation_id,
+            environment=selected,
+            project_row=project_row,
+            plan_row=plan_row,
+            name=build_name,
+            notes=str(notes or ""),
+            release_date=str(release_date) if release_date else None,
+            active=active,
+            open_=open,
+        )
+        if not write:
+            duplicates = _matching_builds(client.get_builds(contract_plan["payload"]["testplanid"]), build_name)
+            return _success(_create_build_preview_result(contract_plan, duplicates))
+        validate_preview_digest(contract_plan, str(preview_digest or ""))
+        previous = _previous_create_build_operation(
+            operation_id=operation_id,
+            preview_digest=str(preview_digest),
+            environment=selected,
+            contract_plan=contract_plan,
+            client=client,
+            audit_dir=audit_dir,
+        )
+        if previous is not None:
+            return _success(previous)
+        payload = contract_plan["payload"]
+        duplicates = _matching_builds(client.get_builds(payload["testplanid"]), build_name)
+        if duplicates:
+            raise TestLinkError(
+                "A build with this name already exists in the plan; refusing to create another.",
+                code="BUILD_EXISTS",
+                raw={"duplicates": duplicates},
+            )
+        started = write_operation_audit(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "action": CREATE_BUILD_ACTION,
+                "status": "started",
+                "preview_digest": preview_digest,
+                "plan": contract_plan,
+                "started_at": utc_now_iso(),
+            },
+            audit_dir,
+        )
+        audit_id = started.name
+        write_attempted = True
+        response = client.create_build(payload)
+        build_id, rejection = _created_id(response)
+        if rejection is not None:
+            # An explicit error struct means TestLink did not create the build.
+            write_attempted = False
+            raise TestLinkError(f"TestLink did not create the build: {rejection}", code="BUILD_REJECTED")
+        matches = _matching_builds(client.get_builds(payload["testplanid"]), build_name)
+        verified = len(matches) == 1 and (build_id is None or matches[0]["id"] == build_id)
+        completed = write_operation_audit(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "action": CREATE_BUILD_ACTION,
+                "status": "success" if verified else "verification_failed",
+                "verification_status": "verified" if verified else "verification_failed",
+                "preview_digest": preview_digest,
+                "plan": contract_plan,
+                "response": response,
+                "build": matches[0] if verified else {"id": build_id, "name": build_name},
+                "readback_matches": matches,
+                "finished_at": utc_now_iso(),
+            },
+            audit_dir,
+            audit_id=audit_id,
+        )
+        if not verified:
+            return _failure(
+                operation_id,
+                "create-build-readback-verification",
+                TestLinkError(
+                    "TestLink answered the build creation but readback does not show exactly one matching build.",
+                    code="BUILD_READBACK_MISMATCH",
+                    raw={"audit_id": completed.name, "build_id": build_id, "matches": matches},
+                ),
+            )
+        return _success(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "preview_digest": str(preview_digest),
+                "status": "success",
+                "verification_status": "verified",
+                "build": matches[0],
+                "audit_id": completed.name,
+            }
+        )
+    except Exception as exc:
+        if write:
+            normalized = normalize_testlink_error(exc)
+            try:
+                path = write_operation_audit(
+                    {
+                        "schema_version": CONTRACT_SCHEMA_VERSION,
+                        "operation_id": operation_id,
+                        "environment": environment,
+                        "action": CREATE_BUILD_ACTION,
+                        "status": "indeterminate" if write_attempted else "failed",
+                        "preview_digest": preview_digest,
+                        "plan": contract_plan,
+                        "response": response,
+                        "error": normalized.to_dict(),
+                        "finished_at": utc_now_iso(),
+                    },
+                    audit_dir,
+                    audit_id=audit_id,
+                )
+                audit_id = path.name
+            except Exception:
+                exc = TestLinkError(f"{exc}; additionally, the required TestLink audit could not be written.")
+        return _failure(operation_id, "create-build-write" if write else "create-build-preview", exc)
+
+
 def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+    if name == "testlink_create_build":
+        try:
+            return testlink_create_build(**(arguments or {}))
+        except TypeError as exc:
+            operation_id = str((arguments or {}).get("operation_id") or "unknown-operation")
+            return _failure(operation_id, "arguments", exc)
     if name == "testlink_link_bug":
         try:
             return testlink_link_bug(**(arguments or {}))

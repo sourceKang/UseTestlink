@@ -140,7 +140,7 @@ context. The executable is resolved from pipx and no repository `cwd` is used:
 command = "qa-integration-agent-mcp"
 
 [mcp_servers."qa-integration-agent".env]
-QA_INTEGRATION_TOOLSET = "import" # import, legacy, shadow, all
+QA_INTEGRATION_TOOLSET = "import" # import (or batch-import), legacy, shadow, all
 QA_TESTLINK_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\testlink_mcp.env"
 QA_REDMINE_MCP_ENV_FILE = "C:\\Users\\<username>\\.codex\\testlink-agent\\redmine_mcp.env"
 ```

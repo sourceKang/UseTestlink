@@ -26,6 +26,20 @@ Windows Claude Code、Claude Desktop、真實 preview 產生及外部寫入仍�
 單獨維護 testcase 或查詢 Redmine 時，依 README 的直接操作流程切換服務，
 不要預設同時註冊所有服務。
 
+### 依使用情境選擇工具組合
+
+每個服務的 `*_TOOLSET` 可填一個名稱或用逗號分隔的多個名稱，三種情境可用同一個預設名稱：
+
+| 情境 | 註冊的服務與設定 | 用途 |
+|---|---|---|
+| `batch-import` | `qa-integration-agent`（`import`）、`testlink-mcp`、`redmine-mcp` 皆設 `batch-import` | 自動化報表匯入、建 build、維護 testcase；Redmine 只讀，bug 由匯入流程建立 |
+| `manual-qa` | `testlink-mcp`、`redmine-mcp` 皆設 `manual-qa`（不註冊 qa-integration-agent） | 逐筆回報結果、關聯 bug、直接預覽與建立 Redmine bug／留言 |
+| `bug-tracking` | `testlink-mcp`、`redmine-mcp` 皆設 `bug-tracking` | 只查詢與追蹤，不寫入 |
+
+testlink-mcp 與 redmine-mcp 未設定時只提供唯讀的 `discovery`；要寫入必須明確選擇。
+`all` 會帶入 `delete_execution` 等舊工具，`doctor` 會對它提出 warning。
+Desktop 的設定是全域的，若不同專案需要不同情境，Claude Code 可改在各專案的 `.mcp.json` 設定（見下節）。
+
 ## 2. Claude Code
 
 將 `claude-code-mcp.example.json` 的 `mcpServers` 項目合併到使用專案的
@@ -79,9 +93,11 @@ Desktop 不會因註冊 MCP 自動讀取 repository 的 `CLAUDE.md`。
 - 直接呼叫 `redmine_preview_bug`／`redmine_create_bug` 時，v1.8.2 起 `custom_fields` 依 ID
   覆蓋 template 欄位並保留其餘預設值；template 中 `{{...}}` token 欄位須由呼叫端傳入已渲染值，
   否則 `TEMPLATE_UNRESOLVED` 會列出未解析的欄位名稱與 ID。
-- 直接註冊 `testlink-mcp` 時，請在 `env` 明確設定 `"TESTLINK_MCP_TOOLSET": "execution"`
-  （或依任務改為 `maintenance`）。未設定時只提供唯讀的 `discovery`；v1.9.0 以前未設定會開放 `all`，
-  包含 `delete_execution` 等舊工具。
+- 直接註冊 `testlink-mcp` 或 `redmine-mcp` 時，請在 `env` 依上方情境表明確設定 `*_TOOLSET`
+  （例如 `"manual-qa"`）。未設定時只提供唯讀的 `discovery`；v1.9.0 以前未設定會開放 `all`，
+  testlink 包含 `delete_execution` 等舊工具，redmine 可直接建 bug 與留言。
+- 建 build 請用 `testlink_create_build`（在 `execution`、`manual-qa`、`batch-import` 中），
+  先預覽、確認後帶 digest 寫入；同名 build 會被拒絕，寫入後讀回驗證。
 - v1.9.0 起 testlink-mcp 的 `execution` toolset 提供 `testlink_link_bug`（把 Redmine bug 關聯到 TestLink TC）。
   需在 testlink-mcp env 檔設定本人的 `TESTLINK_TESTER_ID`；寫入時 `audit_dir` 同樣要給可寫入的絕對路徑。
   預覽要先檢查 `pre_write_checks`，寫入結果只會是 `submitted`／`link_unverified`，關聯須到 TestLink 頁面確認。

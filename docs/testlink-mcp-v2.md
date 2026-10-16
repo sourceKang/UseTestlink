@@ -109,6 +109,25 @@ Resume and failure rules for one `operation_id`:
 
 This tool never closes Redmine issues or changes their status, assignee, or version.
 
+## Protected Build Creation
+
+`testlink_create_build` creates one build in an exact project and plan. It is in the
+`execution` toolset (and therefore in `manual-qa` and `batch-import`).
+
+- Preview is the default. It resolves the exact project and plan, compares the name with the
+  plan's existing builds (ignoring case and repeated spaces), and reports `duplicate_found`
+  with the matching builds; a duplicate makes `planned_write=false`.
+- The name must not start or end with spaces; `release_date` must be `YYYY-MM-DD`; `active`
+  and `open` are booleans (default true).
+- A write needs the unchanged `preview_digest`. It re-checks for a duplicate (`BUILD_EXISTS`),
+  writes a `started` audit, calls `tl.createBuild`, and reads the plan's builds back. Only
+  exactly one matching build (with the returned id, when TestLink returns one) is `verified`.
+- An explicit TestLink error struct is recorded as `failed` (`BUILD_REJECTED`). A transport
+  error after the call is `indeterminate`; a missing readback is `verification_failed`
+  (`BUILD_READBACK_MISMATCH`). A retry with the same operation and digest reads the builds first:
+  it records success when exactly one matching build exists, and otherwise refuses with
+  `BUILD_WRITE_INDETERMINATE` instead of creating a possible duplicate.
+
 ## Protected Testcase Maintenance
 
 The pure server exposes `testlink_create_testcase` and `testlink_update_testcase`. Both
@@ -137,15 +156,24 @@ proven.
 
 ## Tool Boundary
 
-Set `TESTLINK_MCP_TOOLSET` to `discovery`, `execution`, `maintenance`, `integration`, or
-`all`. Codex and Claude should enable only the task-specific surface; `integration` is reserved
-for the coordinator child process.
+Set `TESTLINK_MCP_TOOLSET` to one name or a comma-separated list. Each name is a toolset
+(`discovery`, `execution`, `maintenance`, `integration`, `all`) or a usage-profile preset, and
+the server exposes the union. Unknown or empty names fail closed. Codex and Claude should enable
+only the task-specific surface; `integration` is reserved for the coordinator child process.
+
+| Preset | testlink-mcp toolsets | For |
+|---|---|---|
+| `batch-import` | `execution`, `maintenance` | automation result import, build creation, testcase upkeep |
+| `manual-qa` | `execution` | per-testcase results and Redmine bug links |
+| `bug-tracking` | `discovery` | read-only lookups |
+
+The same preset names select the matching redmine-mcp surface (see `docs/redmine-mcp.md`), so a
+project can set one profile name on every server it registers.
 
 When `TESTLINK_MCP_TOOLSET` is unset, the server exposes only the read-only `discovery`
 toolset. Write tools (`execution`, `maintenance`) and `all` — which also carries legacy tools
-such as `delete_execution`, `create_build`, and `add_case_to_plan` — must be selected
-explicitly. Releases up to v1.9.0 defaulted to `all`, so a registration without the variable
-exposed those tools.
+such as `delete_execution` and `add_case_to_plan` — must be selected explicitly. Releases up to
+v1.9.0 defaulted to `all`, so a registration without the variable exposed those tools.
 
 `TESTLINK_MCP_BATCH_SESSION=1` is also reserved for that child: qa-integration-agent sets it
 only on the child it keeps open for one preview/execute batch, so the child authenticates and
@@ -158,6 +186,7 @@ The v2 server excludes:
 - legacy `report_result`
 - legacy `report_results_batch`
 - legacy `link_bug` (replaced by the protected `testlink_link_bug`)
+- legacy `create_build` (replaced by the protected `testlink_create_build`)
 - `overwrite_result`
 - legacy `create_test_case`
 - legacy `update_test_case`
@@ -173,7 +202,7 @@ args = ["-m", "testlink_mcp.server"]
 cwd = "D:\\UseTestlink"
 
 [mcp_servers.testlink-mcp.env]
-TESTLINK_MCP_TOOLSET = "execution" # discovery, execution, maintenance, integration, all
+TESTLINK_MCP_TOOLSET = "execution" # discovery, execution, maintenance, integration, all, or a preset
 TESTLINK_MCP_ENV_FILE = "D:\\UseTestlink\\local\\testlink_mcp.env"
 ```
 
