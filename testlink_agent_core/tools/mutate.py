@@ -11,8 +11,8 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
         "description": "Preview or create a TestLink build after checking for duplicate build names.",
         "inputSchema": schema(
             {
-                "project": string("Exact TestLink project name."),
-                "plan": string("Exact TestLink test plan name."),
+                "project": string("Exact name."),
+                "plan": string("Exact name."),
                 "name": string("Build name."),
                 "notes": {"type": "string", "default": ""},
                 "active": {"type": "boolean", "default": True},
@@ -29,7 +29,7 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             **schema(
                 {
-                    "project": string("Exact TestLink project name."),
+                    "project": string("Exact name."),
                     "suite_name": string("Exact suite name or path."),
                     "suite_id": string("Suite ID."),
                     "name": string("Test case title."),
@@ -66,8 +66,8 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             **schema(
                 {
-                    "testcase_external_id": string("External testcase ID, for example GW-123."),
-                    "testcase_id": string("Internal TestLink testcase ID."),
+                    "testcase_external_id": string("External ID, e.g. GW-123."),
+                    "testcase_id": string("Internal ID."),
                     "version": string("Optional testcase version."),
                     "name": string("New test case title."),
                     "summary": string("New summary."),
@@ -100,10 +100,10 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             **schema(
                 {
-                    "project": string("Exact TestLink project name."),
-                    "plan": string("Exact TestLink test plan name."),
-                    "testcase_external_id": string("External testcase ID, for example GW-123."),
-                    "testcase_id": string("Internal TestLink testcase ID."),
+                    "project": string("Exact name."),
+                    "plan": string("Exact name."),
+                    "testcase_external_id": string("External ID, e.g. GW-123."),
+                    "testcase_id": string("Internal ID."),
                     "version": string("Testcase version. Omit to resolve from TestLink when possible."),
                     "platform": string("Exact platform name."),
                     "platform_id": string("Internal platform ID."),
@@ -149,7 +149,7 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
         "inputSchema": schema(
             {
                 "name": string("Profile name."),
-                "project": string("Exact TestLink project name."),
+                "project": string("Exact name."),
                 "suite_id": string("Target suite ID."),
                 "suite_name": string("Exact suite name/path."),
                 "project_contains": string("Search project names by substring."),
@@ -182,7 +182,7 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
             {
                 "profile": string("Saved local target profile."),
                 "profiles": PROFILES_PROPERTY,
-                "project": string("Exact TestLink project name."),
+                "project": string("Exact name."),
                 "suite_id": string("Target suite ID."),
                 "suite_name": string("Exact suite name/path."),
                 "name": string("Test case title."),
@@ -225,8 +225,8 @@ MUTATE_TOOLS: list[dict[str, Any]] = [
                 "project": string("Exact TestLink project name for preview context."),
                 "suite_id": string("Target suite ID for preview context."),
                 "suite_name": string("Exact suite name/path for preview context."),
-                "testcase_id": string("Internal TestLink testcase ID."),
-                "testcase_external_id": string("External testcase ID, for example GW-123."),
+                "testcase_id": string("Internal ID."),
+                "testcase_external_id": string("External ID, e.g. GW-123."),
                 "version": string("Optional testcase version."),
                 "name": string("New test case title."),
                 "summary": string("New summary."),

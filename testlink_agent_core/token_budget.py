@@ -38,6 +38,11 @@ def build_token_budget_report(repository_root: str | Path) -> dict[str, Any]:
         "testlink_execution": schema_characters(testlink_tools("execution")),
         "testlink_testcase_maintenance": schema_characters(testlink_tools("maintenance")),
         "redmine_issue": schema_characters(redmine_tools("issue")),
+        "redmine_discovery": schema_characters(redmine_tools("discovery")),
+        # Usage-profile presets: what one registration of each server loads per session.
+        "preset_batch_import_testlink": schema_characters(testlink_tools("batch-import")),
+        "preset_manual_qa_testlink": schema_characters(testlink_tools("manual-qa")),
+        "preset_bug_tracking_testlink": schema_characters(testlink_tools("bug-tracking")),
     }
     return {
         "estimation": "UTF-8 text characters divided by four; use for regression comparison only.",

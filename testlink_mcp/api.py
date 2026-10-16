@@ -1379,6 +1379,138 @@ def testlink_link_bug(
         return _failure(operation_id, "testlink-link-bug-write" if write else "testlink-link-bug-preview", exc)
 
 
+MAX_LATEST_RESULT_CASES = 1000
+_EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9]+-\d+$")
+NOT_RUN_STATUS = "n"
+
+
+def _external_id_sort_key(external_id: str) -> tuple[str, int]:
+    prefix, _, number = external_id.rpartition("-")
+    return prefix.casefold(), int(number) if number.isdigit() else 0
+
+
+def _latest_result_row(external_id: str, value: Any) -> dict[str, Any]:
+    row = _last_execution_row(value)
+    status = str((row or {}).get("status") or "")
+    execution_id = str((row or {}).get("id") or (row or {}).get("execution_id") or "")
+    # TestLink answers a never-run testcase with {"id": -1} and no status.
+    if not status or execution_id in ("", "-1"):
+        return {"testcase_external_id": external_id, "status": NOT_RUN_STATUS, "execution_id": None}
+    return {
+        "testcase_external_id": external_id,
+        "status": status,
+        "execution_id": execution_id,
+        "execution_ts": (row or {}).get("execution_ts"),
+        "tester_id": str((row or {}).get("tester_id") or "") or None,
+    }
+
+
+def testlink_get_latest_results(
+    *,
+    operation_id: str,
+    environment: str,
+    project: str,
+    plan: str,
+    platform: str,
+    build: str,
+    testcase_external_ids: list[str] | None = None,
+    all_in_plan: bool = False,
+    expected_status: str | None = None,
+    env_file: str | None = None,
+    timeout: int = 60,
+) -> dict[str, Any]:
+    """Read the latest execution of many testcases on one exact build/platform in one call."""
+    try:
+        runtime = load_runtime(env_file=env_file, timeout=timeout)
+        selected = validate_environment(environment, runtime.environment)
+        if not isinstance(all_in_plan, bool):
+            raise TestLinkError("all_in_plan must be true or false.", code="INVALID_ARGUMENT")
+        if all_in_plan == (testcase_external_ids is not None):
+            raise TestLinkError(
+                "Pass either testcase_external_ids or all_in_plan=true, not both or neither.",
+                code="INVALID_ARGUMENT",
+            )
+        if expected_status is not None and expected_status not in LINK_BUG_STATUSES:
+            raise TestLinkError("expected_status must be one of p, f, b.", code="INVALID_ARGUMENT")
+        requested: list[str] = []
+        if testcase_external_ids is not None:
+            if not isinstance(testcase_external_ids, (list, tuple)) or not testcase_external_ids:
+                raise TestLinkError("testcase_external_ids must be a non-empty list.", code="INVALID_ARGUMENT")
+            for value in testcase_external_ids:
+                text = str(value).strip()
+                if not _EXTERNAL_ID_RE.fullmatch(text):
+                    raise TestLinkError(f"Not a plain external testcase ID: {text!r}", code="INVALID_ARGUMENT")
+                if text.casefold() not in {item.casefold() for item in requested}:
+                    requested.append(text)
+            if len(requested) > MAX_LATEST_RESULT_CASES:
+                raise TestLinkError(
+                    f"At most {MAX_LATEST_RESULT_CASES} testcases can be read at once.", code="INVALID_ARGUMENT"
+                )
+        client = write_client(runtime)
+        target = _resolve_exact_target(client, project=project, plan=plan, platform=platform, build=build)
+        plan_id = target["plan"]["id"]
+        platform_id = target["platform"]["id"]
+        build_id = target["build"]["id"]
+        plan_cases = {
+            external_id.casefold(): external_id
+            for external_id in client.get_plan_cases_by_external_id(plan_id, platform_id)
+        }
+        if all_in_plan:
+            requested = sorted(plan_cases.values(), key=_external_id_sort_key)
+            if len(requested) > MAX_LATEST_RESULT_CASES:
+                raise TestLinkError(
+                    f"The plan/platform has {len(requested)} testcases; pass at most "
+                    f"{MAX_LATEST_RESULT_CASES} testcase_external_ids instead.",
+                    code="INVALID_ARGUMENT",
+                )
+        rows: list[dict[str, Any]] = []
+        not_in_plan: list[str] = []
+        errors: list[dict[str, str]] = []
+        for external_id in requested:
+            plan_external_id = plan_cases.get(external_id.casefold())
+            if plan_external_id is None:
+                not_in_plan.append(external_id)
+                continue
+            try:
+                result = client.get_last_execution_result(
+                    testplan_id=plan_id,
+                    testcase_external_id=plan_external_id,
+                    build_id=build_id,
+                    platform_id=platform_id,
+                )
+            except Exception as exc:
+                errors.append(
+                    {"testcase_external_id": plan_external_id, "message": normalize_testlink_error(exc).message}
+                )
+                continue
+            rows.append(_latest_result_row(plan_external_id, result))
+        counts: dict[str, int] = {}
+        for row in rows:
+            counts[row["status"]] = counts.get(row["status"], 0) + 1
+        listed = rows if expected_status is None else [row for row in rows if row["status"] != expected_status]
+        return _success(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "mode": "read-only",
+                "target": target,
+                "requested": len(requested),
+                "status_counts": dict(sorted(counts.items())),
+                "expected_status": expected_status,
+                "all_match_expected": (
+                    expected_status is not None and not listed and not not_in_plan and not errors
+                ),
+                "rows": listed,
+                "rows_omitted": len(rows) - len(listed),
+                "not_in_plan": not_in_plan,
+                "errors": errors,
+            }
+        )
+    except Exception as exc:
+        return _failure(operation_id, "latest-results", exc)
+
+
 CREATE_BUILD_ACTION = "create-build"
 
 
@@ -1705,6 +1837,12 @@ def testlink_create_build(
 
 
 def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+    if name == "testlink_get_latest_results":
+        try:
+            return testlink_get_latest_results(**(arguments or {}))
+        except TypeError as exc:
+            operation_id = str((arguments or {}).get("operation_id") or "unknown-operation")
+            return _failure(operation_id, "arguments", exc)
     if name == "testlink_create_build":
         try:
             return testlink_create_build(**(arguments or {}))

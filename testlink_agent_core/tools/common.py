@@ -7,7 +7,7 @@ from ..config import DEFAULT_CATALOG_PATH, DEFAULT_PROFILES_PATH, DEFAULT_TIMEOU
 
 JSON_OBJECT: dict[str, Any] = {"type": "object", "additionalProperties": False}
 COMMON_PROPERTIES: dict[str, Any] = {
-    "env_file": {"type": "string", "description": "Optional env file path."},
+    "env_file": {"type": "string"},
     "timeout": {"type": "integer", "default": DEFAULT_TIMEOUT_SECONDS, "minimum": 1},
 }
 READ_ONLY = {"readOnlyHint": True}

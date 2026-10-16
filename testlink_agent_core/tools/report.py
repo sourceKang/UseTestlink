@@ -12,11 +12,11 @@ REPORT_TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             **schema(
                 {
-                    "project": string("Exact TestLink project name. Use with plan when testplan_id is omitted."),
-                    "plan": string("Exact TestLink test plan name. Use with project when testplan_id is omitted."),
+                    "project": string("Exact name. Use with plan when testplan_id is omitted."),
+                    "plan": string("Exact name. Use with project when testplan_id is omitted."),
                     "testplan_id": string("Internal TestLink test plan ID."),
-                    "testcase_external_id": string("External testcase ID, for example GW-123."),
-                    "testcase_id": string("Internal TestLink testcase ID."),
+                    "testcase_external_id": string("External ID, e.g. GW-123."),
+                    "testcase_id": string("Internal ID."),
                     "build": string("Exact build name. Use when build_id is omitted."),
                     "build_id": string("Internal TestLink build ID."),
                     "platform": string("Exact platform name."),
@@ -49,8 +49,8 @@ REPORT_TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             **schema(
                 {
-                    "project": string("Exact TestLink project name. Use with plan when testplan_id is omitted."),
-                    "plan": string("Exact TestLink test plan name. Use with project when testplan_id is omitted."),
+                    "project": string("Exact name. Use with plan when testplan_id is omitted."),
+                    "plan": string("Exact name. Use with project when testplan_id is omitted."),
                     "testplan_id": string("Internal TestLink test plan ID."),
                     "build": string("Exact build name. Use when build_id is omitted."),
                     "build_id": string("Internal TestLink build ID."),
@@ -65,8 +65,8 @@ REPORT_TOOLS: list[dict[str, Any]] = [
                             "type": "object",
                             "additionalProperties": False,
                             "properties": {
-                                "testcase_external_id": string("External testcase ID, for example GW-123."),
-                                "testcase_id": string("Internal TestLink testcase ID."),
+                                "testcase_external_id": string("External ID, e.g. GW-123."),
+                                "testcase_id": string("Internal ID."),
                                 "status": {"type": "string", "enum": ["p", "f", "b"]},
                                 "notes": {"type": "string"},
                                 "platformname": string("Platform name sent to reportTCResult."),
@@ -97,11 +97,11 @@ REPORT_TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             **schema(
                 {
-                    "project": string("Exact TestLink project name. Use with plan when testplan_id is omitted."),
-                    "plan": string("Exact TestLink test plan name. Use with project when testplan_id is omitted."),
+                    "project": string("Exact name. Use with plan when testplan_id is omitted."),
+                    "plan": string("Exact name. Use with project when testplan_id is omitted."),
                     "testplan_id": string("Internal TestLink test plan ID."),
-                    "testcase_external_id": string("External testcase ID, for example GW-123."),
-                    "testcase_id": string("Internal TestLink testcase ID."),
+                    "testcase_external_id": string("External ID, e.g. GW-123."),
+                    "testcase_id": string("Internal ID."),
                     "build": string("Exact build name. Use when build_id is omitted."),
                     "build_id": string("Internal TestLink build ID."),
                     "platform": string("Exact platform name."),
@@ -135,11 +135,11 @@ REPORT_TOOLS: list[dict[str, Any]] = [
             **schema(
                 {
                     "bug_id": string("Bug ID to append to notes as BUG-ID."),
-                    "project": string("Exact TestLink project name. Use with plan when testplan_id is omitted."),
-                    "plan": string("Exact TestLink test plan name. Use with project when testplan_id is omitted."),
+                    "project": string("Exact name. Use with plan when testplan_id is omitted."),
+                    "plan": string("Exact name. Use with project when testplan_id is omitted."),
                     "testplan_id": string("Internal TestLink test plan ID."),
-                    "testcase_external_id": string("External testcase ID, for example GW-123."),
-                    "testcase_id": string("Internal TestLink testcase ID."),
+                    "testcase_external_id": string("External ID, e.g. GW-123."),
+                    "testcase_id": string("Internal ID."),
                     "build": string("Exact build name. Use when build_id is omitted."),
                     "build_id": string("Internal TestLink build ID."),
                     "platform": string("Exact platform name."),
@@ -162,8 +162,8 @@ REPORT_TOOLS: list[dict[str, Any]] = [
         "description": "Preview or upload an automation report. Defaults to preview; set write true only after review.",
         "inputSchema": schema(
             {
-                "project": string("Exact TestLink project name."),
-                "plan": string("Exact test plan name."),
+                "project": string("Exact name."),
+                "plan": string("Exact name."),
                 "platform": string("Exact platform name."),
                 "build": string("Build name. Omit with build_id to use latest active/open build."),
                 "build_id": string("Build ID. Omit with build to use latest active/open build."),

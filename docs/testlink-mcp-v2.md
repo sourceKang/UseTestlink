@@ -109,6 +109,25 @@ Resume and failure rules for one `operation_id`:
 
 This tool never closes Redmine issues or changes their status, assignee, or version.
 
+## Batch Latest Results
+
+`testlink_get_latest_results` is read-only and is in `lookup`, `execution`, and `discovery`. It
+resolves the exact project, plan, platform, and build once, then reads the latest execution of
+every requested testcase on that build and platform:
+
+- Pass `testcase_external_ids` (up to 1000 plain IDs) or `all_in_plan=true`, not both.
+- `status_counts` summarizes the results; `n` means the testcase has no execution on that build.
+- With `expected_status` (`p`, `f`, or `b`), `rows` lists only the testcases that differ and
+  `rows_omitted` counts the rest, so verifying a 254-case import costs one call and a short answer.
+  `all_match_expected` is true only when every testcase matched and none was missing or failed.
+- Testcases outside the plan/platform go to `not_in_plan`; a read error for one testcase goes to
+  `errors` without failing the others. Each testcase is still one `getLastExecutionResult` call to
+  TestLink, so large batches take time but not conversation tokens.
+
+The `lookup` toolset is the read side of `execution` (target resolution, project/plan/platform/build
+lists, testcase reads, and latest results) without the legacy duplicates and catalog tools that
+`discovery` also carries.
+
 ## Protected Build Creation
 
 `testlink_create_build` creates one build in an exact project and plan. It is in the
@@ -157,7 +176,7 @@ proven.
 ## Tool Boundary
 
 Set `TESTLINK_MCP_TOOLSET` to one name or a comma-separated list. Each name is a toolset
-(`discovery`, `execution`, `maintenance`, `integration`, `all`) or a usage-profile preset, and
+(`discovery`, `lookup`, `execution`, `maintenance`, `integration`, `all`) or a usage-profile preset, and
 the server exposes the union. Unknown or empty names fail closed. Codex and Claude should enable
 only the task-specific surface; `integration` is reserved for the coordinator child process.
 
@@ -165,7 +184,7 @@ only the task-specific surface; `integration` is reserved for the coordinator ch
 |---|---|---|
 | `batch-import` | `execution`, `maintenance` | automation result import, build creation, testcase upkeep |
 | `manual-qa` | `execution` | per-testcase results and Redmine bug links |
-| `bug-tracking` | `discovery` | read-only lookups |
+| `bug-tracking` | `lookup` | read-only lookups |
 
 The same preset names select the matching redmine-mcp surface (see `docs/redmine-mcp.md`), so a
 project can set one profile name on every server it registers.

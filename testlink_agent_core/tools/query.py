@@ -9,7 +9,7 @@ QUERY_TOOLS: list[dict[str, Any]] = [
     {
         "name": "find_project",
         "description": "Find one TestLink project by exact name and return close suggestions when not found.",
-        "inputSchema": schema({"name": string("Exact TestLink project name.")}, ["name"]),
+        "inputSchema": schema({"name": string("Exact name.")}, ["name"]),
         "annotations": READ_ONLY,
     },
     {
@@ -17,8 +17,8 @@ QUERY_TOOLS: list[dict[str, Any]] = [
         "description": "Find one TestLink test plan by project name and exact plan name.",
         "inputSchema": schema(
             {
-                "project": string("Exact TestLink project name."),
-                "name": string("Exact TestLink test plan name."),
+                "project": string("Exact name."),
+                "name": string("Exact name."),
             },
             ["project", "name"],
         ),
@@ -29,7 +29,7 @@ QUERY_TOOLS: list[dict[str, Any]] = [
         "description": "List TestLink test suites in a project using project and optional parent suite names.",
         "inputSchema": schema(
             {
-                "project": string("Exact TestLink project name."),
+                "project": string("Exact name."),
                 "parent_suite_id": string("Optional parent suite ID."),
                 "parent_suite_name": string("Optional exact parent suite name or path."),
                 "recursive": {"type": "boolean", "default": True},
@@ -44,7 +44,7 @@ QUERY_TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             **schema(
                 {
-                    "project": string("Exact TestLink project name."),
+                    "project": string("Exact name."),
                     "suite_name": string("Exact suite name or path."),
                     "suite_id": string("Suite ID."),
                     "recursive": {"type": "boolean", "default": True},
@@ -62,8 +62,8 @@ QUERY_TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             **schema(
                 {
-                    "testcase_external_id": string("External testcase ID, for example GW-123."),
-                    "testcase_id": string("Internal TestLink testcase ID."),
+                    "testcase_external_id": string("External ID, e.g. GW-123."),
+                    "testcase_id": string("Internal ID."),
                     "version": string("Optional testcase version."),
                 },
             ),
@@ -77,10 +77,10 @@ QUERY_TOOLS: list[dict[str, Any]] = [
         "inputSchema": {
             **schema(
                 {
-                    "project": string("Exact TestLink project name."),
-                    "plan": string("Exact TestLink test plan name."),
-                    "testcase_external_id": string("External testcase ID, for example GW-123."),
-                    "testcase_id": string("Internal TestLink testcase ID."),
+                    "project": string("Exact name."),
+                    "plan": string("Exact name."),
+                    "testcase_external_id": string("External ID, e.g. GW-123."),
+                    "testcase_id": string("Internal ID."),
                     "build": string("Optional exact build name."),
                     "build_id": string("Optional build ID."),
                     "platform": string("Optional exact platform name."),
@@ -97,8 +97,8 @@ QUERY_TOOLS: list[dict[str, Any]] = [
         "description": "List builds for a project and test plan, newest first.",
         "inputSchema": schema(
             {
-                "project": string("Exact TestLink project name."),
-                "plan": string("Exact TestLink test plan name."),
+                "project": string("Exact name."),
+                "plan": string("Exact name."),
                 "open_only": {"type": "boolean", "default": False},
             },
             ["project", "plan"],
@@ -120,14 +120,14 @@ QUERY_TOOLS: list[dict[str, Any]] = [
     {
         "name": "testlink_list_plans",
         "description": "List test plans for a TestLink project.",
-        "inputSchema": schema({"project": string("Exact TestLink project name.")}, ["project"]),
+        "inputSchema": schema({"project": string("Exact name.")}, ["project"]),
         "annotations": READ_ONLY,
     },
     {
         "name": "testlink_list_platforms",
         "description": "List platforms for a project and test plan.",
         "inputSchema": schema(
-            {"project": string("Exact TestLink project name."), "plan": string("Exact test plan name.")},
+            {"project": string("Exact name."), "plan": string("Exact name.")},
             ["project", "plan"],
         ),
         "annotations": READ_ONLY,
@@ -137,8 +137,8 @@ QUERY_TOOLS: list[dict[str, Any]] = [
         "description": "List builds for a project and test plan, newest first.",
         "inputSchema": schema(
             {
-                "project": string("Exact TestLink project name."),
-                "plan": string("Exact test plan name."),
+                "project": string("Exact name."),
+                "plan": string("Exact name."),
                 "open_only": {"type": "boolean", "default": False},
             },
             ["project", "plan"],
@@ -150,7 +150,7 @@ QUERY_TOOLS: list[dict[str, Any]] = [
         "description": "List test suites for a project.",
         "inputSchema": schema(
             {
-                "project": string("Exact TestLink project name."),
+                "project": string("Exact name."),
                 "parent_suite_id": string("Optional parent suite ID."),
                 "recursive": {"type": "boolean", "default": True},
             },
@@ -195,8 +195,8 @@ QUERY_TOOLS: list[dict[str, Any]] = [
         "description": "Download test cases for a project, plan, and platform as JSON or XLSX.",
         "inputSchema": schema(
             {
-                "project": string("Exact TestLink project name."),
-                "plan": string("Exact test plan name."),
+                "project": string("Exact name."),
+                "plan": string("Exact name."),
                 "platform": string("Exact platform name."),
                 "details": {"type": "string", "enum": ["simple", "full"], "default": "simple"},
                 "format": {"type": "string", "enum": ["auto", "json", "xlsx"], "default": "auto"},

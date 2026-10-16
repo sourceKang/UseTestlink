@@ -11,9 +11,9 @@ def string(description: str) -> dict[str, Any]:
 
 
 COMMON_PROPERTIES: dict[str, Any] = {
-    "operation_id": string("Caller-generated operation identity used for audit and resume."),
+    "operation_id": string("Stable ID for audit and resume."),
     "environment": {"type": "string", "enum": ["corp", "sandbox"]},
-    "env_file": string("Optional Redmine MCP env file path."),
+    "env_file": {"type": "string"},
     "timeout": {"type": "integer", "minimum": 1, "default": 60},
 }
 
@@ -28,16 +28,14 @@ def schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
 
 
 BUG_PROPERTIES: dict[str, Any] = {
-    "project_id": string("Redmine project identifier. Defaults to REDMINE_PROJECT_ID."),
-    "template_file": string("Optional validated Redmine project template JSON."),
+    "project_id": string("Project identifier; defaults to REDMINE_PROJECT_ID."),
+    "template_file": string("Validated project template JSON."),
     "subject": string("Bug subject."),
-    "description": string("Bug description including external evidence."),
+    "description": string("Bug description with evidence."),
     "tracker_id": string("Redmine tracker ID."),
-    "priority_id": string("Legacy Redmine priority ID; validated against severity mapping when configured."),
-    "severity": string("Semantic Severity label resolved through the validated template mapping."),
-    "custom_priority": string(
-        "Value for the distinct custom Priority field; rejected until template allowed values are confirmed."
-    ),
+    "priority_id": string("Legacy priority ID; checked against the severity mapping."),
+    "severity": string("Severity label mapped by the template."),
+    "custom_priority": string("Custom Priority value; rejected until template values are confirmed."),
     "custom_fields": {
         "type": "array",
         "items": {
@@ -47,38 +45,35 @@ BUG_PROPERTIES: dict[str, Any] = {
             "required": ["id", "value"],
         },
     },
-    "category_id": string("Optional Redmine category ID."),
-    "assigned_to_id": string("Manager-only assignee ID; blocked unless explicitly enabled."),
-    "fixed_version_id": string("Manager-only fixed version ID; blocked unless explicitly enabled."),
-    "dedupe_marker": string("Stable marker used to find and reuse an existing issue."),
+    "category_id": string("Category ID."),
+    "assigned_to_id": string("Manager-only; blocked unless enabled."),
+    "fixed_version_id": string("Manager-only; blocked unless enabled."),
+    "dedupe_marker": string("Stable marker to find and reuse an existing issue."),
     "dedupe": {"type": "string", "enum": ["open"], "default": "open"},
     "attachments": {
         "type": "array",
         "maxItems": 5,
-        "description": (
-            "Optional local image files attached only when a new bug is created. "
-            "Each image is limited to 10 MiB and preview-bound by SHA-256."
-        ),
+        "description": "Local images (max 10 MiB each), attached only to a new bug; bound to the preview by SHA-256.",
         "items": {
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "file": string("Local PNG, JPEG, GIF, WebP, or BMP image path."),
+                "file": string("Local PNG/JPEG/GIF/WebP/BMP path."),
                 "filename": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Optional attachment filename; defaults to the local basename.",
+                    "description": "Defaults to the file basename.",
                 },
                 "description": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Optional Redmine attachment description.",
+                    "description": "Attachment description.",
                 },
             },
             "required": ["file"],
         },
     },
-    "audit_dir": string("Local directory for redacted operation audit JSON."),
+    "audit_dir": string("Writable absolute audit directory."),
 }
 
 
@@ -92,10 +87,10 @@ BUG_REQUIRED = [
 
 
 COMMENT_PROPERTIES: dict[str, Any] = {
-    "issue_id": string("Existing Redmine issue ID."),
-    "notes": string("Evidence comment; does not alter status, assignee, or fixed version."),
-    "template_file": string("Optional validated Redmine project template JSON."),
-    "audit_dir": string("Local directory for redacted operation audit JSON."),
+    "issue_id": string("Issue ID."),
+    "notes": string("Evidence comment; never changes status, assignee, or version."),
+    "template_file": string("Validated project template JSON."),
+    "audit_dir": string("Writable absolute audit directory."),
 }
 
 
@@ -109,19 +104,14 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "redmine_search_issues",
         "description": (
-            "Search Redmine issues and return safe summary fields. Custom field filters are verified "
-            "against every returned issue; if Redmine ignored a filter the call fails with "
-            "FILTER_NOT_APPLIED instead of returning unfiltered results."
+            "Search issues; returns safe summaries. Custom field filters are verified on every result "
+            "(FILTER_NOT_APPLIED if Redmine ignored one)."
         ),
         "inputSchema": schema(
             {
-                "project_id": string("Redmine project identifier. Defaults to REDMINE_PROJECT_ID."),
-                "status_id": string(
-                    "Redmine status filter: open, closed, *, or a status ID. open means every status "
-                    "whose Redmine is_closed flag is false, so it can include Resolved; pass a specific "
-                    "status ID to narrow further."
-                ),
-                "tracker_id": string("Optional tracker ID."),
+                "project_id": string("Project identifier; defaults to REDMINE_PROJECT_ID."),
+                "status_id": string("open, closed, *, or a status ID. open = not is_closed, so it includes Resolved."),
+                "tracker_id": string("Tracker ID."),
                 "subject_contains": string("Case-insensitive subject keyword."),
                 "custom_field_filters": {
                     "type": "array",
@@ -139,15 +129,15 @@ TOOLS: list[dict[str, Any]] = [
                 "include_custom_fields": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Numeric custom field IDs whose values are returned for each issue.",
+                    "description": "Custom field IDs to return per issue.",
                 },
                 "author_id": string("Author user ID, or me."),
                 "assigned_to_id": string("Assignee user ID, or me."),
-                "category_id": string("Redmine issue category ID."),
-                "updated_from": string("Inclusive YYYY-MM-DD lower bound on updated_on."),
-                "updated_to": string("Inclusive YYYY-MM-DD upper bound on updated_on."),
-                "closed_from": string("Inclusive YYYY-MM-DD lower bound on closed_on."),
-                "closed_to": string("Inclusive YYYY-MM-DD upper bound on closed_on."),
+                "category_id": string("Category ID."),
+                "updated_from": string("updated_on >= YYYY-MM-DD."),
+                "updated_to": string("updated_on <= YYYY-MM-DD."),
+                "closed_from": string("closed_on >= YYYY-MM-DD."),
+                "closed_to": string("closed_on <= YYYY-MM-DD."),
                 "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 100},
                 "offset": {"type": "integer", "minimum": 0, "default": 0},
             },
@@ -158,12 +148,11 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "redmine_get_issue",
         "description": (
-            "Read full Redmine issue content: description, status, custom fields, "
-            "and journal/comment history. Excludes watchers and other internal fields; "
-            "embedded credentials and email local parts are masked."
+            "Read an issue's description, status, custom fields, and journals; "
+            "credentials and email local parts are masked."
         ),
         "inputSchema": schema(
-            {"issue_id": string("Existing Redmine issue ID to read.")},
+            {"issue_id": string("Issue ID.")},
             ["operation_id", "environment", "issue_id"],
         ),
         "annotations": {"readOnlyHint": True},
@@ -171,11 +160,10 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "redmine_list_projects",
         "description": (
-            "List all Redmine projects (paginated server-side) with identifier and name so callers "
-            "can resolve project_id instead of guessing."
+            "List projects (identifier, name) to resolve project_id instead of guessing."
         ),
         "inputSchema": schema(
-            {"query": string("Optional case-insensitive substring matched against name or identifier.")},
+            {"query": string("Substring of name or identifier.")},
             ["operation_id", "environment"],
         ),
         "annotations": {"readOnlyHint": True},
@@ -184,7 +172,7 @@ TOOLS: list[dict[str, Any]] = [
         "name": "redmine_get_project_metadata",
         "description": "Read safe Redmine project, tracker, priority, custom-field, and status metadata.",
         "inputSchema": schema(
-            {"project_id": string("Redmine project identifier. Defaults to REDMINE_PROJECT_ID.")},
+            {"project_id": string("Project identifier; defaults to REDMINE_PROJECT_ID.")},
             ["operation_id", "environment"],
         ),
         "annotations": {"readOnlyHint": True},
@@ -211,7 +199,7 @@ TOOLS: list[dict[str, Any]] = [
             {
                 **BUG_PROPERTIES,
                 "write": {"type": "boolean", "default": False},
-                "preview_digest": string("Digest returned by the reviewed preview."),
+                "preview_digest": string("Digest from the reviewed preview."),
             },
             BUG_REQUIRED,
         ),
@@ -230,7 +218,7 @@ TOOLS: list[dict[str, Any]] = [
             {
                 **COMMENT_PROPERTIES,
                 "write": {"type": "boolean", "default": False},
-                "preview_digest": string("Digest returned by the reviewed preview."),
+                "preview_digest": string("Digest from the reviewed preview."),
             },
             ["operation_id", "environment", "issue_id", "notes"],
         ),

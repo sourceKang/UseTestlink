@@ -14,6 +14,8 @@ description: Use for exact TestLink target discovery and previewing or appending
 
 若 notes 連到 Redmine，必須含 issue ID/URL、reuse 狀態與 dedupe key。overwrite／delete 必須另行明確確認，不屬一般流程。
 
+確認多筆最新結果時用 `testlink_get_latest_results`（同一個精確 build/platform，搭配 `expected_status` 只列出不符合者），不要逐筆呼叫 `get_last_result`。
+
 建 build 用 `testlink_create_build`：先以精確 project、plan、build 名稱預覽，`duplicate_found` 為 true 就停止；使用者確認後以相同輸入與 digest 寫入，結果須為 `verified`。回 `BUILD_WRITE_INDETERMINATE` 時不可重試，請使用者到 TestLink 頁面確認。
 
 ## 關聯 Redmine bug（`testlink_link_bug`）

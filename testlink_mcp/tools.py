@@ -32,22 +32,22 @@ REPORT_EXECUTION_TOOL: dict[str, Any] = {
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "operation_id": string("Caller-generated operation identity used for audit and resume."),
+            "operation_id": string("Stable ID for audit and resume."),
             "environment": {"type": "string", "enum": ["corp", "sandbox"]},
-            "project": string("Exact TestLink project name."),
-            "plan": string("Exact TestLink test plan name."),
+            "project": string("Exact name."),
+            "plan": string("Exact name."),
             "testcase_external_id": string("External testcase ID."),
-            "build": string("Exact TestLink build name."),
+            "build": string("Exact name."),
             "build_id": string("Internal build ID."),
-            "platform": string("Exact TestLink platform name."),
+            "platform": string("Exact name."),
             "platform_id": string("Internal platform ID."),
             "status": {"type": "string", "enum": ["p", "f", "b"]},
             "notes": {"type": "string"},
             "execution_duration": {"type": "number", "minimum": 0},
             "write": {"type": "boolean", "default": False},
-            "preview_digest": string("Digest returned by the reviewed preview."),
-            "audit_dir": string("Local directory for redacted TestLink operation audit."),
-            "env_file": string("Optional TestLink env file path."),
+            "preview_digest": string("Digest from the reviewed preview."),
+            "audit_dir": string("Writable absolute audit directory."),
+            "env_file": {"type": "string"},
             "timeout": {"type": "integer", "minimum": 1, "default": 60},
         },
         "required": [
@@ -86,7 +86,7 @@ def testcase_row_policy_schema() -> list[dict[str, Any]]:
 
 def protected_write_properties() -> dict[str, Any]:
     return {
-        "operation_id": string("Caller-generated operation identity used for audit and resume."),
+        "operation_id": string("Stable ID for audit and resume."),
         "environment": {"type": "string", "enum": ["corp", "sandbox"]},
         "single_step": {
             "type": "boolean",
@@ -99,9 +99,9 @@ def protected_write_properties() -> dict[str, Any]:
             "description": "Explicit multi-row authorization; valid only with single_step=false.",
         },
         "write": {"type": "boolean", "default": False},
-        "preview_digest": string("Digest returned by the reviewed preview."),
-        "audit_dir": string("Local directory for redacted TestLink operation audit."),
-        "env_file": string("Optional TestLink env file path."),
+        "preview_digest": string("Digest from the reviewed preview."),
+        "audit_dir": string("Writable absolute audit directory."),
+        "env_file": {"type": "string"},
         "timeout": {"type": "integer", "minimum": 1, "default": 60},
     }
 
@@ -114,7 +114,7 @@ CREATE_TESTCASE_TOOL: dict[str, Any] = {
         "additionalProperties": False,
         "properties": {
             **protected_write_properties(),
-            "project": string("Exact TestLink project name."),
+            "project": string("Exact name."),
             "suite_name": string("Exact TestLink suite name or path."),
             "suite_id": string("Internal TestLink suite ID."),
             "name": string("Testcase title."),
@@ -144,8 +144,8 @@ UPDATE_TESTCASE_TOOL: dict[str, Any] = {
         "additionalProperties": False,
         "properties": {
             **protected_write_properties(),
-            "testcase_external_id": string("External testcase ID, for example GW-123."),
-            "testcase_id": string("Internal TestLink testcase ID."),
+            "testcase_external_id": string("External ID, e.g. GW-123."),
+            "testcase_id": string("Internal ID."),
             "version": string("Optional testcase version."),
             "name": string("New testcase title."),
             "summary": string("New summary."),
@@ -171,14 +171,14 @@ RESOLVE_EXECUTION_TARGET_TOOL: dict[str, Any] = {
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "operation_id": string("Caller-generated discovery operation identity."),
+            "operation_id": string("Stable ID for this lookup."),
             "environment": {"type": "string", "enum": ["corp", "sandbox"]},
-            "project": string("Exact TestLink project name."),
-            "plan": string("Exact TestLink plan name."),
-            "platform": string("Exact TestLink platform name."),
-            "build": string("Exact TestLink build name."),
+            "project": string("Exact name."),
+            "plan": string("Exact name."),
+            "platform": string("Exact name."),
+            "build": string("Exact name."),
             "testcase_external_id": string("Optional exact testcase external ID in the selected target."),
-            "env_file": string("Optional TestLink env file path."),
+            "env_file": {"type": "string"},
             "timeout": {"type": "integer", "minimum": 1, "default": 60},
         },
         "required": ["operation_id", "environment", "project", "plan", "platform", "build"],
@@ -190,44 +190,43 @@ RESOLVE_EXECUTION_TARGET_TOOL: dict[str, Any] = {
 LINK_BUG_TOOL: dict[str, Any] = {
     "name": "testlink_link_bug",
     "description": (
-        "Preview or link Redmine bug IDs to one TestLink testcase through the corporate CA_set_result.php "
-        "endpoint. Linking always appends one execution with the given status, the first link per build adds "
-        "a Redmine note, and TestLink does not confirm the link. Write requires the reviewed preview_digest."
+        "Preview or link Redmine bug IDs to one testcase via CA_set_result.php. Always appends an execution; "
+        "the first link per build adds a Redmine note; links are not confirmed. Write needs preview_digest."
     ),
     "inputSchema": {
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "operation_id": string("Caller-generated operation identity used for audit and resume."),
+            "operation_id": string("Stable ID for audit and resume."),
             "environment": {"type": "string", "enum": ["corp", "sandbox"]},
-            "project": string("Exact TestLink project name."),
-            "plan": string("Exact TestLink test plan name."),
-            "platform": string("Exact TestLink platform name."),
-            "build": string("Exact TestLink build name."),
-            "testcase_external_id": string("Plain external testcase ID such as PRJ-1234, without a step suffix."),
+            "project": string("Exact name."),
+            "plan": string("Exact name."),
+            "platform": string("Exact name."),
+            "build": string("Exact name."),
+            "testcase_external_id": string("Plain external ID such as PRJ-1234 (no _N suffix)."),
             "bug_ids": {
                 "type": "array",
                 "items": {"type": "string", "pattern": "^[1-9][0-9]{0,9}$"},
                 "minItems": 1,
                 "maxItems": 20,
-                "description": "Numeric Redmine issue IDs to link.",
+                "description": "Redmine issue IDs.",
             },
             "status": {
                 "type": "string",
                 "enum": ["p", "f", "b"],
-                "description": "Execution result written together with the link; normally f.",
+                "description": "Result written with the link; normally f.",
             },
-            "notes": {"type": "string", "description": "Execution notes written with the link."},
+            "notes": {"type": "string", "description": "Execution notes."},
             "execution_duration": {
                 "type": "integer",
                 "minimum": 0,
                 "default": 5,
-                "description": "Execution duration in minutes written with the link (default 5).",
+                "description": "Minutes; default 5.",
             },
             "write": {"type": "boolean", "default": False},
-            "preview_digest": string("Digest returned by the reviewed preview."),
-            "audit_dir": string("Local directory for redacted TestLink operation audit."),
-            "env_file": string("Optional TestLink env file path."),
+            "preview_digest": string("Digest from the reviewed preview."),
+            "audit_dir": string("Writable absolute audit directory."),
+            "env_file": {"type": "string"},
             "timeout": {"type": "integer", "minimum": 1, "default": 60},
         },
         "required": [
@@ -249,26 +248,26 @@ LINK_BUG_TOOL: dict[str, Any] = {
 CREATE_BUILD_TOOL: dict[str, Any] = {
     "name": "testlink_create_build",
     "description": (
-        "Preview or create one TestLink build in an exact project/plan. Refuses an existing build name, "
-        "requires the reviewed preview_digest to write, and verifies the build by readback."
+        "Preview or create one build in an exact project/plan. Refuses an existing name; "
+        "write needs preview_digest and is verified by readback."
     ),
     "inputSchema": {
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "operation_id": string("Caller-generated operation identity used for audit and resume."),
+            "operation_id": string("Stable ID for audit and resume."),
             "environment": {"type": "string", "enum": ["corp", "sandbox"]},
-            "project": string("Exact TestLink project name."),
-            "plan": string("Exact TestLink test plan name."),
-            "name": string("New build name, without leading or trailing spaces."),
+            "project": string("Exact name."),
+            "plan": string("Exact name."),
+            "name": string("New build name; no surrounding spaces."),
             "notes": {"type": "string", "description": "Build notes."},
-            "release_date": string("Optional release date, YYYY-MM-DD."),
+            "release_date": string("YYYY-MM-DD."),
             "active": {"type": "boolean", "default": True},
             "open": {"type": "boolean", "default": True},
             "write": {"type": "boolean", "default": False},
-            "preview_digest": string("Digest returned by the reviewed preview."),
-            "audit_dir": string("Local directory for redacted TestLink operation audit."),
-            "env_file": string("Optional TestLink env file path."),
+            "preview_digest": string("Digest from the reviewed preview."),
+            "audit_dir": string("Writable absolute audit directory."),
+            "env_file": {"type": "string"},
             "timeout": {"type": "integer", "minimum": 1, "default": 60},
         },
         "required": ["operation_id", "environment", "project", "plan", "name"],
@@ -277,8 +276,46 @@ CREATE_BUILD_TOOL: dict[str, Any] = {
 }
 
 
+LATEST_RESULTS_TOOL: dict[str, Any] = {
+    "name": "testlink_get_latest_results",
+    "description": (
+        "Read the latest execution of many testcases on one exact build/platform in one call. "
+        "With expected_status, only rows that differ are listed. Status n = not run."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "operation_id": string("Stable ID for this lookup."),
+            "environment": {"type": "string", "enum": ["corp", "sandbox"]},
+            "project": string("Exact name."),
+            "plan": string("Exact name."),
+            "platform": string("Exact name."),
+            "build": string("Exact name."),
+            "testcase_external_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "minItems": 1,
+                "maxItems": 1000,
+            },
+            "all_in_plan": {
+                "type": "boolean",
+                "default": False,
+                "description": "Read every testcase in the plan/platform instead of a list.",
+            },
+            "expected_status": {"type": "string", "enum": ["p", "f", "b"]},
+            "env_file": {"type": "string"},
+            "timeout": {"type": "integer", "minimum": 1, "default": 60},
+        },
+        "required": ["operation_id", "environment", "project", "plan", "platform", "build"],
+    },
+    "annotations": {"readOnlyHint": True},
+}
+
+
 TOOLS = [
     RESOLVE_EXECUTION_TARGET_TOOL,
+    LATEST_RESULTS_TOOL,
     REPORT_EXECUTION_TOOL,
     LINK_BUG_TOOL,
     CREATE_BUILD_TOOL,
@@ -296,6 +333,7 @@ TOOLSETS: dict[str, set[str]] = {
     "integration": {"testlink_report_execution"},
     "execution": {
         "testlink_resolve_execution_target",
+        "testlink_get_latest_results",
         "testlink_report_execution",
         "testlink_link_bug",
         "testlink_create_build",
@@ -322,13 +360,25 @@ TOOLSETS: dict[str, set[str]] = {
         for tool in TOOLS
         if bool(tool.get("annotations", {}).get("readOnlyHint"))
     },
+    # The read side of "execution" without the legacy duplicates and catalog tools in "discovery".
+    "lookup": {
+        "testlink_resolve_execution_target",
+        "testlink_get_latest_results",
+        "testlink_list_projects",
+        "testlink_list_plans",
+        "testlink_list_platforms",
+        "testlink_list_builds",
+        "list_test_cases",
+        "get_test_case",
+        "get_last_result",
+    },
     "all": {tool["name"] for tool in TOOLS},
 }
 # Usage-profile presets shared by name with redmine-mcp; see docs/claude-setup.md.
 PRESETS: dict[str, tuple[str, ...]] = {
     "batch-import": ("execution", "maintenance"),
     "manual-qa": ("execution",),
-    "bug-tracking": ("discovery",),
+    "bug-tracking": ("lookup",),
 }
 
 
