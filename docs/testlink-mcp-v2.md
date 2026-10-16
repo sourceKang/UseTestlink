@@ -138,8 +138,14 @@ proven.
 ## Tool Boundary
 
 Set `TESTLINK_MCP_TOOLSET` to `discovery`, `execution`, `maintenance`, `integration`, or
-`all`. Codex should enable only the task-specific surface; `integration` is reserved for
-the coordinator child process.
+`all`. Codex and Claude should enable only the task-specific surface; `integration` is reserved
+for the coordinator child process.
+
+When `TESTLINK_MCP_TOOLSET` is unset, the server exposes only the read-only `discovery`
+toolset. Write tools (`execution`, `maintenance`) and `all` — which also carries legacy tools
+such as `delete_execution`, `create_build`, and `add_case_to_plan` — must be selected
+explicitly. Releases up to v1.9.0 defaulted to `all`, so a registration without the variable
+exposed those tools.
 
 `TESTLINK_MCP_BATCH_SESSION=1` is also reserved for that child: qa-integration-agent sets it
 only on the child it keeps open for one preview/execute batch, so the child authenticates and

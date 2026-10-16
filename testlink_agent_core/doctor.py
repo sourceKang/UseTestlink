@@ -14,7 +14,7 @@ from .errors import redact_secrets
 
 SERVERS = {
     "qa": ("qa-integration-agent-mcp", "QA_INTEGRATION_TOOLSET", "import"),
-    "testlink": ("testlink-mcp", "TESTLINK_MCP_TOOLSET", "all"),
+    "testlink": ("testlink-mcp", "TESTLINK_MCP_TOOLSET", "discovery"),
     "redmine": ("redmine-mcp", "REDMINE_MCP_TOOLSET", "all"),
 }
 RECOMMENDED_TOOLSETS = {"qa": "import", "testlink": "execution", "redmine": "issue"}

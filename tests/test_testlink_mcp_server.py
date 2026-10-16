@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -70,6 +71,39 @@ class TestLinkMcpServerTests(unittest.TestCase):
         self.assertIn("testlink_update_testcase", names)
         self.assertNotIn("delete_execution", names)
         self.assertEqual(-32602, blocked["error"]["code"])
+
+    def test_unset_toolset_defaults_to_read_only_discovery(self) -> None:
+        with patch.dict("os.environ", {}):
+            os.environ.pop("TESTLINK_MCP_TOOLSET", None)
+            listed = handle_request({"jsonrpc": "2.0", "id": 4, "method": "tools/list"})
+            blocked = {
+                name: handle_request(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 5,
+                        "method": "tools/call",
+                        "params": {"name": name, "arguments": {}},
+                    }
+                )
+                for name in ("delete_execution", "testlink_link_bug", "testlink_report_execution")
+            }
+
+        tools = listed["result"]["tools"]
+        self.assertTrue(tools)
+        self.assertTrue(all(tool.get("annotations", {}).get("readOnlyHint") for tool in tools))
+        names = {tool["name"] for tool in tools}
+        self.assertIn("testlink_resolve_execution_target", names)
+        for name, response in blocked.items():
+            self.assertNotIn(name, names)
+            self.assertEqual(-32602, response["error"]["code"])
+
+    def test_all_toolset_remains_an_explicit_opt_in(self) -> None:
+        with patch.dict("os.environ", {"TESTLINK_MCP_TOOLSET": "all"}):
+            listed = handle_request({"jsonrpc": "2.0", "id": 6, "method": "tools/list"})
+
+        names = {tool["name"] for tool in listed["result"]["tools"]}
+        self.assertIn("delete_execution", names)
+        self.assertIn("testlink_link_bug", names)
 
     def test_single_call_resolver_returns_exact_execution_target(self) -> None:
         class FakeClient:

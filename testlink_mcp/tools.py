@@ -255,6 +255,9 @@ TOOLS = [
 
 
 TOOLSET_ENV = "TESTLINK_MCP_TOOLSET"
+# An unset toolset must not expose write tools or the legacy delete/create tools that
+# "all" carries; write surfaces (execution, maintenance) and "all" are explicit opt-ins.
+DEFAULT_TOOLSET = "discovery"
 TOOLSETS: dict[str, set[str]] = {
     "integration": {"testlink_report_execution"},
     "execution": {
@@ -289,7 +292,7 @@ TOOLSETS: dict[str, set[str]] = {
 
 
 def tools_for_toolset(toolset: str | None = None) -> list[dict[str, Any]]:
-    selected = str(toolset or os.environ.get(TOOLSET_ENV, "all")).strip().casefold()
+    selected = str(toolset or os.environ.get(TOOLSET_ENV, DEFAULT_TOOLSET)).strip().casefold()
     if selected not in TOOLSETS:
         choices = ", ".join(sorted(TOOLSETS))
         raise ValueError(f"{TOOLSET_ENV} must be one of: {choices}.")
