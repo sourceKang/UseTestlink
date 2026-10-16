@@ -78,14 +78,18 @@ class DoctorTests(unittest.TestCase):
         failures = {c["check"] for c in result["checks"] if c["status"] == "error"}
         self.assertEqual({"package", "executable"}, failures)
 
-    def test_direct_servers_use_actual_default_all_and_only_own_pointer(self):
-        for server, key in (("testlink", "TESTLINK_MCP_ENV_FILE"), ("redmine", "REDMINE_MCP_ENV_FILE")):
+    def test_direct_servers_use_actual_default_toolset_and_only_own_pointer(self):
+        cases = (
+            ("testlink", "TESTLINK_MCP_ENV_FILE", "discovery", "ok"),
+            ("redmine", "REDMINE_MCP_ENV_FILE", "all", "warning"),
+        )
+        for server, key, expected_toolset, expected_status in cases:
             with patch.dict(os.environ, {key: str(self.env_file)}):
                 result = diagnose(server=server)
             self.assertTrue(result["ok"])
             toolset = next(c for c in result["checks"] if c["check"] == "toolset")
-            self.assertEqual("all", toolset["toolset"])
-            self.assertEqual("warning", toolset["status"])
+            self.assertEqual(expected_toolset, toolset["toolset"])
+            self.assertEqual(expected_status, toolset["status"])
 
     def test_cli_json_exit_status(self):
         with redirect_stdout(io.StringIO()) as output:
