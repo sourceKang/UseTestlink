@@ -19,7 +19,9 @@ rollback compatibility.
 See `docs/architecture.md` for system boundaries, `docs/workflow.md` for the write and
 resume flow, `docs/multi-agent-migration.md` for migration status,
 `docs/cutover-runbook.md` for deployment gates, and `docs/deployment.md` for GitHub
-release installation and upgrades. Authoritative assistant instructions live in
+release installation and upgrades. Teammates setting up the MCPs for the first time should
+start with `ONBOARDING.md` (Traditional Chinese), which covers the batch-import, manual-qa,
+and bug-tracking profiles. Authoritative assistant instructions live in
 `AGENTS.md` and `.agents/skills/testlink-agent/SKILL.md`.
 
 ## Safety Invariants

@@ -15,6 +15,10 @@ Windows Claude Code、Claude Desktop、真實 preview 產生及外部寫入仍�
 
 ## 1. 準備本機設定
 
+第一次為自己設定的同仁，請先看 repository 根目錄的 `ONBOARDING.md`：依情境說明安裝、env 檔、
+註冊、健檢與升級。本文件是 Claude 接入的細節參考。
+
+
 1. 依 `deployment.md` 安裝經審查的發布版本。
 2. 用 `Get-Command qa-integration-agent-mcp | Select-Object Source` 找到實際執行檔。
 3. 保留既有、各自獨立的 TestLink 與 Redmine 憑證檔；使用絕對路徑。
