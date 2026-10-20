@@ -1,0 +1,8 @@
+#!/bin/sh
+# Enable once per clone: git config core.hooksPath .githooks
+# Runs the same offline checks as CI before every commit.
+set -e
+
+git diff --cached --check
+
+"${PYTHON:-python}" -m unittest discover -s tests -q

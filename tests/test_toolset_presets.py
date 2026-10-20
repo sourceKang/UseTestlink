@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import os
-import tomllib
 import unittest
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10: tomllib is 3.11+; only one test needs it.
+    tomllib = None
 from unittest.mock import patch
 
 from qa_integration_agent.server import handle_request as qa_handle_request
@@ -181,6 +185,7 @@ class PackageVersionTests(unittest.TestCase):
                 response = handler(initialize)
                 self.assertEqual(PACKAGE_VERSION, response["result"]["serverInfo"]["version"])
 
+    @unittest.skipIf(tomllib is None, "tomllib requires Python 3.11+")
     def test_pyproject_reads_the_single_version_source(self) -> None:
         pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
         self.assertIn("version", pyproject["project"]["dynamic"])
