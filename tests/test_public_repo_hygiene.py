@@ -17,8 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LOCAL_DENYLIST = ROOT / "local" / "public_repo_denylist.txt"
 GENERIC_PATTERNS = {
-    "private IPv4 (172.16.0.0/12)": re.compile(r"\b172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3}\b"),
-    "private IPv4 (192.168.0.0/16)": re.compile(r"\b192\.168\.\d{1,3}\.\d{1,3}\b"),
+    "private IPv4 in 172.16/12": re.compile(r"\b172\.(1[6-9]|2[0-9]|3[01])\.\d{1,3}\.\d{1,3}\b"),
+    "private IPv4 in 192.168/16": re.compile(r"\b192\.168\.\d{1,3}\.\d{1,3}\b"),
     "corporate host name": re.compile(r"\b[a-z0-9-]+\.zyxel\.com(\.tw)?\b", re.IGNORECASE),
 }
 
