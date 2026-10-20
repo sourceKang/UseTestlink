@@ -1,0 +1,7 @@
+interface:
+  display_name: "Retro"
+  short_description: "Review a coding session and propose agent-environment fixes."
+  default_prompt: "Use $retro to review this session read-only and propose environment improvements by severity."
+
+policy:
+  allow_implicit_invocation: false
