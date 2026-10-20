@@ -124,7 +124,7 @@ Execute retains the existing report-hash, confirmation, dedupe, and audit protec
 ## Protected Bug Linking
 
 `testlink_link_bug` links Redmine bug IDs to one TestLink testcase through the corporate
-`CA_set_result.php` endpoint. It is a direct `testlink-mcp` tool and is not yet used by
+bug-link endpoint (`TESTLINK_BUG_LINK_ENDPOINT`). It is a direct `testlink-mcp` tool and is not yet used by
 `qa-integration-agent` report imports.
 
 ```text

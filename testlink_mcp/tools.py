@@ -190,8 +190,9 @@ RESOLVE_EXECUTION_TARGET_TOOL: dict[str, Any] = {
 LINK_BUG_TOOL: dict[str, Any] = {
     "name": "testlink_link_bug",
     "description": (
-        "Preview or link Redmine bug IDs to one testcase via CA_set_result.php. Always appends an execution; "
-        "the first link per build adds a Redmine note; links are not confirmed. Write needs preview_digest."
+        "Preview or link Redmine bug IDs to one testcase via the corporate bug-link endpoint. "
+        "Always appends an execution; the first link per build adds a Redmine note; links are not "
+        "confirmed. Write needs preview_digest."
     ),
     "inputSchema": {
         "type": "object",

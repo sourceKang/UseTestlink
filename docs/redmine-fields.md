@@ -13,25 +13,15 @@ Formal bugs must be created in the corporate Redmine/eITS workflow. A local Redm
 - Metadata discovery and template validation are read-only. Issue and comment writes require a matching preview digest and produce audit JSON.
 - `redmine_get_issue` and `redmine_list_projects` are read-only lookups. `redmine_get_issue` returns a safe field projection (description, status, tracker, priority, project, author, assignee, category, fixed version, custom fields, journals, attachment metadata) and always excludes watchers and time-tracking fields; it never writes and is not a substitute for `redmine_search_issues` when only a summary is needed. Both issue read tools mask embedded credentials and email local parts in every returned string (see `docs/redmine-mcp.md`).
 
-## Confirmed NeoX-series Custom Fields
+## Project-Specific Custom Fields
 
-Read back from corporate project `neox-series` (id 1560) on 2026-09-23. Use IDs, not names, for filters.
+Custom field IDs differ per corporate project. Read them with `redmine_get_project_metadata`
+(or a read-only `redmine_get_issue`) and filter by ID, not by display name. Keep the confirmed
+IDs for a project in a local, git-ignored note such as `local/docs/redmine-fields-<project>.md`;
+do not commit corporate project identifiers or field IDs to this public repository.
 
-```text
-5    FW Ver              string
-14   Model               list (array)   e.g. ["NXC400"]
-23   SW Platform         string
-31   Test case No        string         TestLink full external ID, e.g. MSAN1-20189; free text, may be "N/A ..."
-35   Problem Category    string         e.g. Regression, Design issue
-37   Plan Fix Version    string
-43   Fix Version         string         build that fixed the issue; built-in fixed_version is unused
-123  Reporter Email      string         masked on read
-```
-
-"Release Note Verify" is a TestLink feature where QA manually closes Redmine bugs that have been
-released. Its Platform and Result columns come from TestLink execution data, not Redmine custom
-fields. Closing issues stays a manual QA action in TestLink: agents may prepare a read-only list of
-close candidates, but must never close or change the status of a Redmine issue.
+Closing released bugs is a manual QA action in the corporate TestLink. Agents may prepare a
+read-only list of close candidates, but must never close or change the status of a Redmine issue.
 
 ## Required Target Configuration
 

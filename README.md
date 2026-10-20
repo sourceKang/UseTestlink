@@ -196,10 +196,10 @@ row policy and payload into `preview_digest`, and verify the written testcase wi
 `create_test_case` or `update_test_case` bypass names.
 
 `testlink_link_bug` (execution toolset) previews or links Redmine bug IDs to one testcase
-through the corporate `CA_set_result.php` endpoint. It always appends an execution with the
+through the corporate bug-link endpoint (`TESTLINK_BUG_LINK_ENDPOINT`). It always appends an execution with the
 given status, TestLink adds a Redmine note on the first link per build, and the link itself
 cannot be read back, so a write ends as `submitted` with `verification_status=link_unverified`.
-It requires `TESTLINK_TESTER_ID` in the TestLink MCP env file.
+It requires `TESTLINK_TESTER_ID` and `TESTLINK_BUG_LINK_ENDPOINT` in the TestLink MCP env file.
 
 The pure server does not expose the integrated `testlink_upload_report`, legacy
 `report_result`/`report_results_batch`, legacy `link_bug`, or `overwrite_result` paths. See

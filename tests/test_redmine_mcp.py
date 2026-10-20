@@ -829,16 +829,16 @@ class RedmineMcpApiTests(unittest.TestCase):
         client = FakeRedmineClient()
         client.issue_detail_override = {
             "id": 88,
-            "subject": "NXC400 crash",
+            "subject": "MODEL-1 crash",
             "description": "Full repro steps.",
             "status": {"id": 1, "name": "New"},
             "tracker": {"id": 1, "name": "Bug"},
             "priority": {"id": 5, "name": "L2"},
-            "project": {"id": 42, "name": "NXC400"},
+            "project": {"id": 42, "name": "MODEL-1"},
             "author": {"id": 3, "name": "QA Bot"},
             "assigned_to": {"id": 9, "name": "Owner"},
             "custom_fields": [
-                {"id": 31, "name": "Test case No", "value": "MSAN1-20189"},
+                {"id": 31, "name": "Test case No", "value": "PRJ-20189"},
                 {"id": 34, "name": "Reporter ", "value": ["QA Bot"]},
             ],
             "journals": [
@@ -849,7 +849,7 @@ class RedmineMcpApiTests(unittest.TestCase):
                     "created_on": "2026-01-01T00:00:00Z",
                     "details": [
                         {"property": "attr", "name": "status_id", "old_value": "1", "new_value": "3"},
-                        {"property": "cf", "name": "31", "old_value": "", "new_value": "MSAN1-20189"},
+                        {"property": "cf", "name": "31", "old_value": "", "new_value": "PRJ-20189"},
                         {"property": "cf", "name": "119", "old_value": "Wish", "new_value": None},
                     ],
                 }
@@ -870,7 +870,7 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         issue = result["result"]["issue"]
         self.assertEqual("Full repro steps.", issue["description"])
-        self.assertEqual("MSAN1-20189", issue["custom_fields"][0]["value"])
+        self.assertEqual("PRJ-20189", issue["custom_fields"][0]["value"])
         self.assertEqual("Reporter", issue["custom_fields"][1]["name"])
         self.assertEqual(1, issue["journal_count"])
         self.assertEqual("Retested on build 123.", issue["journals"][0]["notes"])
@@ -927,20 +927,20 @@ class RedmineMcpApiTests(unittest.TestCase):
         client = FakeRedmineClient()
         client.projects = [
             {"id": 738, "identifier": "ems-map", "name": "EMS Map", "status": 1},
-            {"id": 1560, "identifier": "neox-series", "name": "NeoX-series", "status": 1},
+            {"id": 77, "identifier": "product-series", "name": "Product-series", "status": 1},
         ]
         client.project_total = 250
         with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
             result = api.redmine_list_projects(
                 operation_id="operation-list-projects",
                 environment="sandbox",
-                query="NEOX",
+                query="PRODUCT",
             )
 
         self.assertTrue(result["ok"])
         self.assertEqual(250, result["result"]["total_count"])
         self.assertTrue(result["result"]["truncated"])
-        self.assertEqual(["neox-series"], [project["identifier"] for project in result["result"]["projects"]])
+        self.assertEqual(["product-series"], [project["identifier"] for project in result["result"]["projects"]])
 
     def test_search_builds_redmine_filters_and_returns_requested_custom_fields(self) -> None:
         client = FakeRedmineClient()
@@ -950,8 +950,8 @@ class RedmineMcpApiTests(unittest.TestCase):
                 "subject": "[Regression] NETCONF",
                 "status": {"name": "Resolved"},
                 "custom_fields": [
-                    {"id": 43, "name": "Fix Version", "value": "V1.03(ACKG.0)b5"},
-                    {"id": 31, "name": "Test case No", "value": "MSAN1-20189"},
+                    {"id": 43, "name": "Fix Version", "value": "V1.00(ABCD.0)b5"},
+                    {"id": 31, "name": "Test case No", "value": "PRJ-20189"},
                     {"id": 123, "name": "Reporter Email", "value": "qa.person@example.com"},
                 ],
             }
@@ -960,7 +960,7 @@ class RedmineMcpApiTests(unittest.TestCase):
             result = api.redmine_search_issues(
                 operation_id="operation-search-filters",
                 environment="sandbox",
-                project_id="neox-series",
+                project_id="product-series",
                 status_id="*",
                 subject_contains="NETCONF",
                 custom_field_filters=[{"id": "43", "value": "b5", "match": "contains"}],
@@ -979,7 +979,7 @@ class RedmineMcpApiTests(unittest.TestCase):
         issue = result["result"]["issues"][0]
         self.assertEqual(
             [
-                {"id": 31, "name": "Test case No", "value": "MSAN1-20189"},
+                {"id": 31, "name": "Test case No", "value": "PRJ-20189"},
                 {"id": 123, "name": "Reporter Email", "value": "*****@example.com"},
             ],
             issue["custom_fields"],
@@ -989,14 +989,14 @@ class RedmineMcpApiTests(unittest.TestCase):
     def test_search_fails_closed_when_redmine_ignores_custom_field_filter(self) -> None:
         client = FakeRedmineClient()
         client.search_results = [
-            {"id": 1, "subject": "match", "custom_fields": [{"id": 43, "value": "V1.03(ACKG.0)b5"}]},
-            {"id": 2, "subject": "leaked-other-build", "custom_fields": [{"id": 43, "value": "V1.02(ACKG.0)b9"}]},
+            {"id": 1, "subject": "match", "custom_fields": [{"id": 43, "value": "V1.00(ABCD.0)b5"}]},
+            {"id": 2, "subject": "leaked-other-build", "custom_fields": [{"id": 43, "value": "V0.99(ABCD.0)b9"}]},
         ]
         with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
             result = api.redmine_search_issues(
                 operation_id="operation-search-ignored",
                 environment="sandbox",
-                custom_field_filters=[{"id": "43", "value": "V1.03(ACKG.0)b5"}],
+                custom_field_filters=[{"id": "43", "value": "V1.00(ABCD.0)b5"}],
             )
 
         self.assertFalse(result["ok"])
