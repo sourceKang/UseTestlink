@@ -3,6 +3,15 @@
 # Runs the same offline checks as CI before every commit.
 set -e
 
+# Warn (never block) when committing a feature branch in the shared main checkout.
+if [ "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)" ]; then
+  branch=$(git symbolic-ref --quiet --short HEAD || echo "(detached)")
+  if [ "$branch" != "main" ]; then
+    echo "warning: committing '$branch' in the main checkout; other sessions share this" >&2
+    echo "         working tree. Prefer a worktree (docs/claude-setup.md section 6)." >&2
+  fi
+fi
+
 git diff --cached --check
 
 "${PYTHON:-python}" -m unittest discover -s tests -q

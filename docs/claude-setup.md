@@ -150,6 +150,19 @@ testlink-agent doctor --server qa `
 沒有指定時才沿用 PATH 查找，找不到仍回傳 error。
 健檢不啟動執行檔，也不證明它的內容或套件身分；仍需核對安裝來源。
 
+## 6. 多個 session 並行開發
+
+同時開多個 Claude／Codex session 時，主 checkout（`D:\UseTestlink`）共用一份工作目錄與 index，
+一個 session 的未提交改動或 commit 會落到另一個 session 的分支上，推送時被一起帶進 PR。
+
+- 會 commit 的 session 一律在自己的 worktree 工作（例如 `.claude/worktrees/<名稱>`），從 `origin/main` 開分支。
+- 主 checkout 只做唯讀查詢、`main` 的更新與啟用設定；不要在這裡切分支開發。
+- 更新別人的 PR 分支時，另開 detached worktree 從 `origin/<分支>` 檢出，不要沿用本機同名分支，以免帶入未推送的 commit。
+- worktree 只含 git 追蹤的檔案；依賴 `.env`、`local/` 的測試在 worktree 會跳過，需要時改在主 checkout 驗證。
+- 合併後用 `git worktree remove <路徑>` 與 `git branch -d <分支>` 清理。
+
+啟用 `git config core.hooksPath .githooks` 後，在主 checkout 的非 `main` 分支 commit 時，pre-commit 會顯示警告但不擋下。
+
 ## 官方參考
 
 - [Claude Code MCP](https://code.claude.com/docs/en/mcp)

@@ -21,6 +21,8 @@ Paste real output from this branch, not a plan. Show before and after.
 
 ## Safety impact
 
+If Merge Danger says `offline-only` and no code path changed, write `n/a: docs-only` instead of ticking boxes. Any code change ticks every item.
+
 - [ ] Preview remains the default for every write-capable path.
 - [ ] Write requires explicit confirmation and a matching preview digest.
 - [ ] `corp` / `sandbox` guard is enforced at the server boundary.
