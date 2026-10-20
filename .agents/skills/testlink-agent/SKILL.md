@@ -12,6 +12,7 @@ description: Route work in the testlink-agent repository to the smallest TestLin
 - testcase 建立或更新：`testlink-testcase-maintenance`
 - Redmine issue、metadata、evidence comment：`redmine-issue`
 - MCP package 發布、安裝、rollback：`mcp-release`
+- 使用者要求復盤 session、找 token 浪費：`retro`（只讀、只提案）
 
 若只修改純程式且不碰上述流程，遵守 `AGENTS.md` 與相關測試即可。
 

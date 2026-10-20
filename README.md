@@ -344,6 +344,21 @@ The Definition of Done also requires synchronized documentation, secret/reposito
 hygiene checks, and confirmation that no `.env`, `local/`, API key, devKey, or downloaded
 report is staged.
 
+The same checks run automatically:
+
+- GitHub Actions (`.github/workflows/tests.yml`) runs `git diff --check` and the offline
+  suite on every pull request and push to `main`, on Windows with Python 3.10 and 3.14.
+  It uses no secrets and never connects to TestLink or Redmine.
+- `tests/test_sensitive_paths.py` fails when a git-ignored sensitive path (`.env`,
+  `local/`, reports, `.mcp.json`, `*.local.*`, ...) is tracked or staged, e.g. via
+  `git add -f`.
+- An optional pre-commit hook runs `git diff --cached --check` and the offline suite
+  (about 20 seconds). Enable it once per clone; it applies to every worktree:
+
+```powershell
+git config core.hooksPath .githooks
+```
+
 ## Legacy CLI Reference
 
 The following CLI workflow remains available for migration, rollback, or environments
