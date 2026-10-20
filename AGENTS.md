@@ -22,7 +22,7 @@
 
 先用 `.agents/skills/testlink-agent/SKILL.md` 路由，只讀本次任務需要的 skill：報表匯入 `qa-report-import`；TestLink execution `testlink-execution`；testcase 維護 `testlink-testcase-maintenance`；Redmine `redmine-issue`；發布安裝 `mcp-release`。
 
-架構邊界讀 `docs/architecture.md`；write/resume 讀 `docs/workflow.md`；Redmine 欄位讀 `docs/redmine-fields.md`。不要為單一任務載入所有文件。
+架構邊界讀 `docs/architecture.md`；write/resume 讀 `docs/workflow.md`；Redmine 欄位讀 `docs/redmine-fields.md`；多 session 並行與 worktree 讀 `docs/claude-setup.md` §6。不要為單一任務載入所有文件。
 
 ## 完成條件
 
