@@ -40,14 +40,14 @@ Do not publish a release tag from an unreviewed or partially merged branch.
 Install once per Windows user, not once per consuming project:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.2"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.3"
 ```
 
 If an editable or obsolete installation already exists, replace it explicitly:
 
 ```powershell
 pipx uninstall testlink-agent
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.2"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.3"
 ```
 
 Run `pipx ensurepath` once if the pipx binary directory is not already on `PATH`, then
@@ -100,10 +100,16 @@ verification never authorizes a TestLink execution or Redmine write.
 
 ## Upgrade
 
+Before upgrading to v1.9.3 or later from v1.9.2 or earlier, add
+`TESTLINK_BUG_LINK_ENDPOINT=<bug-link script name>` (a bare `name.php`, from your
+TestLink administrator) to the TestLink MCP env file. The endpoint name is no longer
+built in, so without it `testlink_link_bug` returns `CONFIG_MISSING`; other tools are
+unaffected. Do not commit the value.
+
 After a newer reviewed tag is published:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.2"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.3"
 ```
 
 Restart Codex and repeat source, entrypoint, and read-only smoke verification. Avoid
@@ -115,7 +121,7 @@ reproducible release identity.
 Reinstall the previously approved tag:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.4.0"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.2"
 ```
 
 Restart Codex and verify the installed version. Rollback changes only the local MCP
