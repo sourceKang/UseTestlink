@@ -101,7 +101,7 @@ Desktop 不會因註冊 MCP 自動讀取 repository 的 `CLAUDE.md`。
 - 建 build 請用 `testlink_create_build`（在 `execution`、`manual-qa`、`batch-import` 中），
   先預覽、確認後帶 digest 寫入；同名 build 會被拒絕，寫入後讀回驗證。
 - v1.9.0 起 testlink-mcp 的 `execution` toolset 提供 `testlink_link_bug`（把 Redmine bug 關聯到 TestLink TC）。
-  需在 testlink-mcp env 檔設定本人的 `TESTLINK_TESTER_ID`；寫入時 `audit_dir` 同樣要給可寫入的絕對路徑。
+  需在 testlink-mcp env 檔設定本人的 `TESTLINK_TESTER_ID` 與公司 bug 關聯端點名稱 `TESTLINK_BUG_LINK_ENDPOINT`（向 TestLink 管理者取得，不寫進 repo）；寫入時 `audit_dir` 同樣要給可寫入的絕對路徑。
   預覽要先檢查 `pre_write_checks`，寫入結果只會是 `submitted`／`link_unverified`，關聯須到 TestLink 頁面確認。
 - 呼叫 `qa_preview_report_artifact`，取得 operation ID、artifact 路徑與 digest。
 - 呼叫 `qa_read_preview_artifact`，使用同一組身分、路徑與 digest。

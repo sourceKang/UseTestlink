@@ -20,7 +20,7 @@ description: Use for exact TestLink target discovery and previewing or appending
 
 ## 關聯 Redmine bug（`testlink_link_bug`）
 
-需要 testlink-mcp env 檔設定 `TESTLINK_TESTER_ID`（使用者本人的 TestLink user ID，無預設值）；未設定會回 `CONFIG_MISSING`，請使用者自行補上，不要讀取或修改 env 檔，也不要改用其他帳號。
+需要 testlink-mcp env 檔設定 `TESTLINK_TESTER_ID`（使用者本人的 TestLink user ID，無預設值）與 `TESTLINK_BUG_LINK_ENDPOINT`（公司 bug 關聯端點名稱，無預設值）；未設定會回 `CONFIG_MISSING`，請使用者自行補上，不要讀取或修改 env 檔，也不要改用其他帳號。
 
 1. 用精確的 project、plan、platform、build、testcase external ID（不可帶 `_數字` 後綴）、`bug_ids`、`status`、`notes` 產生預覽。
 2. 寫入前先用 redmine-mcp `redmine_get_issue`（唯讀）查每張 bug 的狀態。若是 Resolved／Closed，要特別告知使用者：同一 build 第一次關聯時，仍會被自動留言「The bug is still exist on <project> <build>, please double check the issue」，RD 可能誤以為修好的 bug 還在。

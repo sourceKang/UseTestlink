@@ -86,7 +86,7 @@ class FakeTargetClient:
 
 class TestLinkBugTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.env = patch.dict(os.environ, {"TESTLINK_TESTER_ID": "1001"})
+        self.env = patch.dict(os.environ, {"TESTLINK_TESTER_ID": "1001", "TESTLINK_BUG_LINK_ENDPOINT": "bug_link.php"})
         self.env.start()
         os.environ.pop(custom_api.WEB_BASE_URL_ENV, None)
 
@@ -120,7 +120,7 @@ class TestLinkBugTests(unittest.TestCase):
         self.assertEqual(["259886", "260088"], preview["link"]["bug_ids"])
         self.assertEqual("1001", preview["link"]["tester_id"])
         self.assertEqual("f", preview["link"]["status"])
-        self.assertEqual("http://testlink.example/testlink/CA_set_result.php", preview["link"]["endpoint"])
+        self.assertEqual("http://testlink.example/testlink/bug_link.php", preview["link"]["endpoint"])
         self.assertEqual(
             {"external_id": "EMS-1", "id": "50", "name": "Login", "version_id": "60"},
             preview["target"]["testcase"],
@@ -160,6 +160,28 @@ class TestLinkBugTests(unittest.TestCase):
 
         self.assertFalse(result["ok"])
         self.assertEqual("CONFIG_MISSING", result["error"]["error"]["code"])
+        sent.assert_not_called()
+
+    def test_link_endpoint_has_no_default_and_must_be_a_script_name(self) -> None:
+        os.environ.pop("TESTLINK_BUG_LINK_ENDPOINT", None)
+        result, sent = self.run_link(FakeTargetClient())
+        self.assertFalse(result["ok"])
+        self.assertEqual("CONFIG_MISSING", result["error"]["error"]["code"])
+        for value in ("../bug_link.php", "dir/bug_link.php", "bug_link.php?x=1", "http://other/bug_link.php", "bug_link"):
+            with self.subTest(value=value):
+                os.environ["TESTLINK_BUG_LINK_ENDPOINT"] = value
+                result, sent = self.run_link(FakeTargetClient())
+                self.assertFalse(result["ok"])
+                self.assertEqual("CONFIG_INVALID", result["error"]["error"]["code"])
+                sent.assert_not_called()
+
+    def test_changing_the_endpoint_invalidates_the_preview_digest(self) -> None:
+        client = FakeTargetClient()
+        digest = self.preview_digest(client)
+        os.environ["TESTLINK_BUG_LINK_ENDPOINT"] = "other_link.php"
+        with TemporaryDirectory() as tmp:
+            result, sent = self.run_link(client, write=True, preview_digest=digest, audit_dir=tmp)
+        self.assertFalse(result["ok"])
         sent.assert_not_called()
 
     def test_non_numeric_tester_id_is_rejected(self) -> None:
@@ -206,7 +228,7 @@ class TestLinkBugTests(unittest.TestCase):
                 with self.subTest(write=value):
                     result, sent = self.run_link(
                         client,
-                        send=lambda base_url, params, timeout: ECHO_BODY,
+                        send=lambda base_url, endpoint, params, timeout: ECHO_BODY,
                         write=value,
                         preview_digest=digest,
                         audit_dir=tmp,
@@ -227,13 +249,20 @@ class TestLinkBugTests(unittest.TestCase):
                         f"TESTLINK_URL={XMLRPC_URL}",
                         "TESTLINK_DEVKEY=offline-devkey",
                         "TESTLINK_TESTER_ID=1001",
+                        "TESTLINK_BUG_LINK_ENDPOINT=bug_link.php",
                     ]
                 ),
                 encoding="utf-8",
             )
             cleared = {
                 key: ""
-                for key in ("TESTLINK_AGENT_PROFILE", "TESTLINK_URL", "TESTLINK_DEVKEY", "TESTLINK_TESTER_ID")
+                for key in (
+                    "TESTLINK_AGENT_PROFILE",
+                    "TESTLINK_URL",
+                    "TESTLINK_DEVKEY",
+                    "TESTLINK_TESTER_ID",
+                    "TESTLINK_BUG_LINK_ENDPOINT",
+                )
             }
             with (
                 patch.dict(os.environ, cleared),
@@ -295,7 +324,7 @@ class TestLinkBugTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             result, sent = self.run_link(
                 client,
-                send=lambda base_url, params, timeout: ECHO_BODY,
+                send=lambda base_url, endpoint, params, timeout: ECHO_BODY,
                 write=True,
                 preview_digest=digest,
                 audit_dir=tmp,
@@ -305,7 +334,8 @@ class TestLinkBugTests(unittest.TestCase):
 
         self.assertTrue(result["ok"], result)
         sent.assert_called_once()
-        base_url, params = sent.call_args.args
+        base_url, endpoint, params = sent.call_args.args
+        self.assertEqual("bug_link.php", endpoint)
         self.assertEqual("http://testlink.example/testlink", base_url)
         self.assertEqual(
             {
@@ -341,7 +371,7 @@ class TestLinkBugTests(unittest.TestCase):
                 digest = self.preview_digest(client)
                 result, _ = self.run_link(
                     client,
-                    send=lambda base_url, params, timeout: ECHO_BODY,
+                    send=lambda base_url, endpoint, params, timeout: ECHO_BODY,
                     write=True,
                     preview_digest=digest,
                     audit_dir=tmp,
@@ -357,14 +387,14 @@ class TestLinkBugTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             first, _ = self.run_link(
                 client,
-                send=lambda base_url, params, timeout: ECHO_BODY,
+                send=lambda base_url, endpoint, params, timeout: ECHO_BODY,
                 write=True,
                 preview_digest=digest,
                 audit_dir=tmp,
             )
             second, sent = self.run_link(
                 client,
-                send=lambda base_url, params, timeout: ECHO_BODY,
+                send=lambda base_url, endpoint, params, timeout: ECHO_BODY,
                 write=True,
                 preview_digest=digest,
                 audit_dir=tmp,
@@ -381,7 +411,7 @@ class TestLinkBugTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             first, _ = self.run_link(
                 client,
-                send=lambda base_url, params, timeout: "<html>Fatal error</html>",
+                send=lambda base_url, endpoint, params, timeout: "<html>Fatal error</html>",
                 write=True,
                 preview_digest=digest,
                 audit_dir=tmp,
@@ -389,7 +419,7 @@ class TestLinkBugTests(unittest.TestCase):
             audit = json.loads(next(Path(tmp).glob("*.json")).read_text(encoding="utf-8"))
             retry, sent = self.run_link(
                 client,
-                send=lambda base_url, params, timeout: ECHO_BODY,
+                send=lambda base_url, endpoint, params, timeout: ECHO_BODY,
                 write=True,
                 preview_digest=digest,
                 audit_dir=tmp,
@@ -410,14 +440,14 @@ class TestLinkBugTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             self.run_link(
                 client,
-                send=lambda base_url, params, timeout: "<html>Fatal error</html>",
+                send=lambda base_url, endpoint, params, timeout: "<html>Fatal error</html>",
                 write=True,
                 preview_digest=digest,
                 audit_dir=tmp,
             )
             retry, sent = self.run_link(
                 client,
-                send=lambda base_url, params, timeout: ECHO_BODY,
+                send=lambda base_url, endpoint, params, timeout: ECHO_BODY,
                 notes="Changed notes",
                 write=True,
                 preview_digest=changed_digest,
@@ -435,14 +465,14 @@ class TestLinkBugTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             first, _ = self.run_link(
                 client,
-                send=lambda base_url, params, timeout: ECHO_BODY,
+                send=lambda base_url, endpoint, params, timeout: ECHO_BODY,
                 write=True,
                 preview_digest=digest,
                 audit_dir=tmp,
             )
             second, sent = self.run_link(
                 client,
-                send=lambda base_url, params, timeout: ECHO_BODY,
+                send=lambda base_url, endpoint, params, timeout: ECHO_BODY,
                 bug_ids=["260088"],
                 write=True,
                 preview_digest=other_digest,
@@ -458,8 +488,8 @@ class TestLinkBugTests(unittest.TestCase):
         client = FakeTargetClient()
         digest = self.preview_digest(client)
 
-        def fail(base_url, params, timeout):
-            raise TestLinkError("CA_set_result.php request failed: timed out", code="HTTP_ERROR")
+        def fail(base_url, endpoint, params, timeout):
+            raise TestLinkError("Bug-link endpoint request failed: timed out", code="HTTP_ERROR")
 
         with TemporaryDirectory() as tmp:
             result, _ = self.run_link(client, send=fail, write=True, preview_digest=digest, audit_dir=tmp)
@@ -474,7 +504,7 @@ class TestLinkBugTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             self.run_link(
                 client,
-                send=lambda base_url, params, timeout: ECHO_BODY + "TESTLINK_DEVKEY=testlink-secret<br>",
+                send=lambda base_url, endpoint, params, timeout: ECHO_BODY + "TESTLINK_DEVKEY=testlink-secret<br>",
                 write=True,
                 preview_digest=digest,
                 audit_dir=tmp,
@@ -529,13 +559,14 @@ class CustomApiTests(unittest.TestCase):
         with patch.object(custom_api._opener, "open", side_effect=fake_open):
             body = custom_api.set_result(
                 "http://testlink.example/testlink/",
+                "bug_link.php",
                 {"tc_id": "EMS-1", "issue_id": "1,2", "notes": "a b&c"},
                 timeout=7,
             )
 
         self.assertEqual(ECHO_BODY, body)
         self.assertEqual(
-            "http://testlink.example/testlink/CA_set_result.php?tc_id=EMS-1&issue_id=1%2C2&notes=a+b%26c",
+            "http://testlink.example/testlink/bug_link.php?tc_id=EMS-1&issue_id=1%2C2&notes=a+b%26c",
             opened[0][0],
         )
         self.assertEqual(7, opened[0][1])

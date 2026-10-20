@@ -1022,12 +1022,12 @@ LINK_BUG_ACTION = "link-bug"
 LINK_BUG_STATUSES = ("p", "f", "b")
 MAX_LINK_BUG_IDS = 20
 DEFAULT_LINK_EXECUTION_DURATION = 5
-# A "_<n>" suffix makes CA_set_result.php report only step n, so the ID must end with "-<number>".
+# A "_<n>" suffix makes the bug-link endpoint report only step n, so the ID must end with "-<number>".
 _LINK_EXTERNAL_ID_RE = re.compile(r"^[^\s,]+-\d+$")
 _LINK_BUG_ID_RE = re.compile(r"^[1-9]\d{0,9}$")
 LINK_BUG_SIDE_EFFECTS = (
     "Appends one TestLink execution with the given status for this testcase/build/platform; "
-    "CA_set_result.php has no link-only mode.",
+    "the bug-link endpoint has no link-only mode.",
     "The first link of a Redmine bug in this build makes TestLink add the Redmine note "
     "\"The bug is still exist on <project> <build>, please double check the issue\" to that issue, "
     "even when the issue is Resolved or Closed; the note does not change the issue's updated_on.",
@@ -1064,6 +1064,7 @@ def _build_link_bug_plan(
     environment: str,
     target: dict[str, Any],
     base_url: str,
+    endpoint: str,
     tester_id: str,
     bug_ids: list[str],
     status: str,
@@ -1081,7 +1082,7 @@ def _build_link_bug_plan(
         "action": LINK_BUG_ACTION,
         "target": target,
         "request": {
-            "endpoint": f"{base_url}/{custom_api.SET_RESULT_ENDPOINT}",
+            "endpoint": f"{base_url}/{endpoint}",
             "params": {
                 "testplan_id": target["plan"]["id"],
                 "build_id": target["build"]["id"],
@@ -1238,6 +1239,7 @@ def testlink_link_bug(
         runtime = load_runtime(env_file=env_file, timeout=timeout)
         selected = validate_environment(environment, runtime.environment)
         tester_id = custom_api.configured_tester_id()
+        endpoint = custom_api.configured_link_endpoint()
         base_url = custom_api.web_base_url(runtime.settings.url)
         external_id = str(testcase_external_id or "").strip()
         if not _LINK_EXTERNAL_ID_RE.fullmatch(external_id):
@@ -1264,6 +1266,7 @@ def testlink_link_bug(
             environment=selected,
             target=target,
             base_url=base_url,
+            endpoint=endpoint,
             tester_id=tester_id,
             bug_ids=normalized_bugs,
             status=status,
@@ -1299,10 +1302,10 @@ def testlink_link_bug(
         )
         audit_id = started.name
         write_attempted = True
-        response_body = custom_api.set_result(base_url, params, timeout=runtime.settings.timeout)
+        response_body = custom_api.set_result(base_url, endpoint, params, timeout=runtime.settings.timeout)
         if not custom_api.response_reached(response_body):
             raise TestLinkError(
-                f"{custom_api.SET_RESULT_ENDPOINT} did not echo the request; the link outcome is unknown.",
+                "The bug-link endpoint did not echo the request; the link outcome is unknown.",
                 code="LINK_BUG_NOT_ECHOED",
             )
         readback = _link_execution_readback(client, params)

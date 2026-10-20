@@ -17,10 +17,10 @@ def build_args(**overrides):
     values = {
         "operation_id": "operation-create-build-1",
         "environment": "sandbox",
-        "project": "NetAtlasEMS",
-        "plan": "NetAtlas EMS",
-        "name": "03.00.11 (AAVV.221) b14_redhat",
-        "notes": "RedHat b14 regression",
+        "project": "DemoProject",
+        "plan": "Demo Plan",
+        "name": "1.00.00 (ABCD.0) b14_linux",
+        "notes": "b14 regression",
         "release_date": "2026-10-16",
     }
     values.update(overrides)
@@ -29,17 +29,17 @@ def build_args(**overrides):
 
 class FakeBuildClient:
     def __init__(self, *, builds=None, response=None, create_error=None, create_adds_build=True):
-        self.builds = list(builds or [{"id": "20644", "name": "03.00.11 (AAVV.221) b13_redhat"}])
+        self.builds = list(builds or [{"id": "400", "name": "1.00.00 (ABCD.0) b13_linux"}])
         self.response = response
         self.create_error = create_error
         self.create_adds_build = create_adds_build
         self.created = []
 
     def get_projects(self):
-        return [{"id": "67654", "name": "NetAtlasEMS"}]
+        return [{"id": "100", "name": "DemoProject"}]
 
     def get_project_test_plans(self, project_id):
-        return [{"id": "260150", "name": "NetAtlas EMS"}]
+        return [{"id": "200", "name": "Demo Plan"}]
 
     def get_builds(self, testplan_id):
         return list(self.builds)
@@ -49,10 +49,10 @@ class FakeBuildClient:
         if self.create_error is not None:
             raise self.create_error
         if self.create_adds_build:
-            self.builds.append({"id": "20700", "name": payload["buildname"]})
+            self.builds.append({"id": "401", "name": payload["buildname"]})
         if self.response is not None:
             return self.response
-        return [{"status": True, "operation": "createBuild", "message": "Success!", "id": "20700"}]
+        return [{"status": True, "operation": "createBuild", "message": "Success!", "id": "401"}]
 
 
 def audits(directory: str) -> list[dict]:
@@ -83,11 +83,11 @@ class TestLinkCreateBuildTests(unittest.TestCase):
         self.assertTrue(preview["planned_write"])
         self.assertFalse(preview["duplicate_found"])
         self.assertEqual(64, len(preview["preview_digest"]))
-        self.assertEqual("260150", preview["target"]["plan"]["id"])
+        self.assertEqual("200", preview["target"]["plan"]["id"])
         self.assertEqual(
             {
-                "name": "03.00.11 (AAVV.221) b14_redhat",
-                "notes": "RedHat b14 regression",
+                "name": "1.00.00 (ABCD.0) b14_linux",
+                "notes": "b14 regression",
                 "release_date": "2026-10-16",
                 "active": True,
                 "open": True,
@@ -96,12 +96,12 @@ class TestLinkCreateBuildTests(unittest.TestCase):
         )
 
     def test_existing_name_is_reported_and_blocks_write(self) -> None:
-        client = FakeBuildClient(builds=[{"id": "20644", "name": "03.00.11  (AAVV.221) B14_redhat "}])
+        client = FakeBuildClient(builds=[{"id": "400", "name": "1.00.00  (ABCD.0) B14_linux "}])
         preview = self.run_tool(client)
         self.assertTrue(preview["ok"], preview)
         self.assertFalse(preview["result"]["planned_write"])
         self.assertTrue(preview["result"]["duplicate_found"])
-        self.assertEqual("20644", preview["result"]["duplicates"][0]["id"])
+        self.assertEqual("400", preview["result"]["duplicates"][0]["id"])
 
         with TemporaryDirectory() as tmp:
             result = self.run_tool(
@@ -170,9 +170,9 @@ class TestLinkCreateBuildTests(unittest.TestCase):
         self.assertEqual(
             [
                 {
-                    "testplanid": "260150",
-                    "buildname": "03.00.11 (AAVV.221) b14_redhat",
-                    "buildnotes": "RedHat b14 regression",
+                    "testplanid": "200",
+                    "buildname": "1.00.00 (ABCD.0) b14_linux",
+                    "buildnotes": "b14 regression",
                     "active": 1,
                     "open": 1,
                     "releasedate": "2026-10-16",
@@ -182,7 +182,7 @@ class TestLinkCreateBuildTests(unittest.TestCase):
         )
         self.assertEqual("success", result["result"]["status"])
         self.assertEqual("verified", result["result"]["verification_status"])
-        self.assertEqual({"id": "20700", "name": "03.00.11 (AAVV.221) b14_redhat"}, result["result"]["build"])
+        self.assertEqual({"id": "401", "name": "1.00.00 (ABCD.0) b14_linux"}, result["result"]["build"])
         self.assertEqual(1, len(recorded))
         self.assertEqual("success", recorded[0]["status"])
         self.assertEqual("create-build", recorded[0]["action"])
@@ -235,7 +235,7 @@ class TestLinkCreateBuildTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             result = self.run_tool(client, write=True, preview_digest=digest, audit_dir=tmp)
         self.assertTrue(result["ok"], result)
-        self.assertEqual("20700", result["result"]["build"]["id"])
+        self.assertEqual("401", result["result"]["build"]["id"])
 
     def test_missing_readback_fails_and_retry_recovers_once_build_appears(self) -> None:
         client = FakeBuildClient(create_adds_build=False)
@@ -244,7 +244,7 @@ class TestLinkCreateBuildTests(unittest.TestCase):
             first = self.run_tool(client, write=True, preview_digest=digest, audit_dir=tmp)
             self.assertEqual(["verification_failed"], [record["status"] for record in audits(tmp)])
             still_missing = self.run_tool(client, write=True, preview_digest=digest, audit_dir=tmp)
-            client.builds.append({"id": "20701", "name": "03.00.11 (AAVV.221) b14_redhat"})
+            client.builds.append({"id": "402", "name": "1.00.00 (ABCD.0) b14_linux"})
             recovered = self.run_tool(client, write=True, preview_digest=digest, audit_dir=tmp)
 
         self.assertFalse(first["ok"])
@@ -253,7 +253,7 @@ class TestLinkCreateBuildTests(unittest.TestCase):
         self.assertEqual("BUILD_WRITE_INDETERMINATE", still_missing["error"]["error"]["code"])
         self.assertTrue(recovered["ok"], recovered)
         self.assertEqual("skipped-resume", recovered["result"]["status"])
-        self.assertEqual("20701", recovered["result"]["build"]["id"])
+        self.assertEqual("402", recovered["result"]["build"]["id"])
         self.assertEqual(1, len(client.created))
 
     def test_exception_during_create_is_indeterminate_and_redacted(self) -> None:

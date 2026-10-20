@@ -13,10 +13,10 @@ def latest_args(**overrides):
     values = {
         "operation_id": "latest-results-1",
         "environment": "sandbox",
-        "project": "NetAtlasEMS",
-        "plan": "NetAtlas EMS",
-        "platform": "NetAtlas EMS",
-        "build": "03.00.11 (AAVV.221) b13_redhat",
+        "project": "DemoProject",
+        "plan": "Demo Plan",
+        "platform": "Demo Plan",
+        "build": "1.00.00 (ABCD.0) b13_linux",
     }
     values.update(overrides)
     return values
@@ -25,24 +25,24 @@ def latest_args(**overrides):
 class FakeResultsClient:
     def __init__(self, results=None, failing=()):
         self.results = results or {
-            "EMS1-10": [{"id": "301", "status": "p", "tester_id": "37", "execution_ts": "2026-10-14 15:41:00"}],
-            "EMS1-2": [{"id": "302", "status": "f", "tester_id": "37", "execution_ts": "2026-10-14 15:41:01"}],
+            "EMS1-10": [{"id": "301", "status": "p", "tester_id": "1001", "execution_ts": "2026-10-14 15:41:00"}],
+            "EMS1-2": [{"id": "302", "status": "f", "tester_id": "1001", "execution_ts": "2026-10-14 15:41:01"}],
             "EMS1-3": [{"id": -1}],
         }
         self.failing = set(failing)
         self.queries = []
 
     def get_projects(self):
-        return [{"id": "67654", "name": "NetAtlasEMS"}]
+        return [{"id": "100", "name": "DemoProject"}]
 
     def get_project_test_plans(self, project_id):
-        return [{"id": "260150", "name": "NetAtlas EMS"}]
+        return [{"id": "200", "name": "Demo Plan"}]
 
     def get_platforms(self, testplan_id):
-        return [{"id": "49", "name": "NetAtlas EMS"}]
+        return [{"id": "300", "name": "Demo Plan"}]
 
     def get_builds(self, testplan_id):
-        return [{"id": "20644", "name": "03.00.11 (AAVV.221) b13_redhat"}]
+        return [{"id": "400", "name": "1.00.00 (ABCD.0) b13_linux"}]
 
     def get_plan_cases_by_external_id(self, testplan_id, platform_id):
         return {key: {"id": key} for key in self.results}
@@ -76,9 +76,9 @@ class LatestResultsTests(unittest.TestCase):
         self.assertEqual({"status": "n", "execution_id": None}, {
             key: outcome["rows"][2][key] for key in ("status", "execution_id")
         })
-        self.assertEqual("37", outcome["rows"][0]["tester_id"])
+        self.assertEqual("1001", outcome["rows"][0]["tester_id"])
         self.assertEqual(
-            {"testplan_id": "260150", "testcase_external_id": "EMS1-2", "build_id": "20644", "platform_id": "49"},
+            {"testplan_id": "200", "testcase_external_id": "EMS1-2", "build_id": "400", "platform_id": "300"},
             client.queries[1],
         )
 
