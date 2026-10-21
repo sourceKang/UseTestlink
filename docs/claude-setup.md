@@ -18,6 +18,9 @@ Windows Claude Code、Claude Desktop、真實 preview 產生及外部寫入仍�
 第一次為自己設定的同仁，請先看 repository 根目錄的 `ONBOARDING.md`：依情境說明安裝、env 檔、
 註冊、健檢與升級。本文件是 Claude 接入的細節參考。
 
+安裝套件後執行 `testlink-agent install-skills`，把 agent skill 複製到 `~/.claude/skills`，
+Claude Code（含 Desktop 的 Code 分頁）就能在任何專案依任務載入；升級後要再執行一次。
+
 
 1. 依 `deployment.md` 安裝經審查的發布版本。
 2. 用 `Get-Command qa-integration-agent-mcp | Select-Object Source` 找到實際執行檔。
