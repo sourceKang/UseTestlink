@@ -40,14 +40,14 @@ Do not publish a release tag from an unreviewed or partially merged branch.
 Install once per Windows user, not once per consuming project:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.3"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.4"
 ```
 
 If an editable or obsolete installation already exists, replace it explicitly:
 
 ```powershell
 pipx uninstall testlink-agent
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.3"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.4"
 ```
 
 Run `pipx ensurepath` once if the pipx binary directory is not already on `PATH`, then
@@ -122,7 +122,7 @@ unaffected. Do not commit the value.
 After a newer reviewed tag is published:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.3"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.4"
 ```
 
 Run `testlink-agent install-skills` to refresh the installed skills, restart Codex and
@@ -135,7 +135,7 @@ reproducible release identity.
 Reinstall the previously approved tag:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.2"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.3"
 ```
 
 Restart Codex and verify the installed version. Rollback changes only the local MCP
