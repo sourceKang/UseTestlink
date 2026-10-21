@@ -53,6 +53,19 @@ pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.3"
 Run `pipx ensurepath` once if the pipx binary directory is not already on `PATH`, then
 open a new terminal.
 
+The package also ships the agent skills from `.agents/skills` (except repository-only
+skills such as `retro`) and the docs they cite. Copy them into the Claude Code skills
+directory with:
+
+```powershell
+testlink-agent install-skills            # add --dry-run to preview, --target to choose a directory
+```
+
+Each skill is written to `~/.claude/skills/<name>/` with a `.testlink-agent-skill` marker,
+its `references/`, and the cited docs under `docs/`; `docs/<name>.md` references are
+rewritten to those copies. A same-named directory without the marker is skipped (exit
+code 1) unless `--force` is given. Re-run the command after every upgrade.
+
 ## Codex Registration
 
 Register only the task-scoped executable in the user-level Codex `config.toml`. Use
@@ -112,7 +125,8 @@ After a newer reviewed tag is published:
 pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.3"
 ```
 
-Restart Codex and repeat source, entrypoint, and read-only smoke verification. Avoid
+Run `testlink-agent install-skills` to refresh the installed skills, restart Codex and
+Claude Code, and repeat source, entrypoint, and read-only smoke verification. Avoid
 installing directly from a moving `main` branch for formal use because it is not a
 reproducible release identity.
 

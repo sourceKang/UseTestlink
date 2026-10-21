@@ -25,6 +25,7 @@ from .config import DEFAULT_AUDIT_DIR, DEFAULT_CATALOG_PATH, DEFAULT_PROFILES_PA
 
 
 from .doctor import command_doctor
+from .skills_install import command_install_skills
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +48,15 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--executable", dest="executable_path", help="Check this absolute executable path instead of PATH; never launch it.")
     doctor.add_argument("--json", action="store_true", help="Print structured diagnostic results.")
     doctor.set_defaults(func=command_doctor)
+
+    install_skills = subparsers.add_parser(
+        "install-skills", help="Copy the TestLink Agent skills into the Claude skills directory (~/.claude/skills)."
+    )
+    install_skills.add_argument("--target", help="Skills directory to install into; defaults to ~/.claude/skills.")
+    install_skills.add_argument("--force", action="store_true", help="Replace same-named skills not installed by testlink-agent.")
+    install_skills.add_argument("--dry-run", action="store_true", help="Show what would be installed without writing.")
+    install_skills.add_argument("--json", action="store_true", help="Print structured results.")
+    install_skills.set_defaults(func=command_install_skills)
 
     list_projects = subparsers.add_parser("list-projects", help="List visible TestLink projects.")
     list_projects.set_defaults(func=command_list_projects)

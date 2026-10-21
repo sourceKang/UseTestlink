@@ -29,4 +29,16 @@ packages = [
   "testlink_agent_core.handlers",
   "testlink_agent_core.tools",
   "testlink_mcp",
+  "testlink_agent_skills",
+  "testlink_agent_docs",
 ]
+
+# Skills and the docs they cite ship with the package so `testlink-agent install-skills`
+# works from a pipx install without a checkout.
+[tool.setuptools.package-dir]
+testlink_agent_skills = ".agents/skills"
+testlink_agent_docs = "docs"
+
+[tool.setuptools.package-data]
+testlink_agent_skills = ["**/*.md", "**/*.yaml"]
+testlink_agent_docs = ["*.md"]

@@ -71,6 +71,10 @@ This installs the following console entrypoints:
 - `qa-integration-agent-mcp`
 - `testlink-agent` and `testlink-agent-mcp` for legacy compatibility
 
+`testlink-agent install-skills` copies the packaged agent skills, with the docs they cite,
+into `~/.claude/skills` so Claude Code can use them from any project (see
+`docs/deployment.md`).
+
 ## Credential Separation
 
 Keep credentials in ignored local files. Do not pass credentials in MCP tool arguments

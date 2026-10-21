@@ -48,13 +48,27 @@ pipx install "git+https://github.com/sourceKang/UseTestlink.git@<版本 tag>"
 安裝後會有這些執行檔（位於 `%USERPROFILE%\.local\bin`）：
 
 - `testlink-mcp`、`redmine-mcp`、`qa-integration-agent-mcp`：MCP 服務
-- `testlink-agent`：命令列工具，用來執行 `doctor` 健檢
+- `testlink-agent`：命令列工具，用來執行 `doctor` 健檢與安裝 skill
 
 確認位置：
 
 ```powershell
 Get-Command testlink-mcp, redmine-mcp, qa-integration-agent-mcp | Select-Object Source
 ```
+
+### 3.1 安裝 skill（建議）
+
+skill 是給 agent 看的操作步驟，例如「回報結果前先解析 target、先預覽再寫入」。安裝後，
+Claude Code（包含 Claude Desktop 的 Code 分頁）在任何專案都會依情境自動載入：
+
+```powershell
+testlink-agent install-skills --dry-run
+testlink-agent install-skills
+```
+
+- 會複製到 `%USERPROFILE%\.claude\skills\`，每個 skill 附上它引用的文件，不需要 clone 這個 repo。
+- 已有同名、但不是這個工具安裝的 skill 會被略過並回報（退出碼 1），不會被覆蓋；確定要取代才加 `--force`。
+- 安裝後重新啟動 Claude Code。
 
 ## 4. 建立本機設定檔
 
@@ -252,7 +266,8 @@ Redmine 可以請 agent 用 `redmine_get_issue` 讀一張你知道的 issue。
    pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@<新版本 tag>"
    ```
 
-3. 重新執行第 6.1 節的健檢，再開啟 Claude／Codex。
+3. 執行 `testlink-agent install-skills`，把 skill 更新成新版內容。
+4. 重新執行第 6.1 節的健檢，再開啟 Claude／Codex。
 
 ## 9. 疑難排解
 
