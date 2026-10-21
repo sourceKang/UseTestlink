@@ -87,7 +87,8 @@
         "plan": {"type": "string", "minLength": 1},
         "platform": {"type": "string", "minLength": 1},
         "build": {"type": "string", "minLength": 1},
-        "redmine_create_bugs": {"type": "boolean"}
+        "redmine_create_bugs": {"type": "boolean"},
+        "testlink_bug_link": {"type": "boolean"}
       }
     },
     "item": {
@@ -129,6 +130,9 @@
           "$comment": "Reproduced verbatim from the redmine-mcp bug result, which owns its shape."
         },
         "testlink_write": {"enum": ["pending", "success", "skipped-resume", "failed"]},
+        "testlink_mode": {"enum": ["link-bug"]},
+        "testlink_link_status": {"enum": ["link_unverified"]},
+        "testlink_link_bug_ids": {"type": "array", "items": {"type": "string"}},
         "testlink_execution_id": {"type": ["string", "null"]},
         "testlink_target_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "testlink_audit_id": {"type": ["string", "null"]},

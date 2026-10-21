@@ -124,8 +124,8 @@ Execute retains the existing report-hash, confirmation, dedupe, and audit protec
 ## Protected Bug Linking
 
 `testlink_link_bug` links Redmine bug IDs to one TestLink testcase through the corporate
-bug-link endpoint (`TESTLINK_BUG_LINK_ENDPOINT`). It is a direct `testlink-mcp` tool and is not yet used by
-`qa-integration-agent` report imports.
+bug-link endpoint (`TESTLINK_BUG_LINK_ENDPOINT`). It is a direct `testlink-mcp` tool, and report
+imports use it when the preview opts in with `testlink_bug_link` (see below).
 
 ```text
 1. Resolve the exact project/plan/platform/build and confirm the testcase is in the plan/platform
@@ -142,6 +142,35 @@ bug-link endpoint (`TESTLINK_BUG_LINK_ENDPOINT`). It is a direct `testlink-mcp` 
 An unresolved attempt (`started` or `indeterminate`) blocks every later write of that
 `operation_id` with `LINK_BUG_INDETERMINATE`. The tool never closes issues or changes Redmine
 status. See `docs/testlink-mcp-v2.md` for the full contract.
+
+### Linking bugs during report import
+
+`qa_preview_report_artifact` accepts `testlink_bug_link: true` (default false; requires
+`redmine_create_bugs: true`). The flag is part of the plan and its `preview_digest`, the preview
+shows it at the top level and as `testlink_mode` per item, and a plan warning lists the side effects.
+Plans without the flag keep their previous shape and digest.
+
+During execute, a failed testcase whose Redmine bug was created or reused is written through
+`testlink_link_bug` instead of `testlink_report_execution`:
+
+```text
+1. Redmine bug created or reused (unchanged)
+2. testlink_link_bug preview with bug_ids=[issue id], the same status and final notes
+   (including REDMINE-ID), and execution duration rounded to whole minutes
+3. The preview's project/plan/platform/build must match the planned TestLink target, else TARGET_CHANGED
+4. Write with the link preview's digest; the audit item records testlink_mode=link-bug,
+   testlink_link_status=link_unverified, the bug IDs, and the read-back execution id
+5. A reused bug still gets its evidence comment
+```
+
+This writes one execution carrying both the result and the link, so the bug appears in the
+testcase's TestLink bug list and in release-note checks. Testcases without a Redmine bug (for
+example Pass) are written with `testlink_report_execution` as before. Each link uses its own child
+operation (`<operation>-…-testlink-link`); resume retries a failed link with the same operation,
+and `testlink_link_bug` refuses it with `LINK_BUG_INDETERMINATE` if the earlier attempt may have
+reached TestLink. The coordinator child's `integration` toolset therefore includes
+`testlink_link_bug`, and the TestLink MCP env file needs `TESTLINK_TESTER_ID` and
+`TESTLINK_BUG_LINK_ENDPOINT`.
 
 ## Protected Testcase Maintenance
 

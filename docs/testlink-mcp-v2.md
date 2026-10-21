@@ -60,7 +60,8 @@ Every attempted write creates a redacted `started` audit under `local/testlink_a
 
 ## Protected Bug Linking
 
-`testlink_link_bug` (execution toolset only, not `integration`) links Redmine bug IDs to one
+`testlink_link_bug` (in `execution`, and in `integration` for qa-integration-agent imports that opt in
+with `testlink_bug_link`; see `docs/workflow.md`) links Redmine bug IDs to one
 testcase through the corporate custom bug-link endpoint, because TestLink's bug links have
 no native XML-RPC write. The endpoint's script name is site configuration and is not recorded
 in this repository: set `TESTLINK_BUG_LINK_ENDPOINT` (a bare `name.php`) in the TestLink MCP
