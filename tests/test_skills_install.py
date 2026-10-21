@@ -4,7 +4,6 @@ import contextlib
 import io
 import json
 import re
-import tomllib
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,6 +11,11 @@ from tempfile import TemporaryDirectory
 from qa_mcp_contracts.release import PACKAGE_VERSION
 from testlink_agent_core.cli import main
 from testlink_agent_core.skills_install import MARKER, REPO_ONLY_SKILLS, install_skills
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10: tomllib is 3.11+; only the packaging test needs it.
+    tomllib = None
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -101,6 +105,7 @@ class InstallSkillsTests(unittest.TestCase):
 
 
 class SkillPackagingTests(unittest.TestCase):
+    @unittest.skipIf(tomllib is None, "tomllib requires Python 3.11+")
     def test_pyproject_ships_skills_and_every_cited_doc(self) -> None:
         setuptools = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["setuptools"]
         self.assertIn("testlink_agent_skills", setuptools["packages"])
