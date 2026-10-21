@@ -27,6 +27,8 @@ STDERR_TAIL_LINES = 50
 class IntegrationPorts(Protocol):
     def testlink_execution(self, **kwargs: Any) -> dict[str, Any]: ...
 
+    def testlink_link_bug(self, **kwargs: Any) -> dict[str, Any]: ...
+
     def redmine_bug(self, **kwargs: Any) -> dict[str, Any]: ...
 
     def redmine_comment(self, **kwargs: Any) -> dict[str, Any]: ...
@@ -320,6 +322,15 @@ class StdioMcpPorts:
         return self._call(
             module="testlink_mcp.server",
             tool_name="testlink_report_execution",
+            arguments=kwargs,
+            env_pointer_name="TESTLINK_MCP_ENV_FILE",
+            env_pointer_value=self.testlink_env_file,
+        )
+
+    def testlink_link_bug(self, **kwargs: Any) -> dict[str, Any]:
+        return self._call(
+            module="testlink_mcp.server",
+            tool_name="testlink_link_bug",
             arguments=kwargs,
             env_pointer_name="TESTLINK_MCP_ENV_FILE",
             env_pointer_value=self.testlink_env_file,

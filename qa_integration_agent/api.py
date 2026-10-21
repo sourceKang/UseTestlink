@@ -69,6 +69,7 @@ def _plan_kwargs(kwargs: dict[str, Any], *, allow_reports: bool = False) -> dict
         "redmine_custom_priority",
         "redmine_template_file",
         "redmine_custom_fields",
+        "testlink_bug_link",
     }
     if allow_reports:
         allowed.add("reports")
@@ -160,6 +161,7 @@ def qa_read_preview_artifact(
             "environment": plan.get("environment"),
             "target": plan.get("target"),
             "redmine_create_bugs": plan.get("redmine_create_bugs"),
+            "testlink_bug_link": bool(plan.get("testlink_bug_link")),
             "section_counts": {key: len(plan[key]) for key in ("items", "warnings", "ignored")},
             "section": section,
             "offset": offset,

@@ -23,6 +23,14 @@ from .ports import IntegrationPorts, StdioMcpPorts
 from .template import render_custom_fields
 
 
+TESTLINK_BUG_LINK_WARNING = (
+    "testlink_bug_link: a failed testcase whose Redmine bug is created or reused is written through "
+    "testlink_link_bug instead of testlink_report_execution. That one execution carries the result and the "
+    "bug link; the first link of the bug in this build makes TestLink add a Redmine note; TestLink does "
+    "not confirm the link (check the testcase page)."
+)
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -320,6 +328,7 @@ class QaCoordinator:
         redmine_custom_priority: Any = None,
         redmine_template_file: str | None = None,
         redmine_custom_fields: Any = None,
+        testlink_bug_link: bool = False,
     ) -> dict[str, Any]:
         """Plan one TestLink execution per testcase from one report or one report per node.
 
@@ -355,6 +364,13 @@ class QaCoordinator:
             report_entries = [("", report_path)]
         if skip_policy not in {"ignore", "blocked"}:
             raise CoordinatorError("skip_policy must be ignore or blocked.", code="INVALID_ARGUMENT")
+        if not isinstance(testlink_bug_link, bool):
+            raise CoordinatorError("testlink_bug_link must be true or false.", code="INVALID_ARGUMENT")
+        if testlink_bug_link and not redmine_create_bugs:
+            raise CoordinatorError(
+                "testlink_bug_link links the Redmine bug of a failed testcase and requires redmine_create_bugs.",
+                code="INVALID_ARGUMENT",
+            )
         sources: list[dict[str, Any]] = []
         for label, path in report_entries:
             header, parsed = parse_report(path)
@@ -469,6 +485,8 @@ class QaCoordinator:
                     "testlink_preview": testlink_preview,
                 }
             )
+        if testlink_bug_link and any(item["redmine_request"] is not None for item in items):
+            warnings.append(TESTLINK_BUG_LINK_WARNING)
         target = {"project": project, "plan": plan, "platform": platform, "build": build}
         if multi:
             report_records = [
@@ -512,6 +530,9 @@ class QaCoordinator:
                 "ignored": ignored,
                 "warnings": warnings,
             }
+        if testlink_bug_link:
+            # Only present when enabled, so default plans keep their existing shape and digest.
+            plan_payload["testlink_bug_link"] = True
         plan_payload["preview_digest"] = payload_digest(plan_payload)
         return plan_payload
 
@@ -646,6 +667,8 @@ class QaCoordinator:
             }
             if redmine.get("existing_issue") is not None:
                 public_item["existing_issue"] = redmine["existing_issue"]
+            if plan.get("testlink_bug_link"):
+                public_item["testlink_mode"] = "link-bug" if item["redmine_request"] is not None else "report-execution"
             if item["result"].get("nodes") is not None:
                 public_item["nodes"] = [
                     {"label": node["label"], "raw_status": node["raw_status"], "duration": node["duration"]}
@@ -667,6 +690,7 @@ class QaCoordinator:
                 else {"report_schema": plan["report_schema"]}
             ),
             "target": plan["target"],
+            **({"testlink_bug_link": True} if plan.get("testlink_bug_link") else {}),
             "parsed_count": len(plan["items"]) + len(plan["ignored"]),
             "write_count": len(plan["items"]),
             "ignored_count": len(plan["ignored"]),
@@ -731,6 +755,7 @@ class QaCoordinator:
             "platform": plan["target"]["platform"],
             "build": plan["target"]["build"],
             "redmine_create_bugs": plan["redmine_create_bugs"],
+            **({"testlink_bug_link": True} if plan.get("testlink_bug_link") else {}),
         }
 
     @staticmethod
@@ -991,28 +1016,36 @@ class QaCoordinator:
                         f"Redmine field readback verification is unresolved for {external_id}.",
                         code="REDMINE_VERIFICATION_REQUIRED",
                     )
-                final_request = {
-                    **plan_item["testlink_request"],
-                    "notes": self._final_notes(plan_item["testlink_request"]["notes"], issue),
-                }
-                final_preview = require_result(
-                    self.ports.testlink_execution(**final_request),
-                    f"TestLink final preview {external_id}",
-                )
-                if payload_digest(final_preview["target"]) != item_audit["testlink_target_digest"]:
-                    raise CoordinatorError(
-                        f"Resolved TestLink target changed for {external_id}.",
-                        code="TARGET_CHANGED",
-                    )
-                testlink_result = require_result(
-                    self.ports.testlink_execution(
-                        **final_request,
-                        write=True,
-                        preview_digest=final_preview["preview_digest"],
+                final_notes = self._final_notes(plan_item["testlink_request"]["notes"], issue)
+                if plan.get("testlink_bug_link") and issue is not None:
+                    testlink_result = self._write_with_bug_link(
+                        plan=plan,
+                        plan_item=plan_item,
+                        item_audit=item_audit,
+                        issue=issue,
+                        notes=final_notes,
                         audit_dir=audit_dirs["testlink"],
-                    ),
-                    f"TestLink write {external_id}",
-                )
+                    )
+                else:
+                    final_request = {**plan_item["testlink_request"], "notes": final_notes}
+                    final_preview = require_result(
+                        self.ports.testlink_execution(**final_request),
+                        f"TestLink final preview {external_id}",
+                    )
+                    if payload_digest(final_preview["target"]) != item_audit["testlink_target_digest"]:
+                        raise CoordinatorError(
+                            f"Resolved TestLink target changed for {external_id}.",
+                            code="TARGET_CHANGED",
+                        )
+                    testlink_result = require_result(
+                        self.ports.testlink_execution(
+                            **final_request,
+                            write=True,
+                            preview_digest=final_preview["preview_digest"],
+                            audit_dir=audit_dirs["testlink"],
+                        ),
+                        f"TestLink write {external_id}",
+                    )
                 item_audit["testlink_write"] = "success"
                 item_audit["testlink_execution_id"] = testlink_result.get("execution_id")
                 item_audit["testlink_audit_id"] = testlink_result.get("audit_id")
@@ -1074,6 +1107,66 @@ class QaCoordinator:
             "audit_id": audit_path.name,
             "audit": audit,
         }
+
+    def _write_with_bug_link(
+        self,
+        *,
+        plan: dict[str, Any],
+        plan_item: dict[str, Any],
+        item_audit: dict[str, Any],
+        issue: dict[str, Any],
+        notes: str,
+        audit_dir: str,
+    ) -> dict[str, Any]:
+        """Write the failed result and the Redmine link as one TestLink execution.
+
+        testlink_link_bug confirms only that the request reached TestLink, so the
+        audit records the link as link_unverified. Its own operation audit refuses a
+        retry after an indeterminate attempt, which keeps resume from duplicating it.
+        """
+        request = plan_item["testlink_request"]
+        external_id = plan_item["result"]["external_id"]
+        link_request: dict[str, Any] = {
+            "operation_id": child_operation_id(plan["operation_id"], external_id, "testlink-link"),
+            "environment": request["environment"],
+            "project": request["project"],
+            "plan": request["plan"],
+            "platform": request["platform"],
+            "build": request["build"],
+            "testcase_external_id": request["testcase_external_id"],
+            "bug_ids": [str(issue["id"])],
+            "status": request["status"],
+            "notes": notes,
+        }
+        if request.get("execution_duration") is not None:
+            link_request["execution_duration"] = max(0, int(round(float(request["execution_duration"]))))
+        link_preview = require_result(
+            self.ports.testlink_link_bug(**link_request),
+            f"TestLink bug-link preview {external_id}",
+        )
+        planned_target = {
+            key: (link_preview.get("target") or {}).get(key) for key in ("project", "plan", "platform", "build")
+        }
+        if payload_digest(planned_target) != item_audit["testlink_target_digest"]:
+            raise CoordinatorError(
+                f"Resolved TestLink target changed for {external_id}.",
+                code="TARGET_CHANGED",
+            )
+        link_result = require_result(
+            self.ports.testlink_link_bug(
+                **link_request,
+                write=True,
+                preview_digest=link_preview["preview_digest"],
+                audit_dir=audit_dir,
+            ),
+            f"TestLink bug-link write {external_id}",
+        )
+        readback = link_result.get("execution_readback")
+        readback = readback if isinstance(readback, dict) else {}
+        item_audit["testlink_mode"] = "link-bug"
+        item_audit["testlink_link_status"] = str(link_result.get("verification_status") or "link_unverified")
+        item_audit["testlink_link_bug_ids"] = link_request["bug_ids"]
+        return {"execution_id": readback.get("execution_id"), "audit_id": link_result.get("audit_id")}
 
     @staticmethod
     def validate_traceability(audit: dict[str, Any]) -> dict[str, Any]:

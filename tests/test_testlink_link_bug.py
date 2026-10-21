@@ -587,7 +587,9 @@ class LinkBugToolSurfaceTests(unittest.TestCase):
 
     def test_tool_is_in_execution_toolset_only_among_task_toolsets(self) -> None:
         self.assertIn("testlink_link_bug", {tool["name"] for tool in tools_for_toolset("execution")})
-        for toolset in ("integration", "maintenance", "discovery"):
+        # The coordinator child (integration) writes failed import results through it when opted in.
+        self.assertIn("testlink_link_bug", {tool["name"] for tool in tools_for_toolset("integration")})
+        for toolset in ("maintenance", "discovery"):
             self.assertNotIn("testlink_link_bug", {tool["name"] for tool in tools_for_toolset(toolset)})
 
     def test_server_lists_tool_in_execution_toolset(self) -> None:

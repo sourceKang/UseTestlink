@@ -331,7 +331,7 @@ TOOLSET_ENV = "TESTLINK_MCP_TOOLSET"
 # "all" carries; write surfaces (execution, maintenance) and "all" are explicit opt-ins.
 DEFAULT_TOOLSET = "discovery"
 TOOLSETS: dict[str, set[str]] = {
-    "integration": {"testlink_report_execution"},
+    "integration": {"testlink_report_execution", "testlink_link_bug"},
     "execution": {
         "testlink_resolve_execution_target",
         "testlink_get_latest_results",
