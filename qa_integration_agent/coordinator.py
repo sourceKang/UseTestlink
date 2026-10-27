@@ -15,7 +15,7 @@ from qa_mcp_contracts import (
     validate_operation_context,
 )
 from testlink_agent_core.policy import build_dedupe_key, dedupe_digest, dedupe_marker
-from testlink_agent_core.reports import SCHEMA_HEADER_KEY, parse_report, result_to_dict
+from testlink_agent_core.reports import SCHEMA_HEADER_KEY, parse_report, report_readiness, result_to_dict
 
 from .audit import DEFAULT_AUDIT_DIR, read_workflow_audit, utc_now_iso, write_workflow_audit
 from .errors import CoordinatorError, normalize_error
@@ -181,6 +181,43 @@ def node_result_lines(nodes: list[dict[str, Any]] | None) -> list[str]:
     return lines
 
 
+def _readiness_override(
+    sources: list[dict[str, Any]],
+    reason: str | None,
+    warnings: list[str],
+) -> dict[str, Any] | None:
+    """Refuse not-ready reports unless a reason is given; return the override to record.
+
+    Missing Completeness headers only add warnings (see report_readiness).
+    """
+    issues: list[str] = []
+    for source in sources:
+        name = source["label"] or source["path"].name
+        report_issues, report_warnings = report_readiness(source["header"])
+        issues.extend(f"{name}: {issue}" for issue in report_issues)
+        warnings.extend(f"{name}: {warning}" for warning in report_warnings)
+    if reason is not None and not isinstance(reason, str):
+        raise CoordinatorError("readiness_override_reason must be a string.", code="INVALID_ARGUMENT")
+    reason = (reason or "").strip()
+    if not issues:
+        if reason:
+            raise CoordinatorError(
+                "readiness_override_reason was given but every report is ready; omit it.",
+                code="INVALID_ARGUMENT",
+            )
+        return None
+    if not reason:
+        raise CoordinatorError(
+            "Report is not ready for import: "
+            + "; ".join(issues)
+            + ". Rerun the missing tests or fix the case id drift, or pass readiness_override_reason "
+            "after the user accepts the risk.",
+            code="REPORT_NOT_READY",
+        )
+    warnings.append(f"Readiness override accepted ({reason}): " + "; ".join(issues))
+    return {"reason": reason, "issues": issues}
+
+
 def _row_status(parsed: Any, skip_policy: str) -> str | None:
     """Single-report status rule; None means the row is ignored."""
     if parsed.status is None and parsed.raw_status.casefold() in SKIP_RAW_STATUSES:
@@ -329,12 +366,15 @@ class QaCoordinator:
         redmine_template_file: str | None = None,
         redmine_custom_fields: Any = None,
         testlink_bug_link: bool = False,
+        readiness_override_reason: str | None = None,
     ) -> dict[str, Any]:
         """Plan one TestLink execution per testcase from one report or one report per node.
 
         `report` keeps the v1 plan. `reports` ([{label, path}], one per node)
         builds a v2 plan whose items aggregate every node's result for the
-        testcase; see _aggregate_node_reports for the rules.
+        testcase; see _aggregate_node_reports for the rules. A report whose
+        readiness header shows missing results or case id drift is refused
+        unless `readiness_override_reason` explains why it may still be imported.
         """
         validated_context = validate_operation_context(
             {
@@ -376,6 +416,7 @@ class QaCoordinator:
             header, parsed = parse_report(path)
             sources.append({"label": label, "path": path, "header": header, "parsed": parsed})
         warnings: list[str] = []
+        readiness_override = _readiness_override(sources, readiness_override_reason, warnings)
         if multi:
             writable, ignored, leads = self._aggregate_node_reports(sources, skip_policy, warnings)
         else:
@@ -533,6 +574,9 @@ class QaCoordinator:
         if testlink_bug_link:
             # Only present when enabled, so default plans keep their existing shape and digest.
             plan_payload["testlink_bug_link"] = True
+        if readiness_override is not None:
+            # Same rule: present only when a not-ready report was accepted with a reason.
+            plan_payload["readiness_override"] = readiness_override
         plan_payload["preview_digest"] = payload_digest(plan_payload)
         return plan_payload
 
@@ -691,6 +735,7 @@ class QaCoordinator:
             ),
             "target": plan["target"],
             **({"testlink_bug_link": True} if plan.get("testlink_bug_link") else {}),
+            **({"readiness_override": plan["readiness_override"]} if plan.get("readiness_override") else {}),
             "parsed_count": len(plan["items"]) + len(plan["ignored"]),
             "write_count": len(plan["items"]),
             "ignored_count": len(plan["ignored"]),
@@ -756,6 +801,8 @@ class QaCoordinator:
             "build": plan["target"]["build"],
             "redmine_create_bugs": plan["redmine_create_bugs"],
             **({"testlink_bug_link": True} if plan.get("testlink_bug_link") else {}),
+            # The accepted reason and issues stay in the workflow audit for traceability.
+            **({"readiness_override": plan["readiness_override"]} if plan.get("readiness_override") else {}),
         }
 
     @staticmethod

@@ -70,6 +70,7 @@ def _plan_kwargs(kwargs: dict[str, Any], *, allow_reports: bool = False) -> dict
         "redmine_template_file",
         "redmine_custom_fields",
         "testlink_bug_link",
+        "readiness_override_reason",
     }
     if allow_reports:
         allowed.add("reports")

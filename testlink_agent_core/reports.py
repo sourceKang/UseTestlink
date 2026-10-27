@@ -169,6 +169,8 @@ def parse_report(path: Path) -> tuple[dict[str, str], list[ParsedResult]]:
                 "Node IP",
                 "Node Chassis",
                 "Test Target Source",
+                "Completeness",
+                "Case ID Drift",
             }:
                     header[key] = value.strip()
         if line.strip() == TEST_RESULTS_MARKER:
@@ -193,6 +195,35 @@ def parse_report(path: Path) -> tuple[dict[str, str], list[ParsedResult]]:
             )
         )
     return header, results
+
+# A RestApi Auto report whose Completeness starts with one of these did not show a result for
+# every selected test (interrupted, cut off, or an xdist run that cannot tell).
+NOT_READY_COMPLETENESS_PREFIXES = ("Incomplete", "not evaluated")
+MISSING_COMPLETENESS_WARNING = (
+    "no Completeness header; the report cannot show that every selected test produced a result"
+)
+
+
+def report_readiness(header: dict[str, str]) -> tuple[list[str], list[str]]:
+    """Return (blocking issues, warnings) from a legacy report's readiness header lines.
+
+    RestApi Auto writes `Completeness:` and, when a service registered a TestLink id its
+    test did not declare, `Case ID Drift:`. Other schemas and producers carry neither,
+    so a missing Completeness line is only a warning.
+    """
+    if header.get(SCHEMA_HEADER_KEY) != LEGACY_WEB_EMS_SCHEMA:
+        return [], []
+    issues: list[str] = []
+    warnings: list[str] = []
+    completeness = header.get("Completeness")
+    if completeness is None:
+        warnings.append(MISSING_COMPLETENESS_WARNING)
+    elif completeness.startswith(NOT_READY_COMPLETENESS_PREFIXES):
+        issues.append(f"Completeness: {completeness}")
+    drift = header.get("Case ID Drift")
+    if drift:
+        issues.append(f"Case ID Drift: {drift}")
+    return issues, warnings
 
 def choose_latest_open_build(builds: list[dict[str, Any]]) -> dict[str, Any] | None:
     open_builds = [
