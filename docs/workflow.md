@@ -101,6 +101,31 @@ re-hash every report and refuse any change (`PREVIEW_MISMATCH` / `RESUME_MISMATC
 external write; the v2 workflow audit binds resume to every report hash as well. A
 single-report preview keeps the v1 plan, audit, and digest unchanged.
 
+### Report Readiness Gate
+
+RestApi Auto reports (`legacy-web-ems-report-v1`) carry readiness lines above `Test Results:`:
+`Completeness: Complete|Incomplete (X/Y selected tests have a result[; run interrupted])` or
+`not evaluated (...)`, and `Case ID Drift: N (...)` when a service registered a TestLink id its
+test did not declare. Every report (each one of `reports`) is checked right after parsing,
+before any TestLink or Redmine preview call:
+
+- `Completeness` starting with `Incomplete` or `not evaluated`, or any `Case ID Drift`, refuses
+  the preview with `REPORT_NOT_READY`, naming the report label (or file name) and each line.
+  Rerun the missing tests, fix the drift, or, only after the user accepts the risk, pass
+  `readiness_override_reason`.
+- With `readiness_override_reason`, the preview adds a `Readiness override accepted (...)`
+  warning, and the plan, public preview, and workflow audit record
+  `readiness_override: {reason, issues}`. The field exists only when an override was accepted,
+  so other plans keep their shape and digest. Passing a reason when every report is ready is
+  `INVALID_ARGUMENT`.
+- A legacy report without a `Completeness` line (older RestApi Auto reports and other
+  producers) only adds a `<report>: no Completeness header ...` warning. JUnit XML reports are
+  not checked.
+
+`testlink_upload_report` (CLI `upload-report`) applies the same rule with
+`readiness_override_reason` / `--readiness-override-reason`; its preview lists
+`readiness_warnings` and, when accepted, `readiness_override`, which the write audit also records.
+
 ## Confirmation Contract
 
 - `qa_preview_report_artifact` is read-only, persists the exact redacted plan/review under `local/`, and returns its path plus canonical `preview_digest`.

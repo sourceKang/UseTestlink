@@ -46,6 +46,7 @@ _BASE_DEFAULTS: dict[str, Any] = {
     "build_id": None,
     "report": None,
     "skip_policy": "ignore",
+    "readiness_override_reason": None,
     "write": False,
     "require_open_build": True,
     "progress": 0,

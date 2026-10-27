@@ -169,6 +169,7 @@ REPORT_TOOLS: list[dict[str, Any]] = [
                 "build_id": string("Build ID. Omit with build to use latest active/open build."),
                 "report": string("Automation report file path."),
                 "skip_policy": {"type": "string", "enum": ["ignore", "blocked"], "default": "ignore"},
+                "readiness_override_reason": string("User-accepted reason to import a not-ready report; audited."),
                 "write": {"type": "boolean", "default": False},
                 "require_open_build": {"type": "boolean", "default": True},
                 "redmine_create_bugs": {"type": "boolean", "default": False},

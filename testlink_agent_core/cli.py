@@ -293,6 +293,10 @@ def build_parser() -> argparse.ArgumentParser:
     build_group.add_argument("--build-id", help="Build ID. Omit with --build to use the latest active/open build.")
     upload.add_argument("--report", required=True)
     upload.add_argument("--skip-policy", choices=("ignore", "blocked"), default="ignore")
+    upload.add_argument(
+        "--readiness-override-reason",
+        help="User-accepted reason to import a report whose Completeness is not Complete or that lists Case ID Drift.",
+    )
     upload.add_argument("--write", action="store_true", help="Actually write results. Omit for preview only.")
     upload.add_argument("--require-open-build", action="store_true", default=True)
     upload.add_argument("--progress", type=int, default=25)

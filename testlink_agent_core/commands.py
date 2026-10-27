@@ -50,7 +50,7 @@ from .redmine import (
     redmine_issue_from_dict,
     redmine_issue_to_dict,
 )
-from .reports import SCHEMA_HEADER_KEY, map_results_to_plan, parse_report, result_to_dict
+from .reports import SCHEMA_HEADER_KEY, map_results_to_plan, parse_report, report_readiness, result_to_dict
 from .suites import collect_test_suites, resolve_suite_by_name
 from .testcases import create_testcase_payload, flatten_plan_cases, normalize_testcase, update_testcase_payload
 
@@ -83,6 +83,24 @@ def resolve_context(args: argparse.Namespace, client: TestLinkClient) -> dict[st
         "build": build,
     }
 
+def upload_readiness_override(header: dict[str, str], reason: str | None) -> dict[str, Any] | None:
+    """Refuse a not-ready report unless the user gave a reason; return the override to record."""
+    issues, _ = report_readiness(header)
+    reason = (reason or "").strip()
+    if not issues:
+        if reason:
+            raise TestLinkError("--readiness-override-reason was given but the report is ready; omit it.")
+        return None
+    if not reason:
+        raise TestLinkError(
+            "Report is not ready for import: "
+            + "; ".join(issues)
+            + ". Rerun the missing tests or fix the case id drift, or pass --readiness-override-reason "
+            "after the user accepts the risk."
+        )
+    return {"reason": reason, "issues": issues}
+
+
 def command_upload_report(args: argparse.Namespace) -> int:
     if args.redmine_create_bugs and args.redmine_issue_id:
         raise TestLinkError("--redmine-create-bugs and --redmine-issue-id cannot be used together.")
@@ -92,6 +110,7 @@ def command_upload_report(args: argparse.Namespace) -> int:
         raise TestLinkError(f"Report file does not exist: {report_path}")
 
     header, parsed = parse_report(report_path)
+    readiness_override = upload_readiness_override(header, getattr(args, "readiness_override_reason", None))
     if args.skip_policy == "blocked":
         for result in parsed:
             if result.raw_status.lower() in ("skip", "skipped"):
@@ -197,6 +216,8 @@ def command_upload_report(args: argparse.Namespace) -> int:
         "write_status_counts": dict(Counter(result.status for result in writable)),
         "failures_to_write": [result_to_dict(result) for result in writable if result.status == "f"],
         "ignored": [result_to_dict(result) for result in ignored],
+        "readiness_warnings": report_readiness(header)[1],
+        **({"readiness_override": readiness_override} if readiness_override else {}),
         "redmine": {
             "enabled": args.redmine_create_bugs or bool(args.redmine_issue_id),
             "dedupe": args.redmine_dedupe,
@@ -229,6 +250,8 @@ def command_upload_report(args: argparse.Namespace) -> int:
         parsed_count=len(parsed),
         write_count=len(writable),
     )
+    if readiness_override:
+        audit_record["readiness_override"] = readiness_override
 
     redmine_client = parse_redmine_client(args) if args.redmine_create_bugs else None
     successes: list[dict[str, Any]] = []

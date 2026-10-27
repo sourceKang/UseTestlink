@@ -20,6 +20,7 @@ PLAN_PROPERTIES: dict[str, Any] = {
     "build": string("Exact name."),
     "report": string("Local automation report path."),
     "skip_policy": {"type": "string", "enum": ["ignore", "blocked"], "default": "ignore"},
+    "readiness_override_reason": string("User-accepted reason to import a not-ready report; audited."),
     "redmine_create_bugs": {"type": "boolean", "default": False},
     "testlink_bug_link": {
         "type": "boolean",
