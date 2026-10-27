@@ -61,7 +61,7 @@ For MCPs shared by other Codex projects, install a tagged GitHub release into an
 isolated user environment. Do not point those projects at `D:\UseTestlink`:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.4"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.5"
 ```
 
 This installs the following console entrypoints:
