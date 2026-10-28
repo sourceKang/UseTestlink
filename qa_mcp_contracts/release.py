@@ -7,4 +7,4 @@ so the number a client shows is the release tag that was installed.
 from __future__ import annotations
 
 
-PACKAGE_VERSION = "1.9.5"
+PACKAGE_VERSION = "1.9.6"
