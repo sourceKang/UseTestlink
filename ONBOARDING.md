@@ -3,6 +3,11 @@
 這份指南帶你在自己的 Windows 電腦安裝 TestLink Agent 的 MCP 服務，並依工作情境設定給
 Claude（Desktop 或 Claude Code）或 Codex 使用。
 
+**不需要架 server。** 這些 MCP 服務是本機 stdio 程式：安裝後只是你電腦上的執行檔，
+Claude（或 Codex）開啟時自動在背景啟動、關閉時一併結束，不用開 port、不用部署主機。
+它們直接從你的電腦用你個人的 TestLink devKey 與 Redmine API key 連線，所以寫入紀錄
+都掛在你本人名下；每位同仁各自安裝、各自設定一次即可。
+
 > 這個 repository 是公開的。公司內部的實際值（TestLink／Redmine 網址、bug 關聯端點名稱、
 > 專案與欄位 ID）不寫在這裡，請向 TestLink 管理者或團隊內部文件取得，也不要貼到 issue、
 > PR 或對話裡。
