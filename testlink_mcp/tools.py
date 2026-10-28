@@ -277,6 +277,34 @@ CREATE_BUILD_TOOL: dict[str, Any] = {
 }
 
 
+MARK_AUTOMATED_TOOL: dict[str, Any] = {
+    "name": "testlink_mark_automated",
+    "description": (
+        "Preview or set the plan-linked versions of testcases to execution type Automated. "
+        "Preview lists the Manual ones; write needs preview_digest and is verified by readback."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "operation_id": string("Stable ID for audit and resume."),
+            "environment": {"type": "string", "enum": ["corp", "sandbox"]},
+            "project": string("Exact name."),
+            "plan": string("Exact name."),
+            "platform": string("Exact name."),
+            "testcase_external_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 1000},
+            "write": {"type": "boolean", "default": False},
+            "preview_digest": {"type": "string"},
+            "audit_dir": {"type": "string"},
+            "env_file": {"type": "string"},
+            "timeout": {"type": "integer", "minimum": 1, "default": 60},
+        },
+        "required": ["operation_id", "environment", "project", "plan", "platform", "testcase_external_ids"],
+    },
+    "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True},
+}
+
+
 LATEST_RESULTS_TOOL: dict[str, Any] = {
     "name": "testlink_get_latest_results",
     "description": (
@@ -322,6 +350,7 @@ TOOLS = [
     CREATE_BUILD_TOOL,
     CREATE_TESTCASE_TOOL,
     UPDATE_TESTCASE_TOOL,
+    MARK_AUTOMATED_TOOL,
     *(tool for tool in LEGACY_TOOLS if tool["name"] not in EXCLUDED_LEGACY_TOOLS),
 ]
 
@@ -350,6 +379,7 @@ TOOLSETS: dict[str, set[str]] = {
         "testlink_resolve_execution_target",
         "testlink_create_testcase",
         "testlink_update_testcase",
+        "testlink_mark_automated",
         "testlink_list_projects",
         "testlink_list_suites",
         "testlink_find_suites",

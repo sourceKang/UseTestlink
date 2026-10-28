@@ -32,6 +32,9 @@ repeated parameter descriptions (no parameter or validation changes) and adding
 | Redmine `issue` / `manual-qa` | ~2,950 | ~2,477 |
 | Redmine `discovery` | — | ~1,217 |
 
+Adding `testlink_mark_automated` on 2026-10-28 raised TestLink `maintenance` to ~2,274 and
+`batch-import` to ~4,207 tokens; their ceilings moved to 2,350 and 4,350.
+
 `tests/test_token_budget.py` keeps a regression ceiling a few percent above each value. The budget test requires every task profile to stay at
 least 70% smaller than the all-server surface.
 

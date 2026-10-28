@@ -154,6 +154,30 @@ lists, testcase reads, and latest results) without the legacy duplicates and cat
   it records success when exactly one matching build exists, and otherwise refuses with
   `BUILD_WRITE_INDETERMINATE` instead of creating a possible duplicate.
 
+## Marking Testcases Automated
+
+A result uploaded through the XML-RPC API is always stored as an automated execution
+(`reportTCResult` inserts `TESTCASE_EXECUTION_TYPE_AUTO`), but the testcase version keeps the
+execution type it was created with, usually Manual. The testcase page shows that attribute, so
+testcases fed by automation can still read Manual. `testlink_mark_automated` is the separate,
+confirmed step that sets it. It is in the `maintenance` toolset (and therefore in `batch-import`).
+
+- Preview is the default. It resolves the exact project, plan, and platform, reads the plan's
+  testcases once, and lists in `to_mark` each requested testcase whose plan-linked version is not
+  Automated (`already_automated` counts the rest). A testcase outside the plan/platform fails the
+  call with `NOT_IN_PLAN`; up to 1000 plain IDs are accepted.
+- The digest covers the target and each testcase's id and plan-linked version, not the current
+  types, so a retry after a partial write keeps the same digest. A changed linked version needs a
+  new preview.
+- A write needs the unchanged `preview_digest`. It writes a `started` audit, calls
+  `tl.setTestCaseExecutionType` (execution type 2) only for testcases that are not yet Automated,
+  and reads the plan's testcases back. Only all testcases Automated is `verified`; otherwise the
+  call fails with `MARK_AUTOMATED_INCOMPLETE` and lists them, and the same operation and digest
+  can be retried. A retry after success returns `skipped-resume` without calls. TestLink echoes the
+  request (devKey included) in its answer, so the response is never stored.
+- The change updates the testcase version itself: TestLink records the uploader as its last
+  modifier. Executions already recorded are not touched.
+
 ## Protected Testcase Maintenance
 
 The pure server exposes `testlink_create_testcase` and `testlink_update_testcase`. Both

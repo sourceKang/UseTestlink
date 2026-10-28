@@ -246,6 +246,9 @@ class TestLinkClient:
     def update_test_case(self, params: dict[str, Any]) -> Any:
         return self.call_tl("tl.updateTestCase", params)
 
+    def set_test_case_execution_type(self, params: dict[str, Any]) -> Any:
+        return self.call_tl("tl.setTestCaseExecutionType", params)
+
     def add_test_case_to_plan(self, params: dict[str, Any]) -> Any:
         return self.call_tl("tl.addTestCaseToTestPlan", params)
 

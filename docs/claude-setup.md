@@ -107,6 +107,9 @@ Desktop 不會因註冊 MCP 自動讀取 repository 的 `CLAUDE.md`。
   `expected_status`），一次呼叫只列出不符合的項目，不要逐筆呼叫 `get_last_result`。
 - 建 build 請用 `testlink_create_build`（在 `execution`、`manual-qa`、`batch-import` 中），
   先預覽、確認後帶 digest 寫入；同名 build 會被拒絕，寫入後讀回驗證。
+- 用工具上傳的結果，TestLink 一律記為自動執行；但 TC 詳細頁的 Execution type 是 TC 本身的屬性，
+  上傳不會改它。批次匯入完成後可用 `testlink_mark_automated`（在 `maintenance`、`batch-import` 中）
+  預覽這批 TC 中仍為 Manual 者，確認後才改成 Automated，寫入後讀回驗證。
 - v1.9.0 起 testlink-mcp 的 `execution` toolset 提供 `testlink_link_bug`（把 Redmine bug 關聯到 TestLink TC）。
   需在 testlink-mcp env 檔設定本人的 `TESTLINK_TESTER_ID` 與公司 bug 關聯端點名稱 `TESTLINK_BUG_LINK_ENDPOINT`（向 TestLink 管理者取得，不寫進 repo）；寫入時 `audit_dir` 同樣要給可寫入的絕對路徑。
   預覽要先檢查 `pre_write_checks`，寫入結果只會是 `submitted`／`link_unverified`，關聯須到 TestLink 頁面確認。
