@@ -89,14 +89,17 @@ def upload_readiness_override(header: dict[str, str], reason: str | None) -> dic
     reason = (reason or "").strip()
     if not issues:
         if reason:
-            raise TestLinkError("--readiness-override-reason was given but the report is ready; omit it.")
+            raise TestLinkError(
+                "--readiness-override-reason was given but the report is ready; omit it.", code="INVALID_ARGUMENT"
+            )
         return None
     if not reason:
         raise TestLinkError(
             "Report is not ready for import: "
             + "; ".join(issues)
             + ". Rerun the missing tests or fix the case id drift, or pass --readiness-override-reason "
-            "after the user accepts the risk."
+            "after the user accepts the risk.",
+            code="REPORT_NOT_READY",
         )
     return {"reason": reason, "issues": issues}
 

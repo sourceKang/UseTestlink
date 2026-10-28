@@ -58,6 +58,13 @@ never used for coordinated writes. Because a resume derives the same root, child
 checks always find earlier child audits. Any audit or preview file that cannot be written fails
 the call with the absolute path in the error; the required audit is never skipped.
 
+When a call omits `artifact_dir` or `audit_dir`, the default is an absolute per-user directory,
+not a path relative to the working directory: `<data dir>/qa_previews`, `<data dir>/qa_audit`,
+and, for direct testlink-mcp / redmine-mcp writes, `<data dir>/testlink_audit` and
+`<data dir>/redmine_audit`. `<data dir>` is `TESTLINK_AGENT_DATA_DIR` when set, otherwise
+`%LOCALAPPDATA%\testlink-agent` on Windows and `~/.testlink-agent` elsewhere. Resume keeps
+using the directory of the given audit file, so audits written under an older default still resume.
+
 Operations executed before this layout wrote child audits relative to the child's working
 directory. Their completed items are still skipped from the workflow audit on resume. An item
 whose earlier write was interrupted after its child `started` audit (the workflow audit shows it

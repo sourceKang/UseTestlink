@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from qa_integration_agent.coordinator import QaCoordinator
-from testlink_agent_core.cli import build_parser
+from testlink_agent_core.cli import build_parser, main as cli_main
 from testlink_agent_core.commands import upload_readiness_override
 from testlink_agent_core.errors import TestLinkError
 from testlink_agent_core.reports import (
@@ -155,16 +158,36 @@ class CoordinatorReadinessTests(unittest.TestCase):
 
 class UploadReportReadinessTests(unittest.TestCase):
     def test_upload_report_applies_the_same_gate(self) -> None:
-        with self.assertRaises(TestLinkError):
+        with self.assertRaises(TestLinkError) as not_ready:
             upload_readiness_override(legacy(Completeness="Incomplete (1/2)"), None)
-        with self.assertRaises(TestLinkError):
+        self.assertEqual("REPORT_NOT_READY", not_ready.exception.code)
+        with self.assertRaises(TestLinkError) as not_needed:
             upload_readiness_override(legacy(Completeness="Complete (2/2)"), "not needed")
+        self.assertEqual("INVALID_ARGUMENT", not_needed.exception.code)
 
         self.assertIsNone(upload_readiness_override(legacy(), None))
         self.assertEqual(
             {"reason": "accepted", "issues": ["Case ID Drift: 1 (x)"]},
             upload_readiness_override(legacy(Completeness="Complete (1/1)", **{"Case ID Drift": "1 (x)"}), " accepted "),
         )
+
+    def test_cli_error_output_carries_the_code(self) -> None:
+        with TemporaryDirectory() as directory:
+            report = write_readiness_report(directory, INCOMPLETE)
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                exit_code = cli_main(
+                    [
+                        "upload-report",
+                        "--project", "EMS",
+                        "--plan", "Regression",
+                        "--platform", "Default Platform",
+                        "--report", str(report),
+                    ]
+                )
+
+        self.assertEqual(1, exit_code)
+        self.assertEqual("REPORT_NOT_READY", json.loads(stderr.getvalue())["code"])
 
     def test_cli_accepts_the_override_reason(self) -> None:
         args = build_parser().parse_args(

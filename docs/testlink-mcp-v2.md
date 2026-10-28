@@ -56,7 +56,7 @@ present or `status: false`) or an unrelated answer such as a platform list, whic
 returns instead of a result when the platform is missing or ambiguous. Either case raises a
 failure instead of recording a successful execution.
 
-Every attempted write creates a redacted `started` audit under `local/testlink_audit/` and updates the same record to success or failure.
+Every attempted write creates a redacted `started` audit under `<data dir>/testlink_audit/` by default (`%LOCALAPPDATA%\testlink-agent` or `TESTLINK_AGENT_DATA_DIR`; see `docs/workflow.md` Audit Locations) and updates the same record to success or failure.
 
 ## Protected Bug Linking
 

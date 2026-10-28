@@ -119,6 +119,11 @@ TestLink administrator) to the TestLink MCP env file. The endpoint name is no lo
 built in, so without it `testlink_link_bug` returns `CONFIG_MISSING`; other tools are
 unaffected. Do not commit the value.
 
+From the release after v1.9.6, previews and audits written without `artifact_dir` / `audit_dir` go to
+`%LOCALAPPDATA%\testlink-agent\` (or `TESTLINK_AGENT_DATA_DIR`) instead of a relative
+`local\` that failed under Claude Desktop. Explicit paths and resumes of older audits are
+unchanged.
+
 After a newer reviewed tag is published:
 
 ```powershell

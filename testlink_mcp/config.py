@@ -3,13 +3,14 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from qa_mcp_contracts import default_data_dir
 from testlink_agent_core.client import TestLinkClient
 from testlink_agent_core.config import DEFAULT_TIMEOUT_SECONDS, TestLinkSettings, load_testlink_settings
 from testlink_agent_core.errors import TestLinkError
 
 
 VALID_ENVIRONMENTS = {"corp", "sandbox"}
-DEFAULT_AUDIT_DIR = "local/testlink_audit"
+DEFAULT_AUDIT_DIR = default_data_dir("testlink_audit")
 
 
 @dataclass(frozen=True)
