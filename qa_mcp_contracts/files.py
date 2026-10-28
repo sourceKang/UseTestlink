@@ -15,6 +15,28 @@ class LocalPathError(OSError):
     """
 
 
+DATA_DIR_ENV = "TESTLINK_AGENT_DATA_DIR"
+
+
+def default_data_dir(name: str) -> str:
+    """Absolute per-user default for preview and audit files, independent of the working directory.
+
+    MCP clients choose the server's working directory (Claude Desktop uses
+    C:\\Windows\\System32, which is not writable), so a relative default fails.
+    TESTLINK_AGENT_DATA_DIR overrides the base; otherwise %LOCALAPPDATA%\\testlink-agent
+    on Windows and ~/.testlink-agent elsewhere.
+    """
+
+    base = os.environ.get(DATA_DIR_ENV, "").strip()
+    if base:
+        root = Path(base).expanduser()
+    elif os.environ.get("LOCALAPPDATA"):
+        root = Path(os.environ["LOCALAPPDATA"]) / "testlink-agent"
+    else:
+        root = Path.home() / ".testlink-agent"
+    return str(root.resolve() / name)
+
+
 def ensure_directory(directory: str | Path, *, label: str) -> Path:
     """Create `directory` (and parents) or raise LocalPathError naming its absolute path."""
 

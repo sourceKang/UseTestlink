@@ -6,13 +6,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from qa_mcp_contracts import ensure_directory, write_text_atomically
+from qa_mcp_contracts import default_data_dir, ensure_directory, write_text_atomically
 from testlink_agent_core.errors import redact_secrets
 
 from .errors import CoordinatorError
 
 
-DEFAULT_AUDIT_DIR = "local/qa_audit"
+DEFAULT_AUDIT_DIR = default_data_dir("qa_audit")
 # 1.0: single-report workflow audit; 2.0: multi-report audit (contracts/v2).
 SUPPORTED_AUDIT_SCHEMA_VERSIONS = ("1.0", "2.0")
 

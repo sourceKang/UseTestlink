@@ -93,8 +93,11 @@ Desktop 不會因註冊 MCP 自動讀取 repository 的 `CLAUDE.md`。
 
 - 回覆使用繁體中文；先取得明確 environment、project、plan、platform、build、report。
 - 報表使用 MCP 所在電腦的絕對路徑；聊天上傳的附件不會自動變成該路徑。
-  `artifact_dir` 與 `audit_dir` 必須指定可寫入的本機絕對路徑：Claude Desktop 啟動 MCP 時的
-  工作目錄是 `C:\Windows\System32`（不可寫），相對路徑會落在那裡而失敗。
+  Claude Desktop 啟動 MCP 時的工作目錄是 `C:\Windows\System32`（不可寫），相對路徑會落在那裡而失敗。
+  未指定 `artifact_dir`／`audit_dir` 時，預設使用每位使用者的絕對路徑
+  `%LOCALAPPDATA%\testlink-agent\{qa_previews,qa_audit,testlink_audit,redmine_audit}`
+  （非 Windows 為 `~/.testlink-agent/...`），可用 `TESTLINK_AGENT_DATA_DIR` 改變根目錄；
+  v1.9.6 以前預設是相對的 `local/...`，在 Claude Desktop 中必須自行傳入絕對路徑。
   v1.8.1 起，TestLink／Redmine child audit 會自動寫在 `<audit_dir>/testlink`、`<audit_dir>/redmine`；
   v1.8.0 以前從 Claude Desktop 執行寫入會因 System32 不可寫而失敗。
 - 直接呼叫 `redmine_preview_bug`／`redmine_create_bug` 時，v1.8.2 起 `custom_fields` 依 ID

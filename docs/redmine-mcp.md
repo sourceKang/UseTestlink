@@ -121,7 +121,7 @@ warning. Adding images to an existing issue is outside this create-bug capabilit
 - No match: preview issue creation.
 - Comments use an `issue.notes`-only payload.
 - Status, assignee, fixed version, and issue closure are not modified automatically.
-- Every attempted write first creates a redacted `started` audit and updates the same record with success or failure under `local/redmine_audit/` by default.
+- Every attempted write first creates a redacted `started` audit and updates the same record with success or failure under `<data dir>/redmine_audit/` by default (`%LOCALAPPDATA%\testlink-agent` or `TESTLINK_AGENT_DATA_DIR`; see `docs/workflow.md` Audit Locations).
 
 ## Local Registration
 

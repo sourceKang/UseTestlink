@@ -21,6 +21,7 @@ from .commands import (
     command_update_testcase,
     command_upload_report,
 )
+from .errors import TestLinkError
 from .config import DEFAULT_AUDIT_DIR, DEFAULT_CATALOG_PATH, DEFAULT_PROFILES_PATH, DEFAULT_TIMEOUT_SECONDS
 
 
@@ -370,5 +371,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     except Exception as exc:
-        print(json.dumps({"error": type(exc).__name__, "message": str(exc)}, ensure_ascii=False), file=sys.stderr)
+        payload = {"error": type(exc).__name__, "message": str(exc)}
+        if isinstance(exc, TestLinkError) and exc.code is not None:
+            payload["code"] = exc.code
+        print(json.dumps(payload, ensure_ascii=False), file=sys.stderr)
         return 1

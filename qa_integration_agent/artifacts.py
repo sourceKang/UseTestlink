@@ -5,13 +5,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from qa_mcp_contracts import CONTRACT_SCHEMA_VERSION, ensure_directory, payload_digest, write_text_atomically
+from qa_mcp_contracts import CONTRACT_SCHEMA_VERSION, default_data_dir, ensure_directory, payload_digest, write_text_atomically
 from testlink_agent_core.errors import redact_secrets
 
 from .errors import CoordinatorError
 
 
-DEFAULT_PREVIEW_DIR = "local/qa_previews"
+DEFAULT_PREVIEW_DIR = default_data_dir("qa_previews")
 
 
 def write_preview_artifact(

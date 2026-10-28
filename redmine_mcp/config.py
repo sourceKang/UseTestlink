@@ -4,11 +4,13 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from qa_mcp_contracts import default_data_dir
+
 from .errors import RedmineMcpError
 
 
 DEFAULT_TIMEOUT_SECONDS = 60
-DEFAULT_AUDIT_DIR = "local/redmine_audit"
+DEFAULT_AUDIT_DIR = default_data_dir("redmine_audit")
 ENV_FILE_POINTER = "REDMINE_MCP_ENV_FILE"
 COMPAT_ENV_FILE_POINTER = "TESTLINK_AGENT_ENV_FILE"
 VALID_ENVIRONMENTS = {"corp", "sandbox"}
