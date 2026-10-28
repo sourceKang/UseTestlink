@@ -279,25 +279,22 @@ CREATE_BUILD_TOOL: dict[str, Any] = {
 
 MARK_AUTOMATED_TOOL: dict[str, Any] = {
     "name": "testlink_mark_automated",
-    "description": (
-        "Preview or set the plan-linked versions of testcases to execution type Automated. "
-        "Preview lists the Manual ones; write needs preview_digest and is verified by readback."
-    ),
+    # Kept short on purpose: batch-import loads every schema up front. IDs are bounded
+    # server side, and env_file/timeout fall back to the registration's settings.
+    "description": "Preview, then set plan-linked testcase versions still Manual to Automated (write needs preview_digest).",
     "inputSchema": {
         "type": "object",
         "additionalProperties": False,
         "properties": {
-            "operation_id": string("Stable ID for audit and resume."),
+            "operation_id": {"type": "string"},
             "environment": {"type": "string", "enum": ["corp", "sandbox"]},
             "project": string("Exact name."),
             "plan": string("Exact name."),
             "platform": string("Exact name."),
-            "testcase_external_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 1000},
-            "write": {"type": "boolean", "default": False},
+            "testcase_external_ids": {"type": "array", "items": {"type": "string"}},
+            "write": {"type": "boolean"},
             "preview_digest": {"type": "string"},
             "audit_dir": {"type": "string"},
-            "env_file": {"type": "string"},
-            "timeout": {"type": "integer", "minimum": 1, "default": 60},
         },
         "required": ["operation_id", "environment", "project", "plan", "platform", "testcase_external_ids"],
     },
