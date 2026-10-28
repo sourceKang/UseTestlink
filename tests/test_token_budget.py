@@ -22,13 +22,14 @@ class TokenBudgetTests(unittest.TestCase):
 
     def test_profile_schemas_stay_under_regression_ceilings(self) -> None:
         # Ceilings sit a few percent above the 2026-10-16 measurements; raising one needs a stated reason.
+        # 2026-10-28: maintenance and batch-import raised for testlink_mark_automated (about 206 tokens).
         ceilings = {
             "qa_report_import": 1550,
             "testlink_execution": 2650,
-            "testlink_testcase_maintenance": 2100,
+            "testlink_testcase_maintenance": 2280,
             "redmine_issue": 2600,
             "redmine_discovery": 1300,
-            "preset_batch_import_testlink": 4100,
+            "preset_batch_import_testlink": 4250,
             "preset_manual_qa_testlink": 2650,
             "preset_bug_tracking_testlink": 1550,
         }

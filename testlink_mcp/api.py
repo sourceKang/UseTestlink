@@ -1387,6 +1387,26 @@ _EXTERNAL_ID_RE = re.compile(r"^[A-Za-z0-9]+-\d+$")
 NOT_RUN_STATUS = "n"
 
 
+def _requested_external_ids(values: Any) -> list[str]:
+    """Validate a caller's testcase list: plain external IDs, de-duplicated ignoring case, bounded."""
+    if not isinstance(values, (list, tuple)) or not values:
+        raise TestLinkError("testcase_external_ids must be a non-empty list.", code="INVALID_ARGUMENT")
+    requested: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value).strip()
+        if not _EXTERNAL_ID_RE.fullmatch(text):
+            raise TestLinkError(f"Not a plain external testcase ID: {text!r}", code="INVALID_ARGUMENT")
+        if text.casefold() not in seen:
+            seen.add(text.casefold())
+            requested.append(text)
+    if len(requested) > MAX_LATEST_RESULT_CASES:
+        raise TestLinkError(
+            f"At most {MAX_LATEST_RESULT_CASES} testcases can be read at once.", code="INVALID_ARGUMENT"
+        )
+    return requested
+
+
 def _external_id_sort_key(external_id: str) -> tuple[str, int]:
     prefix, _, number = external_id.rpartition("-")
     return prefix.casefold(), int(number) if number.isdigit() else 0
@@ -1437,18 +1457,7 @@ def testlink_get_latest_results(
             raise TestLinkError("expected_status must be one of p, f, b.", code="INVALID_ARGUMENT")
         requested: list[str] = []
         if testcase_external_ids is not None:
-            if not isinstance(testcase_external_ids, (list, tuple)) or not testcase_external_ids:
-                raise TestLinkError("testcase_external_ids must be a non-empty list.", code="INVALID_ARGUMENT")
-            for value in testcase_external_ids:
-                text = str(value).strip()
-                if not _EXTERNAL_ID_RE.fullmatch(text):
-                    raise TestLinkError(f"Not a plain external testcase ID: {text!r}", code="INVALID_ARGUMENT")
-                if text.casefold() not in {item.casefold() for item in requested}:
-                    requested.append(text)
-            if len(requested) > MAX_LATEST_RESULT_CASES:
-                raise TestLinkError(
-                    f"At most {MAX_LATEST_RESULT_CASES} testcases can be read at once.", code="INVALID_ARGUMENT"
-                )
+            requested = _requested_external_ids(testcase_external_ids)
         client = write_client(runtime)
         target = _resolve_exact_target(client, project=project, plan=plan, platform=platform, build=build)
         plan_id = target["plan"]["id"]
@@ -1839,7 +1848,289 @@ def testlink_create_build(
         return _failure(operation_id, "create-build-write" if write else "create-build-preview", exc)
 
 
+MARK_AUTOMATED_ACTION = "mark-automated"
+# TestLink stores a testcase version's execution type as 1 (manual) or 2 (automated).
+EXECUTION_TYPE_AUTOMATED = "2"
+_EXECUTION_TYPE_LABELS = {"1": "manual", "2": "automated"}
+
+
+def _execution_type_label(value: str) -> str:
+    return _EXECUTION_TYPE_LABELS.get(value, value)
+
+
+def _plan_cases_by_key(client: Any, plan_id: str, platform_id: str) -> dict[str, tuple[str, dict[str, Any]]]:
+    return {
+        external_id.casefold(): (external_id, case)
+        for external_id, case in client.get_plan_cases_by_external_id(plan_id, platform_id).items()
+    }
+
+
+def _mark_automated_plan(
+    client: Any,
+    *,
+    operation_id: str,
+    environment: str,
+    project: str,
+    plan: str,
+    platform: str,
+    requested: list[str],
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Return the contract plan and each testcase's current execution type.
+
+    The plan names the plan-linked version of every requested testcase, which is the version the
+    execution page shows, and does not depend on the current types: a retry after a partial write
+    keeps the same digest, and testcases already Automated are skipped at write time.
+    """
+    project_row = _resolve_exact_named("project", project, client.get_projects())
+    plan_row = _resolve_exact_named("plan", plan, client.get_project_test_plans(str(project_row.get("id") or "")))
+    plan_id = str(plan_row.get("id") or "")
+    platform_row = _resolve_exact_named("platform", platform, client.get_platforms(plan_id))
+    target = {
+        "project": _named_target(project_row, "project"),
+        "plan": _named_target(plan_row, "plan"),
+        "platform": _named_target(platform_row, "platform"),
+    }
+    plan_cases = _plan_cases_by_key(client, plan_id, target["platform"]["id"])
+    missing = [external_id for external_id in requested if external_id.casefold() not in plan_cases]
+    if missing:
+        raise TestLinkError(
+            f"Testcases are not in the selected plan/platform: {', '.join(missing)}",
+            code="NOT_IN_PLAN",
+            raw={"not_in_plan": missing},
+        )
+    testcases: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    for external_id in requested:
+        plan_external_id, case = plan_cases[external_id.casefold()]
+        identity = _plan_case_identity(plan_external_id, case)
+        version = str(case.get("version") or "").strip()
+        execution_type = str(case.get("execution_type") or "").strip()
+        if not identity["id"] or not version.isdigit() or not execution_type:
+            raise TestLinkError(
+                f"The plan row for {plan_external_id} has no testcase id, version or execution type.",
+                code="PLAN_ROW_INCOMPLETE",
+            )
+        testcases.append({"testcaseexternalid": plan_external_id, "testcaseid": identity["id"], "version": version})
+        current[plan_external_id] = execution_type
+    contract_plan = {
+        "schema_version": CONTRACT_SCHEMA_VERSION,
+        "operation_id": str(operation_id),
+        "environment": environment,
+        "action": MARK_AUTOMATED_ACTION,
+        "target": target,
+        "payload": {
+            "testprojectid": target["project"]["id"],
+            "executiontype": int(EXECUTION_TYPE_AUTOMATED),
+            "testcases": testcases,
+        },
+    }
+    assert_safe_contract(contract_plan)
+    return contract_plan, current
+
+
+def _mark_automated_preview_result(plan: dict[str, Any], current: dict[str, str]) -> dict[str, Any]:
+    testcases = plan["payload"]["testcases"]
+    to_mark = [
+        {
+            "testcase_external_id": item["testcaseexternalid"],
+            "version": item["version"],
+            "current": _execution_type_label(current[item["testcaseexternalid"]]),
+        }
+        for item in testcases
+        if current[item["testcaseexternalid"]] != EXECUTION_TYPE_AUTOMATED
+    ]
+    return {
+        "schema_version": CONTRACT_SCHEMA_VERSION,
+        "operation_id": plan["operation_id"],
+        "environment": plan["environment"],
+        "mode": "preview",
+        "preview_digest": payload_digest(plan),
+        "planned_write": bool(to_mark),
+        "target": plan["target"],
+        "requested": len(testcases),
+        "to_mark": to_mark,
+        "already_automated": len(testcases) - len(to_mark),
+        "warnings": [],
+    }
+
+
+def testlink_mark_automated(
+    *,
+    operation_id: str,
+    environment: str,
+    project: str,
+    plan: str,
+    platform: str,
+    testcase_external_ids: list[str],
+    write: bool = False,
+    preview_digest: str | None = None,
+    audit_dir: str = DEFAULT_AUDIT_DIR,
+    env_file: str | None = None,
+    timeout: int = 60,
+) -> dict[str, Any]:
+    """Set the plan-linked versions of testcases to execution type Automated.
+
+    Uploading a result never changes a testcase's own execution type, so testcases created as
+    Manual keep showing Manual although automation reports them. This is the separate, confirmed
+    step that fixes that attribute.
+    """
+    audit_id: str | None = None
+    contract_plan: dict[str, Any] | None = None
+    write_attempted = False
+    results: list[dict[str, str]] = []
+    try:
+        runtime = load_runtime(env_file=env_file, timeout=timeout)
+        selected = validate_environment(environment, runtime.environment)
+        requested = _requested_external_ids(testcase_external_ids)
+        client = write_client(runtime)
+        contract_plan, current = _mark_automated_plan(
+            client,
+            operation_id=operation_id,
+            environment=selected,
+            project=project,
+            plan=plan,
+            platform=platform,
+            requested=requested,
+        )
+        if not write:
+            return _success(_mark_automated_preview_result(contract_plan, current))
+        validate_preview_digest(contract_plan, str(preview_digest or ""))
+        for path, record in find_operation_audits(operation_id, audit_dir, action=MARK_AUTOMATED_ACTION):
+            if record.get("preview_digest") == preview_digest and record.get("status") == "success":
+                return _success(
+                    {
+                        "schema_version": CONTRACT_SCHEMA_VERSION,
+                        "operation_id": operation_id,
+                        "environment": selected,
+                        "preview_digest": str(preview_digest),
+                        "status": "skipped-resume",
+                        "verification_status": "verified",
+                        "marked": record.get("marked") or [],
+                        "audit_id": path.name,
+                    }
+                )
+        payload = contract_plan["payload"]
+        started = write_operation_audit(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "action": MARK_AUTOMATED_ACTION,
+                "status": "started",
+                "preview_digest": preview_digest,
+                "plan": contract_plan,
+                "started_at": utc_now_iso(),
+            },
+            audit_dir,
+        )
+        audit_id = started.name
+        for item in payload["testcases"]:
+            external_id = item["testcaseexternalid"]
+            row = {"testcase_external_id": external_id, "version": item["version"], "before": current[external_id]}
+            if current[external_id] == EXECUTION_TYPE_AUTOMATED:
+                results.append({**row, "outcome": "already-automated"})
+                continue
+            write_attempted = True
+            # The response echoes the request arguments, devKey included, so it is never stored.
+            rejection = _created_id(
+                client.set_test_case_execution_type(
+                    {
+                        "testprojectid": payload["testprojectid"],
+                        "testcaseexternalid": external_id,
+                        # setTestCaseExecutionType rejects a version that is not an XML-RPC int.
+                        "version": int(item["version"]),
+                        "executiontype": payload["executiontype"],
+                    }
+                )
+            )[1]
+            if rejection:
+                results.append({**row, "outcome": "rejected", "message": rejection})
+            else:
+                results.append({**row, "outcome": "sent"})
+        target = contract_plan["target"]
+        readback = _plan_cases_by_key(client, target["plan"]["id"], target["platform"]["id"])
+        for row in results:
+            case = readback.get(row["testcase_external_id"].casefold(), ("", {}))[1]
+            row["after"] = str(case.get("execution_type") or "").strip()
+            if row["outcome"] == "sent":
+                row["outcome"] = "marked" if row["after"] == EXECUTION_TYPE_AUTOMATED else "not-verified"
+        marked = [row["testcase_external_id"] for row in results if row["outcome"] == "marked"]
+        problems = [row for row in results if row["after"] != EXECUTION_TYPE_AUTOMATED]
+        verified = not problems
+        completed = write_operation_audit(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "action": MARK_AUTOMATED_ACTION,
+                "status": "success" if verified else "verification_failed",
+                "verification_status": "verified" if verified else "verification_failed",
+                "preview_digest": preview_digest,
+                "plan": contract_plan,
+                "marked": marked,
+                "results": results,
+                "finished_at": utc_now_iso(),
+            },
+            audit_dir,
+            audit_id=audit_id,
+        )
+        if not verified:
+            return _failure(
+                operation_id,
+                "mark-automated-readback-verification",
+                TestLinkError(
+                    f"{len(problems)} testcase(s) are not Automated after the write; "
+                    "retry with the same operation_id and preview_digest.",
+                    code="MARK_AUTOMATED_INCOMPLETE",
+                    raw={"audit_id": completed.name, "problems": problems},
+                ),
+            )
+        return _success(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "preview_digest": str(preview_digest),
+                "status": "success",
+                "verification_status": "verified",
+                "marked": marked,
+                "already_automated": len(results) - len(marked),
+                "audit_id": completed.name,
+            }
+        )
+    except Exception as exc:
+        if write:
+            normalized = normalize_testlink_error(exc)
+            try:
+                path = write_operation_audit(
+                    {
+                        "schema_version": CONTRACT_SCHEMA_VERSION,
+                        "operation_id": operation_id,
+                        "environment": environment,
+                        "action": MARK_AUTOMATED_ACTION,
+                        "status": "indeterminate" if write_attempted else "failed",
+                        "preview_digest": preview_digest,
+                        "plan": contract_plan,
+                        "results": results,
+                        "error": normalized.to_dict(),
+                        "finished_at": utc_now_iso(),
+                    },
+                    audit_dir,
+                    audit_id=audit_id,
+                )
+                audit_id = path.name
+            except Exception:
+                exc = TestLinkError(f"{exc}; additionally, the required TestLink audit could not be written.")
+        return _failure(operation_id, "mark-automated-write" if write else "mark-automated-preview", exc)
+
+
 def call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+    if name == "testlink_mark_automated":
+        try:
+            return testlink_mark_automated(**(arguments or {}))
+        except TypeError as exc:
+            operation_id = str((arguments or {}).get("operation_id") or "unknown-operation")
+            return _failure(operation_id, "arguments", exc)
     if name == "testlink_get_latest_results":
         try:
             return testlink_get_latest_results(**(arguments or {}))

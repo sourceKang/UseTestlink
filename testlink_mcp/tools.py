@@ -277,6 +277,31 @@ CREATE_BUILD_TOOL: dict[str, Any] = {
 }
 
 
+MARK_AUTOMATED_TOOL: dict[str, Any] = {
+    "name": "testlink_mark_automated",
+    # Kept short on purpose: batch-import loads every schema up front. IDs are bounded
+    # server side, and env_file/timeout fall back to the registration's settings.
+    "description": "Preview, then set plan-linked testcase versions still Manual to Automated (write needs preview_digest).",
+    "inputSchema": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "operation_id": {"type": "string"},
+            "environment": {"type": "string", "enum": ["corp", "sandbox"]},
+            "project": string("Exact name."),
+            "plan": string("Exact name."),
+            "platform": string("Exact name."),
+            "testcase_external_ids": {"type": "array", "items": {"type": "string"}},
+            "write": {"type": "boolean"},
+            "preview_digest": {"type": "string"},
+            "audit_dir": {"type": "string"},
+        },
+        "required": ["operation_id", "environment", "project", "plan", "platform", "testcase_external_ids"],
+    },
+    "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True},
+}
+
+
 LATEST_RESULTS_TOOL: dict[str, Any] = {
     "name": "testlink_get_latest_results",
     "description": (
@@ -322,6 +347,7 @@ TOOLS = [
     CREATE_BUILD_TOOL,
     CREATE_TESTCASE_TOOL,
     UPDATE_TESTCASE_TOOL,
+    MARK_AUTOMATED_TOOL,
     *(tool for tool in LEGACY_TOOLS if tool["name"] not in EXCLUDED_LEGACY_TOOLS),
 ]
 
@@ -350,6 +376,7 @@ TOOLSETS: dict[str, set[str]] = {
         "testlink_resolve_execution_target",
         "testlink_create_testcase",
         "testlink_update_testcase",
+        "testlink_mark_automated",
         "testlink_list_projects",
         "testlink_list_suites",
         "testlink_find_suites",

@@ -257,6 +257,9 @@ Redmine 可以請 agent 用 `redmine_get_issue` 讀一張你知道的 issue。
   「已送出」，請到 TestLink 頁面確認。關聯錯了只能在 TestLink 網頁上手動移除。
 - **確認多筆結果**：用 `testlink_get_latest_results`（搭配 `expected_status`），一次呼叫只列出不符合
   的 TC，不要逐筆查。
+- **TC 顯示 Manual**：TC 詳細頁的 Execution type 是 TC 建立時的設定，上傳結果不會改它（上傳的
+  那筆結果本身已記為自動執行）。批次匯入完成後，agent 會列出這批仍為 Manual 的 TC 並詢問是否改成
+  Automated；確認後才修改，TC 的修改人會變成你。
 - **audit 路徑**：從 Claude Desktop 寫入時，`audit_dir` 要給可寫入的絕對路徑；Desktop 啟動 MCP
   的工作目錄不可寫。
 - agent 不會關單、改狀態、改 assignee 或 fixed version，這些仍由你在 TestLink／Redmine 操作。
