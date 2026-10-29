@@ -255,6 +255,8 @@ Redmine 可以請 agent 用 `redmine_get_issue` 讀一張你知道的 issue。
 - **關聯 bug（`testlink_link_bug`）的副作用**：一定會新增一筆 execution；同一張 bug 在同一個
   build 第一次關聯時，Redmine 會被自動留言；伺服器不會回報關聯是否成功，寫入結果只會是
   「已送出」，請到 TestLink 頁面確認。關聯錯了只能在 TestLink 網頁上手動移除。
+- **報表匯入開 bug 會預設關聯**：匯入時若開 Redmine bug，Fail 的 TC 會連同 bug 關聯一起寫入
+  （副作用同上）。不想關聯請在預覽前說明，agent 會改成只在 notes 留 Redmine 編號。
 - **確認多筆結果**：用 `testlink_get_latest_results`（搭配 `expected_status`），一次呼叫只列出不符合
   的 TC，不要逐筆查。
 - **TC 顯示 Manual**：TC 詳細頁的 Execution type 是 TC 建立時的設定，上傳結果不會改它（上傳的
