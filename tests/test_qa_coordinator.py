@@ -323,6 +323,8 @@ def workflow_args(report: Path, **overrides):
         "redmine_project_id": "ems",
         "redmine_tracker_id": "1",
         "redmine_priority_id": "2",
+        # These tests cover the report_execution path; test_qa_bug_link covers the default link.
+        "testlink_bug_link": False,
     }
     values.update(overrides)
     return values

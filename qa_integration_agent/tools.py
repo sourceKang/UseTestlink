@@ -24,8 +24,7 @@ PLAN_PROPERTIES: dict[str, Any] = {
     "redmine_create_bugs": {"type": "boolean", "default": False},
     "testlink_bug_link": {
         "type": "boolean",
-        "default": False,
-        "description": "Write failed results that have a Redmine bug through testlink_link_bug (needs redmine_create_bugs).",
+        "description": "Link a failed result's Redmine bug via testlink_link_bug; defaults to redmine_create_bugs.",
     },
     "redmine_project_id": string("Redmine project identifier; required when bug creation is enabled."),
     "redmine_tracker_id": string("Redmine tracker ID or use a template."),

@@ -187,6 +187,7 @@ class ChildAuditDirectoryTests(unittest.TestCase):
                 redmine_project_id="ems",
                 redmine_tracker_id="1",
                 redmine_priority_id="2",
+                testlink_bug_link=False,  # the fake TestLink child serves report_execution only
             )
             result = coordinator.execute_plan(
                 plan,

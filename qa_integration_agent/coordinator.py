@@ -365,7 +365,7 @@ class QaCoordinator:
         redmine_custom_priority: Any = None,
         redmine_template_file: str | None = None,
         redmine_custom_fields: Any = None,
-        testlink_bug_link: bool = False,
+        testlink_bug_link: bool | None = None,
         readiness_override_reason: str | None = None,
     ) -> dict[str, Any]:
         """Plan one TestLink execution per testcase from one report or one report per node.
@@ -375,6 +375,8 @@ class QaCoordinator:
         testcase; see _aggregate_node_reports for the rules. A report whose
         readiness header shows missing results or case id drift is refused
         unless `readiness_override_reason` explains why it may still be imported.
+        `testlink_bug_link` left unset follows `redmine_create_bugs`, so a
+        created or reused bug is linked to its testcase unless set to false.
         """
         validated_context = validate_operation_context(
             {
@@ -404,6 +406,8 @@ class QaCoordinator:
             report_entries = [("", report_path)]
         if skip_policy not in {"ignore", "blocked"}:
             raise CoordinatorError("skip_policy must be ignore or blocked.", code="INVALID_ARGUMENT")
+        if testlink_bug_link is None:
+            testlink_bug_link = redmine_create_bugs is True
         if not isinstance(testlink_bug_link, bool):
             raise CoordinatorError("testlink_bug_link must be true or false.", code="INVALID_ARGUMENT")
         if testlink_bug_link and not redmine_create_bugs:
@@ -572,7 +576,7 @@ class QaCoordinator:
                 "warnings": warnings,
             }
         if testlink_bug_link:
-            # Only present when enabled, so default plans keep their existing shape and digest.
+            # Only present when enabled, so plans without it keep their earlier shape and digest.
             plan_payload["testlink_bug_link"] = True
         if readiness_override is not None:
             # Same rule: present only when a not-ready report was accepted with a reason.

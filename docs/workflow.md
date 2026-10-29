@@ -157,7 +157,7 @@ Execute retains the existing report-hash, confirmation, dedupe, and audit protec
 
 `testlink_link_bug` links Redmine bug IDs to one TestLink testcase through the corporate
 bug-link endpoint (`TESTLINK_BUG_LINK_ENDPOINT`). It is a direct `testlink-mcp` tool, and report
-imports use it when the preview opts in with `testlink_bug_link` (see below).
+imports use it whenever the preview has `testlink_bug_link` (on by default with bug creation; see below).
 
 ```text
 1. Resolve the exact project/plan/platform/build and confirm the testcase is in the plan/platform
@@ -177,10 +177,17 @@ status. See `docs/testlink-mcp-v2.md` for the full contract.
 
 ### Linking bugs during report import
 
-`qa_preview_report_artifact` accepts `testlink_bug_link: true` (default false; requires
-`redmine_create_bugs: true`). The flag is part of the plan and its `preview_digest`, the preview
-shows it at the top level and as `testlink_mode` per item, and a plan warning lists the side effects.
-Plans without the flag keep their previous shape and digest.
+`qa_preview_report_artifact` accepts `testlink_bug_link` (requires `redmine_create_bugs: true`).
+Left unset it follows `redmine_create_bugs`, so an import that creates bugs links them by default;
+pass `testlink_bug_link: false` to write failed results through `testlink_report_execution` with
+notes only. The flag is part of the plan and its `preview_digest`, the preview shows it at the top
+level and as `testlink_mode` per item, and a plan warning lists the side effects. Plans without the
+flag (no bug creation, or explicitly false) keep their previous shape and digest.
+
+Through 1.9.7 the flag defaulted to false. Preview artifacts store the plan, so an artifact made
+before upgrading executes and resumes unchanged. The legacy `qa_execute_report_import` and
+`qa_resume_report_import` rebuild the plan from arguments; for a plan made before upgrading with
+bug creation and no flag, pass `testlink_bug_link: false` or they refuse it as a digest mismatch.
 
 During execute, a failed testcase whose Redmine bug was created or reused is written through
 `testlink_link_bug` instead of `testlink_report_execution`:

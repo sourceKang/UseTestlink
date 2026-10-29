@@ -1,4 +1,4 @@
-"""Opt-in testlink_bug_link: failed import results carry their Redmine bug as a TestLink link."""
+"""testlink_bug_link (on by default with Redmine bug creation): failed results carry their bug as a TestLink link."""
 
 from __future__ import annotations
 
@@ -99,27 +99,40 @@ class QaBugLinkPlanTests(unittest.TestCase):
                     coordinator.build_plan(**workflow_args(report, **overrides))
                 self.assertEqual("INVALID_ARGUMENT", raised.exception.code)
 
-    def test_default_plan_keeps_its_shape_and_digest(self) -> None:
+    def test_unset_flag_follows_redmine_bug_creation(self) -> None:
         coordinator = QaCoordinator(LinkPorts())
         with TemporaryDirectory() as tmpdir:
             report = write_mixed_report(tmpdir)
-            default = coordinator.build_plan(**workflow_args(report))
+            arguments = workflow_args(report)
+            del arguments["testlink_bug_link"]
+            with_bugs = coordinator.build_plan(**arguments)
+            explicit_on = coordinator.build_plan(**workflow_args(report, testlink_bug_link=True))
+            no_bugs = coordinator.build_plan(**{**arguments, "redmine_create_bugs": False})
+
+        self.assertTrue(with_bugs["testlink_bug_link"])
+        self.assertEqual(explicit_on["preview_digest"], with_bugs["preview_digest"])
+        self.assertNotIn("testlink_bug_link", no_bugs)
+
+    def test_explicit_off_keeps_the_earlier_shape_and_digest(self) -> None:
+        coordinator = QaCoordinator(LinkPorts())
+        with TemporaryDirectory() as tmpdir:
+            report = write_mixed_report(tmpdir)
             explicit_off = coordinator.build_plan(**workflow_args(report, testlink_bug_link=False))
 
-        self.assertNotIn("testlink_bug_link", default)
-        self.assertEqual(default["preview_digest"], explicit_off["preview_digest"])
-        self.assertNotIn("testlink_bug_link", QaCoordinator.public_preview(default))
+        self.assertNotIn("testlink_bug_link", explicit_off)
+        self.assertNotIn("testlink_bug_link", QaCoordinator.public_preview(explicit_off))
+        self.assertNotIn(TESTLINK_BUG_LINK_WARNING, explicit_off["warnings"])
 
     def test_enabled_plan_is_visible_in_the_preview_and_writes_nothing(self) -> None:
         ports = LinkPorts()
         coordinator = QaCoordinator(ports)
         with TemporaryDirectory() as tmpdir:
             report = write_mixed_report(tmpdir)
-            default = coordinator.build_plan(**workflow_args(report))
+            explicit_off = coordinator.build_plan(**workflow_args(report, testlink_bug_link=False))
             plan = coordinator.build_plan(**workflow_args(report, testlink_bug_link=True))
 
         self.assertTrue(plan["testlink_bug_link"])
-        self.assertNotEqual(default["preview_digest"], plan["preview_digest"])
+        self.assertNotEqual(explicit_off["preview_digest"], plan["preview_digest"])
         self.assertIn(TESTLINK_BUG_LINK_WARNING, plan["warnings"])
         preview = QaCoordinator.public_preview(plan)
         self.assertTrue(preview["testlink_bug_link"])
