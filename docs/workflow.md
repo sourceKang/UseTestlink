@@ -93,8 +93,8 @@ Each testcase produces one TestLink execution:
 - `execution_duration` is the longest node duration, in minutes.
 - Notes keep the single-report lines (`Report File` lists every file) and add a `Node Results:`
   block with one line per node:
-  `<label>: Result <raw>; duration <text>; target <Node Name> / <Node IP> / <Node Chassis>; report <file name>`
-  (`-` replaces a missing header value).
+  `<label>: Result <raw>; duration <text>; target <Node Name> / <Node IP> / <Node Chassis>; firmware <Card FW>; report <file name>`
+  (`-` replaces a missing header value; `; firmware ...` is left out when the report lists no card firmware).
 - Redmine dedupe, subject, and template tokens (`header.*`, `result.*`) use the lead failing
   node's result and header, so the dedupe key matches importing that node's report alone. The
   issue description adds `Failing Nodes:` and every node line; the retest evidence comment on a
@@ -102,11 +102,30 @@ Each testcase produces one TestLink execution:
 
 The plan and the persisted artifact use contracts v2 (`schema_version: "2.0"`). They record
 each report's label, path, file name, SHA-256, schema, and a header subset (Report generated
-on, EMS Version, Node Name, Node IP, Node Chassis, Summary, Total test time). `input_digest`
+on, EMS Version, EMS Target, EMS Platform, Node Name, Node IP, Node Chassis, Card FW, Summary,
+Total test time). `input_digest`
 is the canonical digest of every `{label, sha256}` in `reports` order. Execute and resume
 re-hash every report and refuse any change (`PREVIEW_MISMATCH` / `RESUME_MISMATCH`) before any
 external write; the v2 workflow audit binds resume to every report hash as well. A
-single-report preview keeps the v1 plan, audit, and digest unchanged.
+single-report preview keeps the v1 plan and audit shape.
+
+### Test Environment In Execution Notes
+
+A single-report import adds a `Test Environment:` block to every TestLink execution note, after
+`Result:`, so each execution records what it ran on:
+
+```text
+Test Environment:
+EMS: <EMS Version> / <EMS Target> / <EMS Platform>
+Node: <Node Name> / <Node IP> / <Node Chassis>
+Card FW: <card> <version>; <card> <version>
+```
+
+Each line is left out when its header values are missing, and the whole block when all are.
+`Card FW` comes from the RestApi Auto header lines `<CARD>:<version>` (for example
+`NXC400:V1.03(ACKG.0)b8`). A multi-node import puts each node's firmware on its `Node Results`
+line instead. The notes are part of the TestLink preview digest, so a preview built by an
+older version must be rebuilt before it is executed with this version.
 
 ### Report Readiness Gate
 

@@ -14,6 +14,9 @@ LEGACY_WEB_EMS_SCHEMA = "legacy-web-ems-report-v1"
 JUNIT_XML_SCHEMA = "junit-xml-v1"
 SCHEMA_HEADER_KEY = "_schema_version"
 TEST_RESULTS_MARKER = "Test Results:"
+CARD_FW_HEADER_KEY = "Card FW"
+# RestApi Auto lists each card's firmware as "<card>:<version>" (no space after the colon).
+CARD_FW_LINE_RE = re.compile(r"^(?P<card>[A-Z][A-Z0-9]*):(?P<version>V\S.*)$")
 
 # A TestLink external ID written out in full, for example EMS1-3581.
 EXTERNAL_ID_LITERAL_RE = re.compile(r"\b([A-Za-z][A-Za-z0-9]*-\d+)\b")
@@ -165,6 +168,8 @@ def parse_report(path: Path) -> tuple[dict[str, str], list[ParsedResult]]:
                 "Summary",
                 "UI URL",
                 "EMS Version",
+                "EMS Target",
+                "EMS Platform",
                 "Node Name",
                 "Node IP",
                 "Node Chassis",
@@ -173,6 +178,10 @@ def parse_report(path: Path) -> tuple[dict[str, str], list[ParsedResult]]:
                 "Case ID Drift",
             }:
                     header[key] = value.strip()
+        card_fw = CARD_FW_LINE_RE.match(line.strip())
+        if card_fw:
+            entry = f"{card_fw.group('card')} {card_fw.group('version').strip()}"
+            header[CARD_FW_HEADER_KEY] = "; ".join(filter(None, (header.get(CARD_FW_HEADER_KEY), entry)))
         if line.strip() == TEST_RESULTS_MARKER:
             break
 

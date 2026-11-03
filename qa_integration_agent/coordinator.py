@@ -15,7 +15,13 @@ from qa_mcp_contracts import (
     validate_operation_context,
 )
 from testlink_agent_core.policy import build_dedupe_key, dedupe_digest, dedupe_marker
-from testlink_agent_core.reports import SCHEMA_HEADER_KEY, parse_report, report_readiness, result_to_dict
+from testlink_agent_core.reports import (
+    CARD_FW_HEADER_KEY,
+    SCHEMA_HEADER_KEY,
+    parse_report,
+    report_readiness,
+    result_to_dict,
+)
 
 from .audit import DEFAULT_AUDIT_DIR, read_workflow_audit, utc_now_iso, write_workflow_audit
 from .errors import CoordinatorError, normalize_error
@@ -86,15 +92,18 @@ def in_port_session(method: Callable[..., Any]) -> Callable[..., Any]:
 
 
 # A plan built from `reports` (one report per node) uses contracts v2; a plan
-# built from a single `report` keeps the v1 shape and digest byte for byte.
+# built from a single `report` keeps the v1 shape.
 MULTI_REPORT_SCHEMA_VERSION = "2.0"
 SUPPORTED_PLAN_SCHEMA_VERSIONS = (CONTRACT_SCHEMA_VERSION, MULTI_REPORT_SCHEMA_VERSION)
 REPORT_HEADER_FIELDS = (
     "Report generated on",
     "EMS Version",
+    "EMS Target",
+    "EMS Platform",
     "Node Name",
     "Node IP",
     "Node Chassis",
+    "Card FW",
     "Summary",
     "Total test time",
 )
@@ -164,6 +173,7 @@ def _node_entry(label: str, report_path: Path, header: dict[str, str], parsed: A
         "node_name": header.get("Node Name", ""),
         "node_ip": header.get("Node IP", ""),
         "node_chassis": header.get("Node Chassis", ""),
+        "card_fw": header.get(CARD_FW_HEADER_KEY, ""),
     }
 
 
@@ -174,11 +184,26 @@ def node_result_lines(nodes: list[dict[str, Any]] | None) -> list[str]:
         target = " / ".join(
             str(node.get(key) or "-") for key in ("node_name", "node_ip", "node_chassis")
         )
+        firmware = f"; firmware {node['card_fw']}" if node.get("card_fw") else ""
         lines.append(
             f"{node['label']}: Result {node['raw_status']}; duration {node.get('duration') or '-'}; "
-            f"target {target}; report {node['report_file']}"
+            f"target {target}{firmware}; report {node['report_file']}"
         )
     return lines
+
+
+def report_environment_lines(header: dict[str, str]) -> list[str]:
+    """EMS, node and card firmware of a single report, so each execution records what it ran on."""
+    lines = []
+    ems = " / ".join(header[key] for key in ("EMS Version", "EMS Target", "EMS Platform") if header.get(key))
+    if ems:
+        lines.append(f"EMS: {ems}")
+    node = " / ".join(header[key] for key in ("Node Name", "Node IP", "Node Chassis") if header.get(key))
+    if node:
+        lines.append(f"Node: {node}")
+    if header.get(CARD_FW_HEADER_KEY):
+        lines.append(f"Card FW: {header[CARD_FW_HEADER_KEY]}")
+    return ["Test Environment:", *lines] if lines else []
 
 
 def _readiness_override(
@@ -241,6 +266,7 @@ class QaCoordinator:
         build: str,
         result: dict[str, Any],
         dedupe_marker_value: str | None,
+        environment_lines: list[str] | None = None,
     ) -> str:
         lines = [
             f"Operation ID: {operation_id}",
@@ -253,6 +279,7 @@ class QaCoordinator:
             f"Test Case: {result['external_id']}",
             f"Automation Test Function: {result['test_name']}",
             f"Result: {result['raw_status']}",
+            *(environment_lines or []),
             *QaCoordinator._node_block(result),
         ]
         if dedupe_marker_value:
@@ -426,6 +453,8 @@ class QaCoordinator:
         else:
             writable, ignored, leads = self._single_report_rows(sources[0], skip_policy)
         report_file = ", ".join(source["path"].name for source in sources)
+        # One report: its header is the run's environment. Several: each node line carries its own.
+        environment_lines = report_environment_lines(sources[0]["header"]) if len(sources) == 1 else []
         report_schema = ", ".join(
             dict.fromkeys(str(source["header"].get(SCHEMA_HEADER_KEY) or "") for source in sources)
         )
@@ -502,6 +531,7 @@ class QaCoordinator:
                 build=build,
                 result=row,
                 dedupe_marker_value=marker,
+                environment_lines=environment_lines,
             )
             testlink_request = {
                 "operation_id": child_operation_id(operation_id, row["external_id"], "testlink"),
