@@ -36,6 +36,31 @@ Test Results:
         self.assertEqual(results[3].status, "p")
 
 
+    def test_parses_ems_target_and_card_firmware_header_lines(self):
+        content = """Report generated on: 2026-11-03_14-34-43_NODE3
+EMS Version: 03.00.11 (AAVV.221) b14
+EMS Target: ubuntu
+EMS Platform: Ubuntu
+UI URL: https://192.0.2.8:9116/netatlasemsapi
+Node Name: Example_Node
+Node Chassis: NeoX-03
+NXC400:V1.03(ACKG.0)b8
+NXP316:V1.03(ACKI.0)b8
+Test Target Source: YAML
+Test Results:
+-------------
+[PRJ-6640][test_get_sessionid] Result Pass (0.1s)
+"""
+        with TemporaryDirectory() as tmpdir:
+            report = Path(tmpdir) / "report.txt"
+            report.write_text(content, encoding="utf-8")
+            header, results = parse_report(report)
+
+        self.assertEqual(header["EMS Target"], "ubuntu")
+        self.assertEqual(header["EMS Platform"], "Ubuntu")
+        self.assertEqual(header["Card FW"], "NXC400 V1.03(ACKG.0)b8; NXP316 V1.03(ACKI.0)b8")
+        self.assertEqual(len(results), 1)
+
     def test_parses_junit_xml_and_recovers_external_ids(self):
         content = """<?xml version="1.0" encoding="utf-8"?>
 <testsuites><testsuite name="pytest" tests="4" timestamp="2026-08-31T15:12:14.922374+08:00">
