@@ -40,14 +40,14 @@ Do not publish a release tag from an unreviewed or partially merged branch.
 Install once per Windows user, not once per consuming project:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.7"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.8"
 ```
 
 If an editable or obsolete installation already exists, replace it explicitly:
 
 ```powershell
 pipx uninstall testlink-agent
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.7"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.8"
 ```
 
 Run `pipx ensurepath` once if the pipx binary directory is not already on `PATH`, then
@@ -124,10 +124,15 @@ From v1.9.7, previews and audits written without `artifact_dir` / `audit_dir` go
 `local\` that failed under Claude Desktop. Explicit paths and resumes of older audits are
 unchanged.
 
+From v1.9.8, report-import execution notes carry a `Test Environment:` block (EMS, node and
+card firmware from the report header), and created Redmine bugs are linked to the TestLink
+testcase by default. The notes are part of the preview digest, so rebuild any preview made
+by v1.9.7 or earlier before executing it.
+
 After a newer reviewed tag is published:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.7"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.8"
 ```
 
 Run `testlink-agent install-skills` to refresh the installed skills, restart Codex and
@@ -140,7 +145,7 @@ reproducible release identity.
 Reinstall the previously approved tag:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.6"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.7"
 ```
 
 Restart Codex and verify the installed version. Rollback changes only the local MCP
