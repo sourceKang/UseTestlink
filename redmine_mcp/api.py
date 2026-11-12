@@ -1196,7 +1196,9 @@ def _redmine_comment(
                         "audit_id": previous_path.name,
                     }
                 )
-            if previous.get("status") == "started":
+            # A "failed" attempt may still have reached Redmine (for example a timeout after
+            # the PUT was applied), so it is checked against the journals like "started".
+            if previous.get("status") in {"started", "failed"}:
                 matching_journal = next(
                     (
                         journal
@@ -1206,6 +1208,8 @@ def _redmine_comment(
                     ),
                     None,
                 )
+                if matching_journal is None and previous.get("status") == "failed":
+                    continue
                 if matching_journal is None:
                     raise RedmineMcpError(
                         "A previous Redmine comment operation is indeterminate; refusing to add a possible duplicate comment.",
