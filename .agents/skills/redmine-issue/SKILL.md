@@ -14,4 +14,4 @@ description: Use for company Redmine/eITS metadata, template validation, bug pre
 4. 摘要需分列 Severity、custom Priority、dedupe 決策、attachments、warnings、artifact 與 digest。圖片、影片（WebM/MP4 等）與文字檔（.py/.sh/.log 等）都走 `attachments`；建單重用既有 issue 時改用留言附件補證據；文字檔若被標記 `content_scan: flagged`，在摘要列出檔名、行號與規則（不列值），由使用者決定照原樣上傳給 RD 或遮罩後重新 preview。
 5. 僅在明確確認後，用未變更輸入及 digest 寫入；寫後讀回驗證欄位並回報 audit ID。
 
-只可建立描述或補 evidence comment，不可關單、改狀態、assignee 或 fixed version。正式 Redmine MCP 不可用瀏覽器替代。
+只可建立描述或補 evidence comment；唯一例外是用 `redmine_update_subject` 修改既有 issue 的主旨（先 preview 給使用者看「目前 → 新」，明確確認後帶 digest 寫入，只送 subject）。不可關單、改狀態、assignee、fixed version 或其他欄位。正式 Redmine MCP 不可用瀏覽器替代。

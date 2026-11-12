@@ -271,6 +271,14 @@ class RedmineClient:
             issue["uploads"] = uploads
         return self.request_json("PUT", f"/issues/{issue_id}.json", {"issue": issue})
 
+    def update_issue_subject(self, issue_id: str | int, subject: str) -> dict[str, Any]:
+        """PUT only the subject; status, assignee, version, and every other field are left untouched."""
+        if not str(issue_id).strip():
+            raise RedmineMcpError("Redmine issue ID is required.", code="INVALID_ARGUMENT")
+        if not subject.strip():
+            raise RedmineMcpError("Redmine subject must not be empty.", code="INVALID_ARGUMENT")
+        return self.request_json("PUT", f"/issues/{issue_id}.json", {"issue": {"subject": subject}})
+
     def get_issue_journals(self, issue_id: str | int) -> list[dict[str, Any]]:
         response = self.request_json(
             "GET",

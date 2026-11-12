@@ -1343,6 +1343,277 @@ def redmine_add_comment(**kwargs: Any) -> dict[str, Any]:
     return _redmine_comment(**kwargs)
 
 
+SUBJECT_MAX_LENGTH = 255
+_SUBJECT_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+# Fields a subject-only PUT must leave alone; the readback reports any that moved.
+_SUBJECT_GUARDED_FIELDS = (
+    "project",
+    "tracker",
+    "status",
+    "priority",
+    "assigned_to",
+    "fixed_version",
+    "category",
+)
+
+
+def _validate_new_subject(value: Any) -> str:
+    raw = str(value if value is not None else "")
+    if "\n" in raw or "\r" in raw:
+        raise RedmineMcpError("subject must be a single line (no line breaks).", code="INVALID_ARGUMENT")
+    if _SUBJECT_CONTROL_RE.search(raw):
+        raise RedmineMcpError("subject must not contain control characters.", code="INVALID_ARGUMENT")
+    return _require_text("subject", raw, max_length=SUBJECT_MAX_LENGTH)
+
+
+def _guarded_field_ids(issue: dict[str, Any]) -> dict[str, str]:
+    ids: dict[str, str] = {}
+    for name in _SUBJECT_GUARDED_FIELDS:
+        value = issue.get(name)
+        ids[name] = str(value.get("id") or "") if isinstance(value, dict) else ""
+    return ids
+
+
+def _subject_plan(
+    *,
+    operation_id: str,
+    environment: str,
+    issue_id: str,
+    current_subject: str,
+    new_subject: str,
+) -> dict[str, Any]:
+    unchanged = current_subject == new_subject
+    plan = {
+        "schema_version": CONTRACT_SCHEMA_VERSION,
+        "operation_id": _require_text("operation_id", operation_id, max_length=128),
+        "environment": environment,
+        "action": "no-change" if unchanged else "update-subject",
+        "planned_write": not unchanged,
+        "issue_id": issue_id,
+        "current_subject": current_subject,
+        "new_subject": new_subject,
+        "write_fields": ["subject"],
+    }
+    assert_safe_contract(plan)
+    return plan
+
+
+def redmine_update_subject(
+    *,
+    operation_id: str,
+    environment: str,
+    issue_id: str,
+    subject: str,
+    expected_current_subject: str | None = None,
+    write: bool = False,
+    preview_digest: str | None = None,
+    env_file: str | None = None,
+    audit_dir: str = DEFAULT_AUDIT_DIR,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Preview, then change only an existing issue's subject after a confirmed digest.
+
+    The digest binds the issue ID, the subject read at preview time, and the new subject, so a
+    subject changed by someone else after preview rejects the write instead of overwriting it.
+    """
+    attempt_audit_id: str | None = None
+    selected_issue_id = ""
+    current_subject: str | None = None
+    new_subject: str | None = None
+    subject_written = False
+    verification: dict[str, Any] | None = None
+    try:
+        settings, client = _runtime(env_file, timeout)
+        selected = validate_environment(environment, settings.environment)
+        selected_issue_id = _require_text("issue_id", issue_id)
+        new_subject = _validate_new_subject(subject)
+        before = client.get_issue(selected_issue_id)
+        current_subject = str(before.get("subject") or "")
+        issue_url = client.issue_url(selected_issue_id)
+
+        if write:
+            # Resume: an earlier attempt with this digest already reached Redmine.
+            for previous_path, previous in find_operation_audits(operation_id, "update-subject", audit_dir):
+                if (
+                    previous.get("preview_digest") != preview_digest
+                    or previous.get("issue_id") != selected_issue_id
+                    or previous.get("new_subject") != new_subject
+                    or current_subject != new_subject
+                ):
+                    continue
+                if previous.get("status") != "updated":
+                    write_operation_audit(
+                        {**previous, "status": "updated", "recovered": True, "finished_at": utc_now_iso()},
+                        audit_dir,
+                        audit_id=previous_path.name,
+                    )
+                return _success(
+                    {
+                        "schema_version": CONTRACT_SCHEMA_VERSION,
+                        "operation_id": operation_id,
+                        "environment": selected,
+                        "preview_digest": str(preview_digest),
+                        "status": "skipped-resume",
+                        "issue_id": selected_issue_id,
+                        "issue_url": issue_url,
+                        "subject": current_subject,
+                        "audit_id": previous_path.name,
+                    }
+                )
+
+        expected = None if expected_current_subject in (None, "") else str(expected_current_subject)
+        if expected is not None and expected != current_subject:
+            raise RedmineMcpError(
+                f"Issue {selected_issue_id} subject is now {current_subject!r}, not the expected "
+                f"{expected!r}; it was changed by someone else. Review it and run a new preview.",
+                code="SUBJECT_CHANGED",
+            )
+        plan = _subject_plan(
+            operation_id=operation_id,
+            environment=selected,
+            issue_id=selected_issue_id,
+            current_subject=current_subject,
+            new_subject=new_subject,
+        )
+        warnings = [] if plan["planned_write"] else ["The new subject equals the current subject; nothing to write."]
+        if not write:
+            return _success(
+                {
+                    "schema_version": CONTRACT_SCHEMA_VERSION,
+                    "operation_id": operation_id,
+                    "environment": selected,
+                    "mode": "preview",
+                    "preview_digest": payload_digest(plan),
+                    "planned_write": plan["planned_write"],
+                    "action": plan["action"],
+                    "issue_id": selected_issue_id,
+                    "issue_url": issue_url,
+                    "subject_change": {"from": current_subject, "to": new_subject},
+                    "write_fields": plan["write_fields"],
+                    "warnings": warnings,
+                }
+            )
+        try:
+            validate_preview_digest(plan, str(preview_digest or ""))
+        except ContractError as exc:
+            raise RedmineMcpError(
+                f"{exc} The current subject of issue {selected_issue_id} is {current_subject!r}; "
+                "if it changed after preview, review it and run a new preview.",
+                code="PREVIEW_DIGEST_MISMATCH",
+            ) from exc
+        if not plan["planned_write"]:
+            raise RedmineMcpError("The new subject equals the current subject.", code="WRITE_BLOCKED")
+        started_audit = write_operation_audit(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "action": "update-subject",
+                "status": "started",
+                "issue_id": selected_issue_id,
+                "previous_subject": current_subject,
+                "new_subject": new_subject,
+                "preview_digest": preview_digest,
+                "started_at": utc_now_iso(),
+            },
+            audit_dir,
+        )
+        attempt_audit_id = started_audit.name
+        client.update_issue_subject(selected_issue_id, new_subject)
+        subject_written = True
+        after = client.get_issue(selected_issue_id)
+        actual_subject = str(after.get("subject") or "")
+        before_ids, after_ids = _guarded_field_ids(before), _guarded_field_ids(after)
+        changed_fields = [name for name in _SUBJECT_GUARDED_FIELDS if before_ids[name] != after_ids[name]]
+        verified = actual_subject == new_subject
+        verification = {
+            "status": "verified" if verified else "verification_failed",
+            "verified": verified,
+            "expected_subject": new_subject,
+            "actual_subject": actual_subject,
+            "other_fields_unchanged": not changed_fields,
+            "changed_fields": changed_fields,
+        }
+        if not verified:
+            raise RedmineMcpError(
+                "Redmine issue subject readback does not match the confirmed preview.",
+                code="VERIFICATION_FAILED",
+            )
+        if changed_fields:
+            warnings.append(
+                "These fields differ between the pre-write read and the readback although only the "
+                f"subject was sent: {', '.join(changed_fields)}. Check the issue history."
+            )
+        audit_path = write_operation_audit(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "action": "update-subject",
+                "status": "updated",
+                "issue_id": selected_issue_id,
+                "previous_subject": current_subject,
+                "new_subject": new_subject,
+                "preview_digest": preview_digest,
+                "verification": verification,
+                "finished_at": utc_now_iso(),
+            },
+            audit_dir,
+            audit_id=attempt_audit_id,
+        )
+        return _success(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "preview_digest": str(preview_digest),
+                "status": "updated",
+                "issue_id": selected_issue_id,
+                "issue_url": issue_url,
+                "subject_change": {"from": current_subject, "to": new_subject},
+                "verification": verification,
+                "warnings": warnings,
+                "audit_id": audit_path.name,
+            }
+        )
+    except Exception as exc:
+        audit_id = None
+        if write:
+            audit_id = _attempt_failure_audit(
+                operation_id=operation_id,
+                environment=environment,
+                action="update-subject",
+                preview_digest=preview_digest,
+                error=exc,
+                audit_dir=audit_dir,
+                audit_id=attempt_audit_id,
+                details={
+                    "issue_id": selected_issue_id,
+                    "previous_subject": current_subject,
+                    "new_subject": new_subject,
+                    "subject_written": subject_written,
+                    "verification": verification,
+                },
+            )
+            if audit_id is None:
+                exc = RedmineMcpError(
+                    f"{exc}; additionally, the required Redmine audit record could not be written.",
+                    code="AUDIT_WRITE_FAILED",
+                )
+        stage = "write" if write else "preview"
+        failure = _failure(operation_id, f"redmine-subject-{stage}", exc)
+        if subject_written:
+            failure["error"]["partial_result"] = redact_secrets(
+                {
+                    "action": "subject-sent",
+                    "issue_id": selected_issue_id,
+                    "verification": verification,
+                    "audit_id": audit_id,
+                }
+            )
+        return failure
+
+
 TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "redmine_health": redmine_health,
     "redmine_search_issues": redmine_search_issues,
@@ -1354,6 +1625,7 @@ TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "redmine_create_bug": redmine_create_bug,
     "redmine_preview_comment": redmine_preview_comment,
     "redmine_add_comment": redmine_add_comment,
+    "redmine_update_subject": redmine_update_subject,
 }
 
 

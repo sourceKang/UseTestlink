@@ -24,11 +24,12 @@ class TokenBudgetTests(unittest.TestCase):
         # Ceilings sit a few percent above the 2026-10-16 measurements; raising one needs a stated reason.
         # 2026-10-28: maintenance and batch-import raised for testlink_mark_automated (about 206 tokens).
         # 2026-11-12: redmine_issue raised for video/text attachments and comment attachments (about 263 tokens).
+        # 2026-11-12: redmine_issue raised for redmine_update_subject (about 272 tokens).
         ceilings = {
             "qa_report_import": 1550,
             "testlink_execution": 2650,
             "testlink_testcase_maintenance": 2280,
-            "redmine_issue": 2850,
+            "redmine_issue": 3150,
             "redmine_discovery": 1300,
             "preset_batch_import_testlink": 4250,
             "preset_manual_qa_testlink": 2650,

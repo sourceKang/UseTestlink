@@ -31,8 +31,9 @@ Do not place `REDMINE_ALLOW_MANAGER_FIELDS=true` in a shared env file. Manager-o
 - `redmine_create_bug`
 - `redmine_preview_comment`
 - `redmine_add_comment`
+- `redmine_update_subject`
 
-Bug creation and comments default to preview. A write call must include `write: true` and the exact `preview_digest` returned for the unchanged planned payload. The server recomputes dedupe state immediately before creation; if another actor created a matching issue after preview, the old digest is rejected and a new preview is required.
+Bug creation, comments, and subject edits default to preview. A write call must include `write: true` and the exact `preview_digest` returned for the unchanged planned payload. The server recomputes dedupe state immediately before creation; if another actor created a matching issue after preview, the old digest is rejected and a new preview is required.
 
 ### Reading existing issues and resolving projects
 
@@ -152,6 +153,34 @@ errors, or audit JSON. If the bug dedupe check finds an existing open issue, it 
 the supplied files are deliberately not uploaded (`not-uploaded-reused` with a warning); add
 evidence to that issue with `redmine_add_comment` and `attachments` instead.
 
+### Correcting an issue subject
+
+`redmine_update_subject` changes only the `subject` of an existing issue. It is the single
+exception to "create a bug or add an evidence comment"; no other field of an existing issue can
+be changed through this server.
+
+- Preview (default): reads the issue and returns `subject_change` (`from` → `to`),
+  `write_fields: ["subject"]`, and `preview_digest`. The digest binds the operation, environment,
+  issue ID, the subject read at preview time, and the new subject.
+- Optional `expected_current_subject`: fails with `SUBJECT_CHANGED` when the issue's current
+  subject differs, in preview and in write.
+- Write (`write: true` + `preview_digest`): re-reads the issue first. If the subject changed after
+  preview, the digest no longer matches and the write fails with `PREVIEW_DIGEST_MISMATCH`; it
+  never overwrites someone else's edit. The PUT body is `{"issue": {"subject": ...}}` only.
+- After the PUT it reads the issue back: a subject mismatch fails with `VERIFICATION_FAILED`
+  (with `partial_result`), and a difference in project, tracker, status, priority, assignee,
+  fixed version, or category between the pre-write read and the readback is reported in
+  `verification.changed_fields` with a warning.
+- The new subject must be non-blank, at most 255 characters, and a single line (line breaks and
+  other control characters are rejected).
+- A new subject equal to the current one previews as `no-change`; its write is `WRITE_BLOCKED`.
+- Audit action `update-subject` records the previous and new subject. A retry with the same
+  `operation_id` and `preview_digest` whose issue already shows the new subject returns
+  `skipped-resume` (a `started`/`failed` audit is marked `updated`, `recovered`).
+
+A narrow race remains between the write-time read and the PUT, because the Redmine REST API offers
+no conditional update; the readback reports the result.
+
 ## Write Policy
 
 - Open dedupe match: reuse the issue; never create a duplicate.
@@ -162,6 +191,7 @@ evidence to that issue with `redmine_add_comment` and `attachments` instead.
 - No match: preview issue creation.
 - Comments use an `issue.notes` payload, plus `issue.uploads` only when attachments were confirmed.
 - Status, assignee, fixed version, and issue closure are not modified automatically.
+- An existing issue's subject changes only through `redmine_update_subject`, which sends the subject alone.
 - Every attempted write first creates a redacted `started` audit and updates the same record with success or failure under `<data dir>/redmine_audit/` by default (`%LOCALAPPDATA%\testlink-agent` or `TESTLINK_AGENT_DATA_DIR`; see `docs/workflow.md` Audit Locations).
 - Comment retry with the same `operation_id` and `preview_digest`: an `added` audit is skipped; a `started` or `failed` audit is first checked against the issue journals by notes digest. A matching journal marks the audit `added` (`recovered`) and skips the write, so a timeout after Redmine applied the comment does not post it twice. With no match, `started` fails closed (`INDETERMINATE_OPERATION`) and `failed` retries the write.
 
@@ -188,7 +218,7 @@ fails closed on unknown or empty names.
 
 - `discovery`: read-only — `redmine_search_issues`, `redmine_get_issue`, `redmine_list_projects`,
   `redmine_health`, `redmine_get_project_metadata`, `redmine_validate_template`.
-- `issue`: lookups plus bug/comment preview and write.
+- `issue`: lookups plus bug/comment preview and write, and `redmine_update_subject`.
 - `metadata`: project metadata and template validation.
 - `integration`: reserved for the qa-integration-agent child process.
 - `all`: every tool.
