@@ -43,9 +43,9 @@ EMS Target: ubuntu
 EMS Platform: Ubuntu
 UI URL: https://192.0.2.8:9116/netatlasemsapi
 Node Name: Example_Node
-Node Chassis: NeoX-03
-NXC400:V1.03(ACKG.0)b8
-NXP316:V1.03(ACKI.0)b8
+Node Chassis: NODE-03
+CARD1:V1.03(ABCD.0)b8
+CARD2:V1.03(ABCE.0)b8
 Test Target Source: YAML
 Test Results:
 -------------
@@ -58,7 +58,7 @@ Test Results:
 
         self.assertEqual(header["EMS Target"], "ubuntu")
         self.assertEqual(header["EMS Platform"], "Ubuntu")
-        self.assertEqual(header["Card FW"], "NXC400 V1.03(ACKG.0)b8; NXP316 V1.03(ACKI.0)b8")
+        self.assertEqual(header["Card FW"], "CARD1 V1.03(ABCD.0)b8; CARD2 V1.03(ABCE.0)b8")
         self.assertEqual(len(results), 1)
 
     def test_parses_junit_xml_and_recovers_external_ids(self):

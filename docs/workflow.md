@@ -123,7 +123,7 @@ Card FW: <card> <version>; <card> <version>
 
 Each line is left out when its header values are missing, and the whole block when all are.
 `Card FW` comes from the RestApi Auto header lines `<CARD>:<version>` (for example
-`NXC400:V1.03(ACKG.0)b8`). A multi-node import puts each node's firmware on its `Node Results`
+`CARD1:V1.00(ABCD.0)b1`). A multi-node import puts each node's firmware on its `Node Results`
 line instead. The notes are part of the TestLink preview digest, so a preview built by an
 older version must be rebuilt before it is executed with this version.
 

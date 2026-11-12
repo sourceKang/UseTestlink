@@ -1363,7 +1363,7 @@ def write_environment_report(directory: str, name: str, node: str, card_fw: list
                 "EMS Platform: Ubuntu",
                 f"Node Name: {node}",
                 "Node IP: 192.0.2.58",
-                "Node Chassis: NeoX-03",
+                "Node Chassis: NODE-03",
                 *card_fw,
                 "Test Target Source: YAML",
                 "Test Results:",
@@ -1383,8 +1383,8 @@ class ReportEnvironmentNotesTests(unittest.TestCase):
             report = write_environment_report(
                 tmpdir,
                 "report.txt",
-                "NeoX-03",
-                ["NXC400:V1.03(ACKG.0)b8", "NXP316:V1.03(ACKI.0)b8"],
+                "NODE-03",
+                ["CARD1:V1.03(ABCD.0)b8", "CARD2:V1.03(ABCE.0)b8"],
                 "[EMS-1][test_login] Result Pass (60s)",
             )
             plan = coordinator.build_plan(**workflow_args(report, redmine_create_bugs=False))
@@ -1394,8 +1394,8 @@ class ReportEnvironmentNotesTests(unittest.TestCase):
         self.assertEqual(
             [
                 "EMS: 03.00.11 b14 / ubuntu / Ubuntu",
-                "Node: NeoX-03 / 192.0.2.58 / NeoX-03",
-                "Card FW: NXC400 V1.03(ACKG.0)b8; NXP316 V1.03(ACKI.0)b8",
+                "Node: NODE-03 / 192.0.2.58 / NODE-03",
+                "Card FW: CARD1 V1.03(ABCD.0)b8; CARD2 V1.03(ABCE.0)b8",
             ],
             notes[start + 1 : start + 4],
         )
@@ -1413,10 +1413,10 @@ class ReportEnvironmentNotesTests(unittest.TestCase):
         with TemporaryDirectory() as tmpdir:
             reports = [
                 ("NODE1", write_environment_report(
-                    tmpdir, "node1.txt", "NeoX-01", ["NXC400:V1.02(ACKG.1)"], "[EMS-1][test_login] Result Pass (60s)"
+                    tmpdir, "node1.txt", "NODE-01", ["CARD1:V1.02(ABCD.1)"], "[EMS-1][test_login] Result Pass (60s)"
                 )),
                 ("NODE3", write_environment_report(
-                    tmpdir, "node3.txt", "NeoX-03", ["NXC400:V1.03(ACKG.0)b8"], "[EMS-1][test_login] Result Pass (30s)"
+                    tmpdir, "node3.txt", "NODE-03", ["CARD1:V1.03(ABCD.0)b8"], "[EMS-1][test_login] Result Pass (30s)"
                 )),
             ]
             plan = coordinator.build_plan(**multi_args(reports))
@@ -1426,10 +1426,10 @@ class ReportEnvironmentNotesTests(unittest.TestCase):
         start = notes.index("Node Results:")
         self.assertEqual(
             [
-                "NODE1: Result Pass; duration 60s; target NeoX-01 / 192.0.2.58 / NeoX-03; "
-                "firmware NXC400 V1.02(ACKG.1); report node1.txt",
-                "NODE3: Result Pass; duration 30s; target NeoX-03 / 192.0.2.58 / NeoX-03; "
-                "firmware NXC400 V1.03(ACKG.0)b8; report node3.txt",
+                "NODE1: Result Pass; duration 60s; target NODE-01 / 192.0.2.58 / NODE-03; "
+                "firmware CARD1 V1.02(ABCD.1); report node1.txt",
+                "NODE3: Result Pass; duration 30s; target NODE-03 / 192.0.2.58 / NODE-03; "
+                "firmware CARD1 V1.03(ABCD.0)b8; report node3.txt",
             ],
             notes[start + 1 : start + 3],
         )
