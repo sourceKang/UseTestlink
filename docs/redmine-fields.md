@@ -188,18 +188,31 @@ Execution URL:
 Dedupe Key:
 ```
 
-## Image Attachment Policy
+## Attachment Policy
 
-Bug creation may include optional image evidence through `redmine-mcp`. Attachment input is
-local file intent only; API credentials and Redmine upload tokens are never MCP arguments.
+Bug creation and evidence comments may include optional image, video, or text evidence through
+`redmine-mcp`. Attachment input is local file intent only; API credentials and Redmine upload
+tokens are never MCP arguments. Details and the credential-scan rules are in
+`docs/redmine-mcp.md` (Attachments on bugs and comments).
 
-- Preview computes and displays filename, detected MIME type, byte size, and SHA-256.
+- Preview computes and displays filename, kind, detected MIME type, byte size, SHA-256, and for
+  text the content-scan result.
 - The exact attachment metadata and content digest are included in `preview_digest`.
-- Upload occurs only with `write: true` and the matching digest, after the final dedupe check.
-- Supported formats are PNG, JPEG, GIF, WebP, and BMP; maximum five images and 10 MiB each.
+- Upload occurs only with `write: true` and the matching digest; for bugs after the final dedupe check.
+- Images: PNG, JPEG, GIF, WebP, BMP; at most 5, 10 MiB each (unchanged).
+- Videos: WebM, MKV, MP4/M4V, MOV detected from content; at most 3, 20 MiB each; not scanned.
+- Text: `.py`, `.sh`, `.json`, `.jsonl`, `.log`, `.txt`, `.csv`, `.md`; UTF-8 without NUL; at most 5,
+  1 MiB each; credential-like lines (English or Chinese labels such as `密碼：`/`帳密`, unlabeled JWTs)
+  are flagged in the preview by line and rule, without echoing the value, and are not blocked:
+  the file is evidence for RD and is uploaded unchanged after confirmation.
+- At most 10 files and 64 MiB per write. Company Redmine's own `attachment_max_size` is unknown and
+  may be lower; an oversized upload fails before the issue or comment is written.
 - Upload tokens are internal ephemeral values and must not be written to responses, errors, or audit JSON.
-- When an open dedupe match is reused, create-bug does not upload the supplied images and reports a warning.
-- A failed upload is audited and the issue create call is not made; retry requires the unchanged confirmed input.
+- When an open dedupe match is reused, create-bug does not upload the supplied files and reports a
+  warning; attach the evidence with a comment instead.
+- Comment attachments are sent as `issue.notes` plus `issue.uploads`; no other issue field changes.
+- A failed upload is audited and the issue create or comment call is not made; retry requires the
+  unchanged confirmed input.
 
 ## Custom Field Template
 

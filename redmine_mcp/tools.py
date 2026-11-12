@@ -5,6 +5,8 @@ from typing import Any
 
 from qa_mcp_contracts.toolsets import resolve_tool_names
 
+from .attachments import MAX_ATTACHMENTS, SUPPORTED_TYPES_SUMMARY
+
 
 def string(description: str) -> dict[str, Any]:
     return {"type": "string", "description": description}
@@ -25,6 +27,23 @@ def schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
         "properties": {**COMMON_PROPERTIES, **properties},
         "required": required,
     }
+
+
+ATTACHMENTS_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "maxItems": MAX_ATTACHMENTS,
+    "description": f"Local files: {SUPPORTED_TYPES_SUMMARY}. Preview never uploads.",
+    "items": {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "file": {"type": "string"},
+            "filename": {"type": "string", "maxLength": 255},
+            "description": {"type": "string", "maxLength": 255},
+        },
+        "required": ["file"],
+    },
+}
 
 
 BUG_PROPERTIES: dict[str, Any] = {
@@ -50,29 +69,7 @@ BUG_PROPERTIES: dict[str, Any] = {
     "fixed_version_id": string("Manager-only; blocked unless enabled."),
     "dedupe_marker": string("Stable marker to find and reuse an existing issue."),
     "dedupe": {"type": "string", "enum": ["open"], "default": "open"},
-    "attachments": {
-        "type": "array",
-        "maxItems": 5,
-        "description": "Local images (max 10 MiB each), attached only to a new bug; bound to the preview by SHA-256.",
-        "items": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "file": string("Local PNG/JPEG/GIF/WebP/BMP path."),
-                "filename": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "description": "Defaults to the file basename.",
-                },
-                "description": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "description": "Attachment description.",
-                },
-            },
-            "required": ["file"],
-        },
-    },
+    "attachments": ATTACHMENTS_SCHEMA,
     "audit_dir": string("Writable absolute audit directory."),
 }
 
@@ -89,6 +86,7 @@ BUG_REQUIRED = [
 COMMENT_PROPERTIES: dict[str, Any] = {
     "issue_id": string("Issue ID."),
     "notes": string("Evidence comment; never changes status, assignee, or version."),
+    "attachments": ATTACHMENTS_SCHEMA,
     "template_file": string("Validated project template JSON."),
     "audit_dir": string("Writable absolute audit directory."),
 }
@@ -188,7 +186,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "redmine_preview_bug",
-        "description": "Preview Redmine bug dedupe and policy decisions; never writes.",
+        "description": "Preview Redmine bug dedupe, policy and attachment checks; never writes or uploads.",
         "inputSchema": schema(BUG_PROPERTIES, BUG_REQUIRED),
         "annotations": {"readOnlyHint": True},
     },
@@ -207,7 +205,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "redmine_preview_comment",
-        "description": "Preview an evidence comment without writing.",
+        "description": "Preview an evidence comment and its attachments without writing or uploading.",
         "inputSchema": schema(COMMENT_PROPERTIES, ["operation_id", "environment", "issue_id", "notes"]),
         "annotations": {"readOnlyHint": True},
     },

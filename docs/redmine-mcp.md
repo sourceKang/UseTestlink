@@ -82,44 +82,85 @@ binds the contract and findings into `preview_digest`, and never performs silent
 Comments use the same default template resolved from `REDMINE_TEMPLATE`; callers may select
 an explicit validated `template_file`, but cannot override the formatter directly.
 
-### Image attachments on bug creation
+### Attachments on bugs and comments
 
-`redmine_preview_bug` and `redmine_create_bug` accept an optional `attachments` array:
+`redmine_preview_bug`, `redmine_create_bug`, `redmine_preview_comment`, and
+`redmine_add_comment` accept the same optional `attachments` array:
 
 ```json
 {
   "attachments": [
     {
-      "file": "D:\\evidence\\filter-result.png",
-      "filename": "filter-result.png",
-      "description": "Device list after applying the Submap Name filter"
-    }
+      "file": "D:\\evidence\\trigger.webm",
+      "filename": "trigger.webm",
+      "description": "31-second recording of the trigger"
+    },
+    {"file": "D:\\evidence\\repro.py"}
   ]
 }
 ```
 
-Supported formats are PNG, JPEG, GIF, WebP, and BMP. At most five images may be supplied,
-and each image is limited to 10 MiB. The MCP detects the format from file content rather
-than trusting the extension. Preview reads no Redmine data beyond the normal dedupe check
-and performs no upload. It returns the filename, detected MIME type, byte size, SHA-256,
-and attachment action; these values are part of `preview_digest`.
+| Kind | Formats | Count | Per file |
+|------|---------|-------|----------|
+| Image | PNG, JPEG, GIF, WebP, BMP | 5 | 10 MiB |
+| Video | WebM, MKV, MP4/M4V, MOV | 3 | 20 MiB |
+| Text | `.py`, `.sh`, `.json`, `.jsonl`, `.log`, `.txt`, `.csv`, `.md` | 5 | 1 MiB |
 
-On a confirmed create, `redmine-mcp` uploads each binary to Redmine's `/uploads.json`
-endpoint and places the returned internal upload references in the issue creation request.
-Upload tokens never appear in MCP results, errors, or audit JSON. If the dedupe check finds
-an existing open issue, it is reused and the supplied images are deliberately not uploaded,
-preventing duplicate evidence attachments; preview reports `not-uploaded-reused` and a
-warning. Adding images to an existing issue is outside this create-bug capability.
+At most 10 files and 64 MiB in total per write. Limits are rejections, never truncation.
+The company Redmine `attachment_max_size` is not readable through the REST API, so these
+limits are local constants (`redmine_mcp/attachments.py`). If Redmine's own limit is lower,
+`/uploads.json` fails with HTTP 422 before the issue or comment is written, and the failure
+is audited.
+
+Type detection:
+
+- Images and videos are detected from file content (magic bytes: WebM/Matroska EBML
+  header `1A 45 DF A3` with DocType `webm` or `matroska`; MP4/MOV `ftyp` box). The filename
+  extension must match the detected type, so a binary cannot be renamed into another kind.
+- Any other file is text only if its extension is on the list above. Text must be UTF-8
+  (a BOM is allowed) and must not contain NUL bytes.
+- Text files are scanned for credential-like lines, but a hit does **not** block the upload:
+  attachments are evidence for RD, who may need the test accounts in a repro script or log to
+  reproduce the problem. The file's `content_scan` becomes `flagged` with `finding_count` and up
+  to 20 `{line, rule}` findings, and the preview adds a warning naming the file, line numbers and
+  rules; the matched value is never returned, logged or audited. The file is uploaded unchanged
+  once the user confirms the preview; to keep a value out of Redmine, mask the file and preview
+  again. Rules cover
+  `key=value`, `key: value`, JSON fields, and headers for password, passphrase, secret,
+  API key, devKey, token (including `csrftoken`, `access_token`), session ID, registration
+  ID, and private key; `Bearer`/`Basic`/`Digest` credentials; `--password`, `sshpass -p`, and
+  `-p` beside a user flag; URL user info; private-key blocks; JWTs without any label
+  (`eyJ….eyJ….…`); and the configured `REDMINE_API_KEY`/`TESTLINK_DEVKEY` values.
+  Chinese labels (密碼、密码、帳密、帳號密碼、口令、金鑰、密鑰、權杖、令牌) count when followed
+  by `：`, `:`, `=`, `為` or `是` and an ASCII value (`密碼：abc123`), and `帳密 admin/abc123`
+  counts without a separator; prose such as `密碼：見附件` or `密碼是否正確` does not.
+  Placeholders such as `*****`, `<password>`, `$EMS_PASS`, `${X}`, `{token}`,
+  `os.environ[...]`, `null`, `N/A`, and empty values are not hits.
+  In `.py` files only string literals count for English keys, so `password=args.password` is
+  not a hit; Chinese labels count everywhere, including comments.
+  The scan only points at likely lines; it is not a guarantee, so still review the attachments.
+- Videos and images are not scanned.
+
+Preview performs no upload. It returns each file's `filename`, `description`, `kind`,
+detected `content_type`, `size`, `sha256`, and for text a `content_scan` summary; these values
+are part of `preview_digest`, so changing a file after preview invalidates the digest.
+
+On a confirmed write, `redmine-mcp` uploads each file to Redmine's `/uploads.json` endpoint
+and passes the returned upload references in the same request: `issue.uploads` on creation,
+`issue.notes` plus `issue.uploads` on a comment. Upload tokens never appear in MCP results,
+errors, or audit JSON. If the bug dedupe check finds an existing open issue, it is reused and
+the supplied files are deliberately not uploaded (`not-uploaded-reused` with a warning); add
+evidence to that issue with `redmine_add_comment` and `attachments` instead.
 
 ## Write Policy
 
 - Open dedupe match: reuse the issue; never create a duplicate.
-- Image attachments are uploaded only for a newly created issue and only after digest confirmation.
-- A changed image, filename, description, size, or detected MIME type invalidates the preview digest.
+- Attachments are uploaded only after digest confirmation: on bug creation only for a newly created issue, on comments together with the notes.
+- A changed file, filename, description, size, or detected MIME type invalidates the preview digest.
 - Disabling dedupe is not supported by `redmine-mcp`.
 - Closed dedupe match: block and require a human decision; never reopen automatically.
 - No match: preview issue creation.
-- Comments use an `issue.notes`-only payload.
+- Comments use an `issue.notes` payload, plus `issue.uploads` only when attachments were confirmed.
 - Status, assignee, fixed version, and issue closure are not modified automatically.
 - Every attempted write first creates a redacted `started` audit and updates the same record with success or failure under `<data dir>/redmine_audit/` by default (`%LOCALAPPDATA%\testlink-agent` or `TESTLINK_AGENT_DATA_DIR`; see `docs/workflow.md` Audit Locations).
 

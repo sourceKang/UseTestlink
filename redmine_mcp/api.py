@@ -14,7 +14,7 @@ from qa_mcp_contracts import (
     validate_preview_digest,
 )
 
-from .attachments import PreparedImageAttachment, prepare_image_attachments
+from .attachments import PreparedAttachment, attachment_warnings, prepare_attachments
 from .audit import find_operation_audits, utc_now_iso, write_operation_audit
 from .client import RedmineClient
 from .config import DEFAULT_AUDIT_DIR, DEFAULT_TIMEOUT_SECONDS, RedmineSettings, load_redmine_settings
@@ -259,6 +259,7 @@ def _build_bug_plan(
         str(item.get("message") or "Redmine text format warning.")
         for item in format_validation["warnings"]
     )
+    warnings.extend(attachment_warnings(attachments))
     if not format_validation["valid"]:
         action = "blocked"
         existing_issue = open_issue or closed_issue
@@ -272,7 +273,8 @@ def _build_bug_plan(
         existing_issue = open_issue
         if attachments:
             warnings.append(
-                "The dedupe marker matches an open issue; image attachments are not uploaded to reused issues."
+                "The dedupe marker matches an open issue; attachments are not uploaded to reused issues "
+                "(add them with redmine_add_comment instead)."
             )
     elif closed_issue is not None:
         action = "blocked"
@@ -930,7 +932,7 @@ def _redmine_bug(
             environment=selected,
             field="description",
         )
-        prepared_attachments: list[PreparedImageAttachment] = prepare_image_attachments(attachments)
+        prepared_attachments: list[PreparedAttachment] = prepare_attachments(attachments)
         attachment_metadata = [attachment.metadata() for attachment in prepared_attachments]
 
         def build_plan() -> dict[str, Any]:
@@ -1112,6 +1114,7 @@ def _redmine_comment(
     environment: str,
     issue_id: str,
     notes: str,
+    attachments: Any = None,
     template_file: str | None = None,
     write: bool = False,
     preview_digest: str | None = None,
@@ -1122,6 +1125,7 @@ def _redmine_comment(
     attempt_audit_id: str | None = None
     text_format: dict[str, Any] | None = None
     format_validation: dict[str, Any] | None = None
+    attachment_metadata: list[dict[str, Any]] = []
     try:
         settings, client = _runtime(env_file, timeout)
         selected = validate_environment(environment, settings.environment)
@@ -1143,6 +1147,9 @@ def _redmine_comment(
         ]
         if not format_validation["valid"]:
             warnings.append("Redmine comment format validation failed.")
+        prepared_attachments: list[PreparedAttachment] = prepare_attachments(attachments)
+        attachment_metadata = [attachment.metadata() for attachment in prepared_attachments]
+        warnings.extend(attachment_warnings(attachment_metadata))
         plan = {
             "schema_version": CONTRACT_SCHEMA_VERSION,
             "operation_id": _require_text("operation_id", operation_id, max_length=128),
@@ -1153,6 +1160,7 @@ def _redmine_comment(
             "notes": selected_notes,
             "text_format": text_format,
             "format_validation": format_validation,
+            "attachments": attachment_metadata,
             "warnings": warnings,
         }
         assert_safe_contract(plan)
@@ -1171,6 +1179,9 @@ def _redmine_comment(
                     "notes_digest": hashlib.sha256(selected_notes.encode("utf-8")).hexdigest(),
                     "text_format": text_format,
                     "format_validation": format_validation,
+                    "attachment_action": "upload-and-attach" if attachment_metadata else "none",
+                    "attachment_count": len(attachment_metadata),
+                    "attachments": attachment_metadata,
                     "warnings": warnings,
                 }
             )
@@ -1242,12 +1253,25 @@ def _redmine_comment(
                 "preview_digest": preview_digest,
                 "text_format": text_format,
                 "format_validation": _format_validation_audit(format_validation),
+                "attachment_count": len(attachment_metadata),
+                "attachments": attachment_metadata,
                 "started_at": utc_now_iso(),
             },
             audit_dir,
         )
         attempt_audit_id = started_audit.name
-        client.add_comment(selected_issue_id, selected_notes)
+        # Upload tokens only travel to Redmine; results and audits keep metadata.
+        upload_references = [
+            attachment.upload_reference(
+                client.upload_attachment(filename=attachment.filename, content=attachment.content)
+            )
+            for attachment in prepared_attachments
+        ]
+        if upload_references:
+            client.add_comment(selected_issue_id, selected_notes, uploads=upload_references)
+        else:
+            client.add_comment(selected_issue_id, selected_notes)
+        attachment_status = "attached" if attachment_metadata else "none"
         audit_path = write_operation_audit(
             {
                 "schema_version": CONTRACT_SCHEMA_VERSION,
@@ -1260,6 +1284,9 @@ def _redmine_comment(
                 "preview_digest": preview_digest,
                 "text_format": text_format,
                 "format_validation": _format_validation_audit(format_validation),
+                "attachment_status": attachment_status,
+                "attachment_count": len(attachment_metadata),
+                "attachments": attachment_metadata,
                 "finished_at": utc_now_iso(),
             },
             audit_dir,
@@ -1273,6 +1300,8 @@ def _redmine_comment(
                 "preview_digest": str(preview_digest),
                 "status": "added",
                 "issue_id": selected_issue_id,
+                "attachment_status": attachment_status,
+                "attachment_count": len(attachment_metadata),
                 "audit_id": audit_path.name,
             }
         )
@@ -1287,6 +1316,8 @@ def _redmine_comment(
                 audit_dir=audit_dir,
                 audit_id=attempt_audit_id,
                 details={
+                    "attachment_count": len(attachment_metadata),
+                    "attachments": attachment_metadata,
                     "text_format": text_format,
                     "format_validation": _format_validation_audit(format_validation),
                 },

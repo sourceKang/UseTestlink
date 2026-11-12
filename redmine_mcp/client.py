@@ -255,12 +255,21 @@ class RedmineClient:
             )
         return token
 
-    def add_comment(self, issue_id: str | int, notes: str) -> dict[str, Any]:
+    def add_comment(
+        self,
+        issue_id: str | int,
+        notes: str,
+        *,
+        uploads: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
         if not str(issue_id).strip():
             raise RedmineMcpError("Redmine issue ID is required.", code="INVALID_ARGUMENT")
         if not notes.strip():
             raise RedmineMcpError("Redmine comment must not be empty.", code="INVALID_ARGUMENT")
-        return self.request_json("PUT", f"/issues/{issue_id}.json", {"issue": {"notes": notes}})
+        issue: dict[str, Any] = {"notes": notes}
+        if uploads:
+            issue["uploads"] = uploads
+        return self.request_json("PUT", f"/issues/{issue_id}.json", {"issue": issue})
 
     def get_issue_journals(self, issue_id: str | int) -> list[dict[str, Any]]:
         response = self.request_json(
