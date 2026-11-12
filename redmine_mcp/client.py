@@ -271,6 +271,19 @@ class RedmineClient:
             issue["uploads"] = uploads
         return self.request_json("PUT", f"/issues/{issue_id}.json", {"issue": issue})
 
+    # Single-field edits of an existing issue; status, assignee, version, etc. are never sent.
+    UPDATABLE_FIELDS = ("subject", "description")
+
+    def update_issue_field(self, issue_id: str | int, field: str, value: str) -> dict[str, Any]:
+        """PUT exactly one allowed field; every other issue field is left untouched."""
+        if field not in self.UPDATABLE_FIELDS:
+            raise RedmineMcpError(f"Issue field {field!r} cannot be updated.", code="INVALID_ARGUMENT")
+        if not str(issue_id).strip():
+            raise RedmineMcpError("Redmine issue ID is required.", code="INVALID_ARGUMENT")
+        if not str(value or "").strip():
+            raise RedmineMcpError(f"Redmine {field} must not be empty.", code="INVALID_ARGUMENT")
+        return self.request_json("PUT", f"/issues/{issue_id}.json", {"issue": {field: value}})
+
     def get_issue_journals(self, issue_id: str | int) -> list[dict[str, Any]]:
         response = self.request_json(
             "GET",

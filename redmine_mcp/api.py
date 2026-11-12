@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import hashlib
 import re
 import threading
@@ -1343,6 +1344,365 @@ def redmine_add_comment(**kwargs: Any) -> dict[str, Any]:
     return _redmine_comment(**kwargs)
 
 
+SUBJECT_MAX_LENGTH = 255
+_SUBJECT_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+_DESCRIPTION_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# Reference fields a single-field PUT must leave alone; the readback reports any that moved.
+_UPDATE_GUARDED_REFS = (
+    "project",
+    "tracker",
+    "status",
+    "priority",
+    "assigned_to",
+    "fixed_version",
+    "category",
+)
+# Only these issue fields can be changed on an existing issue, and only one per call.
+_UPDATABLE_TEXT_FIELDS = ("subject", "description")
+
+
+def _sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _normalize_text_field(value: str) -> str:
+    # Redmine stores descriptions with CRLF line endings; compare and send LF text.
+    return value.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _same_text(left: str, right: str) -> bool:
+    return _normalize_text_field(left).strip() == _normalize_text_field(right).strip()
+
+
+def _validate_new_subject(value: Any) -> str:
+    raw = str(value if value is not None else "")
+    if "\n" in raw or "\r" in raw:
+        raise RedmineMcpError("subject must be a single line (no line breaks).", code="INVALID_ARGUMENT")
+    if _SUBJECT_CONTROL_RE.search(raw):
+        raise RedmineMcpError("subject must not contain control characters.", code="INVALID_ARGUMENT")
+    return _require_text("subject", raw, max_length=SUBJECT_MAX_LENGTH)
+
+
+def _validate_new_description(value: Any) -> str:
+    raw = _normalize_text_field(str(value if value is not None else ""))
+    if _DESCRIPTION_CONTROL_RE.search(raw):
+        raise RedmineMcpError("description must not contain control characters.", code="INVALID_ARGUMENT")
+    return _require_text("description", raw)
+
+
+def _guarded_snapshot(issue: dict[str, Any], updated_field: str) -> dict[str, str]:
+    snapshot: dict[str, str] = {}
+    for name in _UPDATE_GUARDED_REFS:
+        value = issue.get(name)
+        snapshot[name] = str(value.get("id") or "") if isinstance(value, dict) else ""
+    for name in _UPDATABLE_TEXT_FIELDS:
+        if name != updated_field:
+            snapshot[name] = _normalize_text_field(str(issue.get(name) or "")).strip()
+    return snapshot
+
+
+def _text_diff(current: str, new: str) -> str:
+    lines = difflib.unified_diff(
+        _normalize_text_field(current).splitlines(),
+        _normalize_text_field(new).splitlines(),
+        fromfile="current",
+        tofile="new",
+        lineterm="",
+    )
+    return "\n".join(lines)
+
+
+def _update_issue_text_field(
+    *,
+    field: str,
+    operation_id: str,
+    environment: str,
+    issue_id: str,
+    value: Any,
+    expected_current: str | None = None,
+    template_file: str | None = None,
+    write: bool = False,
+    preview_digest: str | None = None,
+    env_file: str | None = None,
+    audit_dir: str = DEFAULT_AUDIT_DIR,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Preview, then change one text field of an existing issue after a confirmed digest.
+
+    The digest binds the issue ID, the field value read at preview time, and the new value, so a
+    value changed by someone else after preview rejects the write instead of overwriting it.
+    The PUT body carries only that field.
+    """
+    if field not in _UPDATABLE_TEXT_FIELDS:
+        raise ValueError(f"Unsupported issue field: {field}")
+    action_name = f"update-{field}"
+    attempt_audit_id: str | None = None
+    selected_issue_id = ""
+    current_value: str | None = None
+    new_value: str | None = None
+    field_written = False
+    verification: dict[str, Any] | None = None
+    format_validation: dict[str, Any] | None = None
+    try:
+        settings, client = _runtime(env_file, timeout)
+        selected = validate_environment(environment, settings.environment)
+        selected_issue_id = _require_text("issue_id", issue_id)
+        new_value = _validate_new_subject(value) if field == "subject" else _validate_new_description(value)
+        text_format: dict[str, Any] | None = None
+        if field == "description":
+            selected_template = load_template(template_file or settings.template_file or None)
+            text_format = (validate_template(selected_template) if selected_template else {}).get("text_format")
+            format_validation = validate_redmine_text(
+                new_value, text_format, environment=selected, field="description"
+            )
+        before = client.get_issue(selected_issue_id)
+        current_value = str(before.get(field) or "")
+        issue_url = client.issue_url(selected_issue_id)
+
+        if write:
+            # Resume: an earlier attempt with this digest already reached Redmine.
+            for previous_path, previous in find_operation_audits(operation_id, action_name, audit_dir):
+                if (
+                    previous.get("preview_digest") != preview_digest
+                    or previous.get("issue_id") != selected_issue_id
+                    or previous.get(f"new_{field}_sha256") != _sha256(new_value)
+                    or not _same_text(current_value, new_value)
+                ):
+                    continue
+                if previous.get("status") != "updated":
+                    write_operation_audit(
+                        {**previous, "status": "updated", "recovered": True, "finished_at": utc_now_iso()},
+                        audit_dir,
+                        audit_id=previous_path.name,
+                    )
+                return _success(
+                    {
+                        "schema_version": CONTRACT_SCHEMA_VERSION,
+                        "operation_id": operation_id,
+                        "environment": selected,
+                        "preview_digest": str(preview_digest),
+                        "status": "skipped-resume",
+                        "issue_id": selected_issue_id,
+                        "issue_url": issue_url,
+                        "audit_id": previous_path.name,
+                    }
+                )
+
+        expected = None if expected_current in (None, "") else str(expected_current)
+        if expected is not None and expected != current_value:
+            raise RedmineMcpError(
+                f"Issue {selected_issue_id} {field} is now {current_value!r}, not the expected "
+                f"{expected!r}; it was changed by someone else. Review it and run a new preview.",
+                code=f"{field.upper()}_CHANGED",
+            )
+        warnings: list[str] = []
+        if format_validation is not None:
+            warnings.extend(
+                str(item.get("message") or "Redmine text format warning.")
+                for item in format_validation["warnings"]
+            )
+        if _same_text(current_value, new_value):
+            action = "no-change"
+            warnings.append(f"The new {field} equals the current {field}; nothing to write.")
+        elif format_validation is not None and not format_validation["valid"]:
+            action = "blocked"
+            warnings.append("Redmine description format validation failed.")
+        else:
+            action = action_name
+        plan = {
+            "schema_version": CONTRACT_SCHEMA_VERSION,
+            "operation_id": _require_text("operation_id", operation_id, max_length=128),
+            "environment": selected,
+            "action": action,
+            "planned_write": action == action_name,
+            "issue_id": selected_issue_id,
+            f"current_{field}": current_value,
+            f"new_{field}": new_value,
+            "write_fields": [field],
+            "text_format": text_format,
+            "format_validation": format_validation,
+            "warnings": warnings,
+        }
+        assert_safe_contract(plan)
+        change: dict[str, Any] = {"from": current_value, "to": new_value}
+        if field == "description":
+            change["diff"] = _text_diff(current_value, new_value)
+        if not write:
+            preview = {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "mode": "preview",
+                "preview_digest": payload_digest(plan),
+                "planned_write": plan["planned_write"],
+                "action": action,
+                "issue_id": selected_issue_id,
+                "issue_url": issue_url,
+                f"{field}_change": change,
+                "write_fields": plan["write_fields"],
+                "warnings": warnings,
+            }
+            if format_validation is not None:
+                preview["text_format"] = text_format
+                preview["format_validation"] = format_validation
+            return _success(preview)
+        try:
+            validate_preview_digest(plan, str(preview_digest or ""))
+        except ContractError as exc:
+            current_hint = (
+                repr(current_value) if field == "subject" else f"sha256 {_sha256(current_value)[:16]}"
+            )
+            raise RedmineMcpError(
+                f"{exc} The current {field} of issue {selected_issue_id} is {current_hint}; "
+                "if it changed after preview, review it and run a new preview.",
+                code="PREVIEW_DIGEST_MISMATCH",
+            ) from exc
+        if not plan["planned_write"]:
+            raise RedmineMcpError(
+                "; ".join(warnings) or f"Redmine {field} write is blocked.",
+                code="WRITE_BLOCKED",
+            )
+        # The previous value stays in the local audit so a wrong edit can be restored by hand.
+        audit_values = {
+            f"previous_{field}": current_value,
+            f"new_{field}": new_value,
+            f"previous_{field}_sha256": _sha256(current_value),
+            f"new_{field}_sha256": _sha256(new_value),
+        }
+        started_audit = write_operation_audit(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "action": action_name,
+                "status": "started",
+                "issue_id": selected_issue_id,
+                **audit_values,
+                "preview_digest": preview_digest,
+                "format_validation": _format_validation_audit(format_validation),
+                "started_at": utc_now_iso(),
+            },
+            audit_dir,
+        )
+        attempt_audit_id = started_audit.name
+        client.update_issue_field(selected_issue_id, field, new_value)
+        field_written = True
+        after = client.get_issue(selected_issue_id)
+        actual_value = str(after.get(field) or "")
+        before_snapshot = _guarded_snapshot(before, field)
+        after_snapshot = _guarded_snapshot(after, field)
+        changed_fields = [name for name in before_snapshot if before_snapshot[name] != after_snapshot[name]]
+        verified = _same_text(actual_value, new_value)
+        verification = {
+            "status": "verified" if verified else "verification_failed",
+            "verified": verified,
+            f"expected_{field}_sha256": _sha256(new_value),
+            f"actual_{field}_sha256": _sha256(_normalize_text_field(actual_value).strip()),
+            "other_fields_unchanged": not changed_fields,
+            "changed_fields": changed_fields,
+        }
+        if field == "subject":
+            verification["expected_subject"] = new_value
+            verification["actual_subject"] = actual_value
+        if not verified:
+            raise RedmineMcpError(
+                f"Redmine issue {field} readback does not match the confirmed preview.",
+                code="VERIFICATION_FAILED",
+            )
+        if changed_fields:
+            warnings.append(
+                "These fields differ between the pre-write read and the readback although only the "
+                f"{field} was sent: {', '.join(changed_fields)}. Check the issue history."
+            )
+        audit_path = write_operation_audit(
+            {
+                "schema_version": CONTRACT_SCHEMA_VERSION,
+                "operation_id": operation_id,
+                "environment": selected,
+                "action": action_name,
+                "status": "updated",
+                "issue_id": selected_issue_id,
+                **audit_values,
+                "preview_digest": preview_digest,
+                "format_validation": _format_validation_audit(format_validation),
+                "verification": verification,
+                "finished_at": utc_now_iso(),
+            },
+            audit_dir,
+            audit_id=attempt_audit_id,
+        )
+        result = {
+            "schema_version": CONTRACT_SCHEMA_VERSION,
+            "operation_id": operation_id,
+            "environment": selected,
+            "preview_digest": str(preview_digest),
+            "status": "updated",
+            "issue_id": selected_issue_id,
+            "issue_url": issue_url,
+            "verification": verification,
+            "warnings": warnings,
+            "audit_id": audit_path.name,
+        }
+        if field == "subject":
+            result["subject_change"] = change
+        return _success(result)
+    except Exception as exc:
+        audit_id = None
+        if write:
+            audit_id = _attempt_failure_audit(
+                operation_id=operation_id,
+                environment=environment,
+                action=action_name,
+                preview_digest=preview_digest,
+                error=exc,
+                audit_dir=audit_dir,
+                audit_id=attempt_audit_id,
+                details={
+                    "issue_id": selected_issue_id,
+                    f"previous_{field}": current_value,
+                    f"new_{field}": new_value,
+                    f"new_{field}_sha256": _sha256(new_value) if new_value is not None else None,
+                    f"{field}_written": field_written,
+                    "format_validation": _format_validation_audit(format_validation),
+                    "verification": verification,
+                },
+            )
+            if audit_id is None:
+                exc = RedmineMcpError(
+                    f"{exc}; additionally, the required Redmine audit record could not be written.",
+                    code="AUDIT_WRITE_FAILED",
+                )
+        stage = "write" if write else "preview"
+        failure = _failure(operation_id, f"redmine-{field}-{stage}", exc)
+        if field_written:
+            failure["error"]["partial_result"] = redact_secrets(
+                {
+                    "action": f"{field}-sent",
+                    "issue_id": selected_issue_id,
+                    "verification": verification,
+                    "audit_id": audit_id,
+                }
+            )
+        return failure
+
+
+def redmine_update_subject(
+    *,
+    subject: str,
+    expected_current_subject: str | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Change only an existing issue's subject; see `_update_issue_text_field`."""
+    return _update_issue_text_field(
+        field="subject", value=subject, expected_current=expected_current_subject, **kwargs
+    )
+
+
+def redmine_update_description(*, description: str, **kwargs: Any) -> dict[str, Any]:
+    """Change only an existing issue's description; see `_update_issue_text_field`."""
+    return _update_issue_text_field(field="description", value=description, **kwargs)
+
+
 TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "redmine_health": redmine_health,
     "redmine_search_issues": redmine_search_issues,
@@ -1354,6 +1714,8 @@ TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "redmine_create_bug": redmine_create_bug,
     "redmine_preview_comment": redmine_preview_comment,
     "redmine_add_comment": redmine_add_comment,
+    "redmine_update_subject": redmine_update_subject,
+    "redmine_update_description": redmine_update_description,
 }
 
 

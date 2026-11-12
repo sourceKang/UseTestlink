@@ -31,11 +31,15 @@ class RedmineMcpServerTests(unittest.TestCase):
                 "redmine_create_bug",
                 "redmine_preview_comment",
                 "redmine_add_comment",
+                "redmine_update_subject",
+                "redmine_update_description",
             },
             set(tools),
         )
         self.assertFalse(tools["redmine_create_bug"]["inputSchema"]["properties"]["write"]["default"])
         self.assertFalse(tools["redmine_add_comment"]["inputSchema"]["properties"]["write"]["default"])
+        self.assertFalse(tools["redmine_update_subject"]["inputSchema"]["properties"]["write"]["default"])
+        self.assertFalse(tools["redmine_update_description"]["inputSchema"]["properties"]["write"]["default"])
         attachments = tools["redmine_create_bug"]["inputSchema"]["properties"]["attachments"]
         self.assertEqual(10, attachments["maxItems"])
         self.assertEqual(

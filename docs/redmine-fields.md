@@ -10,7 +10,7 @@ Formal bugs must be created in the corporate Redmine/eITS workflow. A local Redm
 - `qa-integration-agent` sends validated issue/comment intent and traceability context, never credentials.
 - `testlink-mcp` receives only the resulting Redmine ID/URL needed in execution notes.
 - Formal work does not fall back to Chrome/browser control when the Redmine MCP is missing; fix or explicitly configure the MCP credential path.
-- Metadata discovery and template validation are read-only. Issue and comment writes require a matching preview digest and produce audit JSON.
+- Metadata discovery and template validation are read-only. Issue, comment, and subject/description-correction writes require a matching preview digest and produce audit JSON.
 - `redmine_get_issue` and `redmine_list_projects` are read-only lookups. `redmine_get_issue` returns a safe field projection (description, status, tracker, priority, project, author, assignee, category, fixed version, custom fields, journals, attachment metadata) and always excludes watchers and time-tracking fields; it never writes and is not a substitute for `redmine_search_issues` when only a summary is needed. Both issue read tools mask embedded credentials and email local parts in every returned string (see `docs/redmine-mcp.md`).
 
 ## Project-Specific Custom Fields
@@ -284,6 +284,16 @@ When a closed issue matches:
 - Do not reopen it automatically.
 - Produce a preview warning.
 - Let the user decide whether to link existing issue, create a new issue, or ask the owner to reopen.
+
+## Subject And Description Corrections
+
+An agent may otherwise only create an issue (with its description) or add an evidence comment.
+The only exceptions are correcting an existing issue's subject with `redmine_update_subject` or
+replacing its description with `redmine_update_description`, after the user reviewed the preview
+(`from` → `to`, plus the full new description and its diff) and confirmed it. Each write sends
+only that one field; status, assignee, fixed version, custom fields, and every other field stay
+unchanged. If the field changed after the preview, the write is rejected instead of overwriting
+it. Prefer an evidence comment over a description rewrite on an issue RD is already handling.
 
 ## Field Discovery Checklist
 
