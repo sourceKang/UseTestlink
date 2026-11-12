@@ -125,10 +125,15 @@ Type detection:
   `key=value`, `key: value`, JSON fields, and headers for password, passphrase, secret,
   API key, devKey, token (including `csrftoken`, `access_token`), session ID, registration
   ID, and private key; `Bearer`/`Basic`/`Digest` credentials; `--password`, `sshpass -p`, and
-  `-p` beside a user flag; URL user info; private-key blocks; and the configured
-  `REDMINE_API_KEY`/`TESTLINK_DEVKEY` values. Placeholders such as `*****`, `<password>`,
-  `$EMS_PASS`, `${X}`, `{token}`, `os.environ[...]`, `null`, and empty values are not hits.
-  In `.py` files only string literals count, so `password=args.password` is not a hit.
+  `-p` beside a user flag; URL user info; private-key blocks; JWTs without any label
+  (`eyJ….eyJ….…`); and the configured `REDMINE_API_KEY`/`TESTLINK_DEVKEY` values.
+  Chinese labels (密碼、密码、帳密、帳號密碼、口令、金鑰、密鑰、權杖、令牌) count when followed
+  by `：`, `:`, `=`, `為` or `是` and an ASCII value (`密碼：abc123`), and `帳密 admin/abc123`
+  counts without a separator; prose such as `密碼：見附件` or `密碼是否正確` does not.
+  Placeholders such as `*****`, `<password>`, `$EMS_PASS`, `${X}`, `{token}`,
+  `os.environ[...]`, `null`, `N/A`, and empty values are not hits.
+  In `.py` files only string literals count for English keys, so `password=args.password` is
+  not a hit; Chinese labels count everywhere, including comments.
   The scan is a gate, not a guarantee: still review the attachment list in the preview.
 - Videos and images are not scanned.
 

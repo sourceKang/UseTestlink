@@ -1920,6 +1920,16 @@ class AttachmentPreparationTests(unittest.TestCase):
             ("i.txt", "https://admin:Hunter2x@ems.example/api", "url-userinfo"),
             ("j.txt", "-----BEGIN RSA PRIVATE KEY-----", "private-key-block"),
             ("k.py", 'PASSWORD = "Hunter2x"', "credential-assignment"),
+            ("l.txt", "EMS 密碼：Hunter2x", "chinese-credential-label"),
+            ("m.log", "帳密 admin/Hunter2x", "chinese-credential-label"),
+            ("n.md", "帳密: admin / Hunter2x", "chinese-credential-label"),
+            ("o.py", "# 測試帳號密碼為 Hunter2x", "chinese-credential-label"),
+            ("p.txt", "密钥=Hunter2x", "chinese-credential-label"),
+            (
+                "q.jsonl",
+                '{"session": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.c2lnbmF0dXJlLXZhbHVl"}',
+                "jwt",
+            ),
         ]
         for name, line, rule in cases:
             with self.subTest(name=name), TemporaryDirectory() as tmpdir:
@@ -1941,6 +1951,13 @@ class AttachmentPreparationTests(unittest.TestCase):
                 "sessionid=",
                 "max_tokens=100 token_count: 12",
                 "Authorization: Bearer $TOKEN",
+                "密碼：見附件",
+                "請確認密碼是否正確",
+                "修改密碼 API 失敗",
+                "密碼：*****",
+                "密碼: N/A",
+                "帳密：<account>/<password>",
+                "header eyJhbGciOiJIUzI1NiJ9 alone is not a token",
             ],
             ".py": [
                 'password = os.environ["EMS_PASS"]',
