@@ -163,6 +163,7 @@ evidence to that issue with `redmine_add_comment` and `attachments` instead.
 - Comments use an `issue.notes` payload, plus `issue.uploads` only when attachments were confirmed.
 - Status, assignee, fixed version, and issue closure are not modified automatically.
 - Every attempted write first creates a redacted `started` audit and updates the same record with success or failure under `<data dir>/redmine_audit/` by default (`%LOCALAPPDATA%\testlink-agent` or `TESTLINK_AGENT_DATA_DIR`; see `docs/workflow.md` Audit Locations).
+- Comment retry with the same `operation_id` and `preview_digest`: an `added` audit is skipped; a `started` or `failed` audit is first checked against the issue journals by notes digest. A matching journal marks the audit `added` (`recovered`) and skips the write, so a timeout after Redmine applied the comment does not post it twice. With no match, `started` fails closed (`INDETERMINATE_OPERATION`) and `failed` retries the write.
 
 ## Local Registration
 
