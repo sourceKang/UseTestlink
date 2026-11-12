@@ -40,14 +40,14 @@ Do not publish a release tag from an unreviewed or partially merged branch.
 Install once per Windows user, not once per consuming project:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.9"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.10"
 ```
 
 If an editable or obsolete installation already exists, replace it explicitly:
 
 ```powershell
 pipx uninstall testlink-agent
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.9"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.10"
 ```
 
 Run `pipx ensurepath` once if the pipx binary directory is not already on `PATH`, then
@@ -136,10 +136,16 @@ not blocked. Attachment metadata now includes `kind`, so rebuild any Redmine pre
 v1.9.8 or earlier. A comment retry after a `failed` attempt first checks the issue journals and
 skips the write if Redmine already has the comment.
 
+From v1.9.10, the `issue` and `all` toolsets of `redmine-mcp` add `redmine_update_subject` and
+`redmine_update_description`. Each changes only that one field of an existing issue, previews by
+default, needs the confirmed `preview_digest`, refuses to overwrite a value changed after preview,
+reads the issue back, and keeps the previous text in the audit. The default `discovery` and the
+`integration` toolsets do not expose them.
+
 After a newer reviewed tag is published:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.9"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.10"
 ```
 
 Run `testlink-agent install-skills` to refresh the installed skills, restart Codex and
@@ -152,7 +158,7 @@ reproducible release identity.
 Reinstall the previously approved tag:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.8"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.9"
 ```
 
 Restart Codex and verify the installed version. Rollback changes only the local MCP
