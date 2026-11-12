@@ -40,14 +40,14 @@ Do not publish a release tag from an unreviewed or partially merged branch.
 Install once per Windows user, not once per consuming project:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.8"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.9"
 ```
 
 If an editable or obsolete installation already exists, replace it explicitly:
 
 ```powershell
 pipx uninstall testlink-agent
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.8"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.9"
 ```
 
 Run `pipx ensurepath` once if the pipx binary directory is not already on `PATH`, then
@@ -129,10 +129,17 @@ card firmware from the report header), and created Redmine bugs are linked to th
 testcase by default. The notes are part of the preview digest, so rebuild any preview made
 by v1.9.7 or earlier before executing it.
 
+From v1.9.9, `redmine-mcp` attachments accept videos (WebM/MKV/MP4/MOV) and UTF-8 text files
+(`.py`, `.sh`, `.json`, `.jsonl`, `.log`, `.txt`, `.csv`, `.md`) besides images, on bug creation
+and on `redmine_add_comment`. Credential-like lines in text files are flagged in the preview,
+not blocked. Attachment metadata now includes `kind`, so rebuild any Redmine preview made by
+v1.9.8 or earlier. A comment retry after a `failed` attempt first checks the issue journals and
+skips the write if Redmine already has the comment.
+
 After a newer reviewed tag is published:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.8"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.9"
 ```
 
 Run `testlink-agent install-skills` to refresh the installed skills, restart Codex and
@@ -145,7 +152,7 @@ reproducible release identity.
 Reinstall the previously approved tag:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.7"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.8"
 ```
 
 Restart Codex and verify the installed version. Rollback changes only the local MCP
