@@ -665,6 +665,65 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertTrue(preview["planned_write"])
         self.assertTrue(preview["format_validation"]["valid"])
 
+    def test_failed_comment_applied_by_redmine_is_recovered_without_duplicate(self) -> None:
+        client = FakeRedmineClient()
+        client.timeout_after_comment = True
+        args = {
+            "operation_id": "operation-comment-timeout",
+            "environment": "sandbox",
+            "issue_id": "88",
+            "notes": "Evidence",
+        }
+        with TemporaryDirectory() as tmpdir:
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_add_comment(**args)["result"]
+                write_args = {
+                    **args,
+                    "write": True,
+                    "preview_digest": preview["preview_digest"],
+                    "audit_dir": tmpdir,
+                }
+                first = api.redmine_add_comment(**write_args)
+                audit_path = next(Path(tmpdir).glob("*.json"))
+                self.assertEqual("failed", json.loads(audit_path.read_text(encoding="utf-8"))["status"])
+                client.timeout_after_comment = False
+                retry = api.redmine_add_comment(**write_args)
+            recovered = json.loads(audit_path.read_text(encoding="utf-8"))
+
+        self.assertFalse(first["ok"])
+        self.assertTrue(retry["ok"])
+        self.assertEqual("skipped-resume", retry["result"]["status"])
+        self.assertEqual([("88", "Evidence")], client.comments)
+        self.assertEqual("added", recovered["status"])
+        self.assertTrue(recovered["recovered"])
+
+    def test_failed_comment_not_applied_by_redmine_is_retried(self) -> None:
+        client = FakeRedmineClient()
+        client.fail_comment = True
+        args = {
+            "operation_id": "operation-comment-rejected",
+            "environment": "sandbox",
+            "issue_id": "88",
+            "notes": "Evidence",
+        }
+        with TemporaryDirectory() as tmpdir:
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_add_comment(**args)["result"]
+                write_args = {
+                    **args,
+                    "write": True,
+                    "preview_digest": preview["preview_digest"],
+                    "audit_dir": tmpdir,
+                }
+                first = api.redmine_add_comment(**write_args)
+                client.fail_comment = False
+                retry = api.redmine_add_comment(**write_args)
+
+        self.assertFalse(first["ok"])
+        self.assertTrue(retry["ok"])
+        self.assertEqual("added", retry["result"]["status"])
+        self.assertEqual(1, len(client.journals))
+
     def test_successful_comment_retry_is_idempotently_skipped(self) -> None:
         client = FakeRedmineClient()
         args = {
@@ -766,65 +825,6 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual("INDETERMINATE_OPERATION", result["error"]["error"]["code"])
         self.assertEqual([], client.comments)
-
-    def test_failed_comment_applied_by_redmine_is_recovered_without_duplicate(self) -> None:
-        client = FakeRedmineClient()
-        client.timeout_after_comment = True
-        args = {
-            "operation_id": "operation-comment-timeout",
-            "environment": "sandbox",
-            "issue_id": "88",
-            "notes": "Evidence",
-        }
-        with TemporaryDirectory() as tmpdir:
-            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
-                preview = api.redmine_add_comment(**args)["result"]
-                write_args = {
-                    **args,
-                    "write": True,
-                    "preview_digest": preview["preview_digest"],
-                    "audit_dir": tmpdir,
-                }
-                first = api.redmine_add_comment(**write_args)
-                audit_path = next(Path(tmpdir).glob("*.json"))
-                self.assertEqual("failed", json.loads(audit_path.read_text(encoding="utf-8"))["status"])
-                client.timeout_after_comment = False
-                retry = api.redmine_add_comment(**write_args)
-            recovered = json.loads(audit_path.read_text(encoding="utf-8"))
-
-        self.assertFalse(first["ok"])
-        self.assertTrue(retry["ok"])
-        self.assertEqual("skipped-resume", retry["result"]["status"])
-        self.assertEqual([("88", "Evidence")], client.comments)
-        self.assertEqual("added", recovered["status"])
-        self.assertTrue(recovered["recovered"])
-
-    def test_failed_comment_not_applied_by_redmine_is_retried(self) -> None:
-        client = FakeRedmineClient()
-        client.fail_comment = True
-        args = {
-            "operation_id": "operation-comment-rejected",
-            "environment": "sandbox",
-            "issue_id": "88",
-            "notes": "Evidence",
-        }
-        with TemporaryDirectory() as tmpdir:
-            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
-                preview = api.redmine_add_comment(**args)["result"]
-                write_args = {
-                    **args,
-                    "write": True,
-                    "preview_digest": preview["preview_digest"],
-                    "audit_dir": tmpdir,
-                }
-                first = api.redmine_add_comment(**write_args)
-                client.fail_comment = False
-                retry = api.redmine_add_comment(**write_args)
-
-        self.assertFalse(first["ok"])
-        self.assertTrue(retry["ok"])
-        self.assertEqual("added", retry["result"]["status"])
-        self.assertEqual(1, len(client.journals))
 
     def test_environment_mismatch_fails_before_client_action(self) -> None:
         client = FakeRedmineClient()
