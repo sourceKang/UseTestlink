@@ -42,7 +42,9 @@ class FakeSubjectClient:
         self.reads += 1
         return json.loads(json.dumps(self.issue))
 
-    def update_issue_subject(self, issue_id, subject):
+    def update_issue_field(self, issue_id, field, value):
+        assert field == "subject", field
+        subject = value
         self.updates.append((str(issue_id), subject))
         if self.fail_update:
             raise RedmineMcpError("Redmine HTTP 422: invalid", code="HTTP_422")
@@ -241,12 +243,12 @@ class RedmineUpdateSubjectTests(unittest.TestCase):
     def test_retry_after_timeout_that_reached_redmine_recovers(self) -> None:
         digest = self.preview()["preview_digest"]
 
-        def applied_then_timeout(issue_id, subject):
+        def applied_then_timeout(issue_id, field, subject):
             self.client.updates.append((str(issue_id), subject))
             self.client.issue["subject"] = subject
             raise RedmineMcpError("Redmine connection failed: timed out", code="CONNECTION_FAILED")
 
-        with patch.object(self.client, "update_issue_subject", side_effect=applied_then_timeout):
+        with patch.object(self.client, "update_issue_field", side_effect=applied_then_timeout):
             first = self.write(digest)
         second = self.write(digest)
 
@@ -290,7 +292,7 @@ class RedmineUpdateSubjectTests(unittest.TestCase):
 
 
 class RedmineClientSubjectTests(unittest.TestCase):
-    def test_update_issue_subject_puts_subject_only(self) -> None:
+    def test_update_issue_field_puts_one_allowed_field_only(self) -> None:
         class RecordingClient(RedmineClient):
             def __init__(self):
                 super().__init__("https://redmine.example.com", "redmine-secret")
@@ -301,12 +303,20 @@ class RedmineClientSubjectTests(unittest.TestCase):
                 return {}
 
         client = RecordingClient()
-        client.update_issue_subject("123", NEW_SUBJECT)
+        client.update_issue_field("123", "subject", NEW_SUBJECT)
+        client.update_issue_field("123", "description", "New body")
 
         self.assertEqual(
-            [("PUT", "/issues/123.json", {"issue": {"subject": NEW_SUBJECT}}, None)],
+            [
+                ("PUT", "/issues/123.json", {"issue": {"subject": NEW_SUBJECT}}, None),
+                ("PUT", "/issues/123.json", {"issue": {"description": "New body"}}, None),
+            ],
             client.calls,
         )
+        for field in ("status_id", "assigned_to_id", "fixed_version_id", "notes", "custom_fields"):
+            with self.subTest(field=field), self.assertRaises(RedmineMcpError):
+                client.update_issue_field("123", field, "x")
+        self.assertEqual(2, len(client.calls))
 
 
 if __name__ == "__main__":

@@ -241,12 +241,31 @@ TOOLS: list[dict[str, Any]] = [
         ),
         "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True},
     },
+    {
+        "name": "redmine_update_description",
+        "description": (
+            "Preview by default or replace only an issue's description after confirmed preview digest; "
+            "preview shows a diff and fails if the description changed since preview."
+        ),
+        "inputSchema": schema(
+            {
+                "issue_id": string("Issue ID."),
+                "description": string("Complete new description."),
+                "template_file": string("Validated project template JSON."),
+                "write": {"type": "boolean", "default": False},
+                "preview_digest": string("Digest from the reviewed preview."),
+                "audit_dir": string("Writable absolute audit directory."),
+            },
+            ["operation_id", "environment", "issue_id", "description"],
+        ),
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True},
+    },
 ]
 
 
 TOOLSET_ENV = "REDMINE_MCP_TOOLSET"
 # An unset toolset exposes only reads; bug creation and comments ("issue", "integration",
-# "all") and subject edits ("issue", "all") are explicit opt-ins.
+# "all") and subject/description edits ("issue", "all") are explicit opt-ins.
 DEFAULT_TOOLSET = "discovery"
 TOOLSETS: dict[str, set[str]] = {
     "discovery": {
@@ -267,6 +286,7 @@ TOOLSETS: dict[str, set[str]] = {
         "redmine_preview_comment",
         "redmine_add_comment",
         "redmine_update_subject",
+        "redmine_update_description",
     },
     "metadata": {
         "redmine_health",

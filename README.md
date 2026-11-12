@@ -221,9 +221,9 @@ Use for Redmine/eITS-only operations:
 - `redmine_validate_template`
 - `redmine_preview_bug` / `redmine_create_bug`
 - `redmine_preview_comment` / `redmine_add_comment`
-- `redmine_update_subject` (subject-only correction of an existing issue)
+- `redmine_update_subject` / `redmine_update_description` (single-field correction of an existing issue)
 
-Bug, comment, and subject writes require `write: true` and the matching preview digest. Bug creation
+Bug, comment, subject, and description writes require `write: true` and the matching preview digest. Bug creation
 accepts optional local image attachments whose content hash, filename, MIME type, and size
 are bound into the preview. The server rechecks dedupe immediately before creation. See
 `docs/redmine-mcp.md` and `docs/redmine-fields.md`.
