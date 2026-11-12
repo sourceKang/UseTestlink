@@ -929,6 +929,72 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertEqual("INDETERMINATE_OPERATION", result["error"]["error"]["code"])
         self.assertEqual([], client.comments)
 
+    def test_started_comment_with_attachments_resumes_without_reupload_or_duplicate(self) -> None:
+        client = FakeRedmineClient()
+        real_write_audit = api.write_operation_audit
+
+        def crash_after_redmine_write(record, *args, **kwargs):
+            # Redmine accepted the comment, then the process died before finishing the audit.
+            if record.get("status") != "started":
+                raise OSError("simulated crash")
+            return real_write_audit(record, *args, **kwargs)
+
+        with TemporaryDirectory() as tmpdir:
+            log = write_file(tmpdir, "run.log", b"step 1 failed\n")
+            args = comment_args(attachments=[{"file": str(log)}])
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_preview_comment(**args)["result"]
+                write_args = {
+                    **args,
+                    "write": True,
+                    "preview_digest": preview["preview_digest"],
+                    "audit_dir": tmpdir,
+                }
+                with patch("redmine_mcp.api.write_operation_audit", side_effect=crash_after_redmine_write):
+                    first = api.redmine_add_comment(**write_args)
+                audit_path = next(Path(tmpdir).glob("*.json"))
+                self.assertEqual("started", json.loads(audit_path.read_text(encoding="utf-8"))["status"])
+                retry = api.redmine_add_comment(**write_args)
+            recovered = json.loads(audit_path.read_text(encoding="utf-8"))
+
+        self.assertFalse(first["ok"])
+        self.assertTrue(retry["ok"])
+        self.assertEqual("skipped-resume", retry["result"]["status"])
+        self.assertEqual(1, len(client.uploaded_files))
+        self.assertEqual(1, len(client.comments))
+        self.assertEqual(1, len(client.comment_uploads))
+        self.assertTrue(recovered["recovered"])
+        self.assertEqual("added", recovered["status"])
+        self.assertEqual(1, recovered["attachment_count"])
+        self.assertNotIn("upload-secret", audit_path.name + json.dumps(recovered) + json.dumps(retry))
+
+    def test_started_comment_with_attachments_fails_closed_before_upload(self) -> None:
+        client = FakeRedmineClient()
+        with TemporaryDirectory() as tmpdir:
+            video = write_file(tmpdir, "retest.webm", WEBM_HEADER + b"frames")
+            args = comment_args(attachments=[{"file": str(video)}])
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_preview_comment(**args)["result"]
+                write_operation_audit(
+                    {
+                        "schema_version": "1.0",
+                        "operation_id": args["operation_id"],
+                        "environment": "sandbox",
+                        "action": "add-comment",
+                        "status": "started",
+                        "preview_digest": preview["preview_digest"],
+                    },
+                    tmpdir,
+                )
+                result = api.redmine_add_comment(
+                    **args, write=True, preview_digest=preview["preview_digest"], audit_dir=tmpdir
+                )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("INDETERMINATE_OPERATION", result["error"]["error"]["code"])
+        self.assertEqual([], client.uploaded_files)
+        self.assertEqual([], client.comments)
+
     def test_environment_mismatch_fails_before_client_action(self) -> None:
         client = FakeRedmineClient()
         with patch("redmine_mcp.api._runtime", return_value=(settings("corp"), client)):
