@@ -37,7 +37,11 @@ class RedmineMcpServerTests(unittest.TestCase):
         self.assertFalse(tools["redmine_create_bug"]["inputSchema"]["properties"]["write"]["default"])
         self.assertFalse(tools["redmine_add_comment"]["inputSchema"]["properties"]["write"]["default"])
         attachments = tools["redmine_create_bug"]["inputSchema"]["properties"]["attachments"]
-        self.assertEqual(5, attachments["maxItems"])
+        self.assertEqual(10, attachments["maxItems"])
+        self.assertEqual(
+            attachments,
+            tools["redmine_add_comment"]["inputSchema"]["properties"]["attachments"],
+        )
         self.assertEqual(["file"], attachments["items"]["required"])
         bug_properties = tools["redmine_preview_bug"]["inputSchema"]["properties"]
         self.assertIn("severity", bug_properties)

@@ -1,15 +1,28 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .errors import RedmineMcpError
+from .secret_scan import RULESET_VERSION, describe_findings, scan_text
 
 
+MIB = 1024 * 1024
+
+# Images keep the limits they had before videos and text were added.
 MAX_IMAGE_ATTACHMENTS = 5
-MAX_IMAGE_ATTACHMENT_BYTES = 10 * 1024 * 1024
+MAX_IMAGE_ATTACHMENT_BYTES = 10 * MIB
+# The company Redmine attachment_max_size is not readable through the API, so
+# these are local constants; Redmine still rejects larger uploads (HTTP 422)
+# before any issue or comment is written.
+MAX_VIDEO_ATTACHMENTS = 3
+MAX_VIDEO_ATTACHMENT_BYTES = 20 * MIB
+MAX_TEXT_ATTACHMENTS = 5
+MAX_TEXT_ATTACHMENT_BYTES = 1 * MIB
+MAX_ATTACHMENTS = 10
+MAX_TOTAL_ATTACHMENT_BYTES = 64 * MIB
 
 _ALLOWED_FIELDS = {"file", "filename", "description"}
 _IMAGE_EXTENSIONS = {
@@ -19,25 +32,57 @@ _IMAGE_EXTENSIONS = {
     "image/webp": {".webp"},
     "image/bmp": {".bmp"},
 }
+_VIDEO_EXTENSIONS = {
+    "video/webm": {".webm"},
+    "video/x-matroska": {".mkv"},
+    "video/mp4": {".mp4", ".m4v"},
+    "video/quicktime": {".mov"},
+}
+_TEXT_CONTENT_TYPES = {
+    ".txt": "text/plain",
+    ".log": "text/plain",
+    ".py": "text/x-python",
+    ".sh": "text/x-shellscript",
+    ".json": "application/json",
+    ".jsonl": "application/x-ndjson",
+    ".csv": "text/csv",
+    ".md": "text/markdown",
+}
+_KIND_LIMITS = {
+    "image": (MAX_IMAGE_ATTACHMENTS, MAX_IMAGE_ATTACHMENT_BYTES),
+    "video": (MAX_VIDEO_ATTACHMENTS, MAX_VIDEO_ATTACHMENT_BYTES),
+    "text": (MAX_TEXT_ATTACHMENTS, MAX_TEXT_ATTACHMENT_BYTES),
+}
+SUPPORTED_TYPES_SUMMARY = (
+    "<=10 files, <=64 MiB total; image PNG/JPEG/GIF/WebP/BMP <=5x10 MiB; "
+    "video WebM/MKV/MP4/MOV <=3x20 MiB; UTF-8 text py/sh/json/jsonl/log/txt/csv/md <=5x1 MiB, "
+    "rejected if it may hold credentials"
+)
 
 
 @dataclass(frozen=True)
-class PreparedImageAttachment:
+class PreparedAttachment:
     path: Path
     filename: str
     description: str
+    kind: str
     content_type: str
     content: bytes
     sha256: str
+    content_scan: dict[str, Any] | None = field(default=None)
 
     def metadata(self) -> dict[str, Any]:
-        return {
+        metadata: dict[str, Any] = {
             "filename": self.filename,
             "description": self.description,
+            "kind": self.kind,
             "content_type": self.content_type,
             "size": len(self.content),
             "sha256": self.sha256,
         }
+        if self.content_scan is not None:
+            metadata["content_scan"] = self.content_scan
+        return metadata
 
     def upload_reference(self, upload_token: str) -> dict[str, str]:
         reference = {
@@ -50,6 +95,7 @@ class PreparedImageAttachment:
         return reference
 
 
+
 def _detect_image_content_type(content: bytes) -> str | None:
     if content.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
@@ -59,8 +105,23 @@ def _detect_image_content_type(content: bytes) -> str | None:
         return "image/gif"
     if len(content) >= 12 and content.startswith(b"RIFF") and content[8:12] == b"WEBP":
         return "image/webp"
-    if content.startswith(b"BM"):
+    # "BM" alone also starts ordinary text, so require the zeroed reserved header bytes.
+    if content.startswith(b"BM") and content[6:10] == b"\x00\x00\x00\x00":
         return "image/bmp"
+    return None
+
+
+def _detect_video_content_type(content: bytes) -> str | None:
+    if content.startswith(b"\x1a\x45\xdf\xa3"):
+        # The EBML header names its DocType within the first few dozen bytes.
+        header = content[:64]
+        if b"webm" in header:
+            return "video/webm"
+        if b"matroska" in header:
+            return "video/x-matroska"
+        return None
+    if len(content) >= 12 and content[4:8] == b"ftyp":
+        return "video/quicktime" if content[8:12] == b"qt  " else "video/mp4"
     return None
 
 
@@ -84,19 +145,68 @@ def _safe_filename(value: Any, *, fallback: str, index: int) -> str:
     return filename
 
 
-def prepare_image_attachments(value: Any) -> list[PreparedImageAttachment]:
+def _classify(
+    content: bytes, filename: str, *, path: Path, index: int
+) -> tuple[str, str, dict[str, Any] | None]:
+    """Return (kind, content_type, content_scan); binary content wins over the extension."""
+    suffix = Path(filename).suffix.casefold()
+    for kind, detected, extensions in (
+        ("image", _detect_image_content_type(content), _IMAGE_EXTENSIONS),
+        ("video", _detect_video_content_type(content), _VIDEO_EXTENSIONS),
+    ):
+        if detected is None:
+            continue
+        if suffix not in extensions[detected]:
+            raise RedmineMcpError(
+                f"attachments[{index}].filename extension does not match the {kind} content.",
+                code="ATTACHMENT_TYPE_MISMATCH",
+            )
+        return kind, detected, None
+
+    content_type = _TEXT_CONTENT_TYPES.get(suffix)
+    if content_type is None:
+        raise RedmineMcpError(
+            f"Attachment is not a supported image, video, or text file: {path}. "
+            f"Supported: {SUPPORTED_TYPES_SUMMARY}.",
+            code="ATTACHMENT_TYPE_UNSUPPORTED",
+        )
+    if b"\x00" in content:
+        raise RedmineMcpError(
+            f"Text attachment contains NUL bytes and looks binary: {filename}",
+            code="ATTACHMENT_TYPE_MISMATCH",
+        )
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise RedmineMcpError(
+            f"Text attachment must be UTF-8: {filename} (invalid byte at offset {exc.start}).",
+            code="ATTACHMENT_ENCODING_INVALID",
+        ) from exc
+    findings = scan_text(text, suffix=suffix)
+    if findings:
+        raise RedmineMcpError(
+            f"Text attachment {filename} may contain credentials ({describe_findings(findings)}). "
+            "Remove or mask them and preview again; the file was not uploaded.",
+            code="ATTACHMENT_SECRET_DETECTED",
+        )
+    return "text", content_type, {"status": "passed", "ruleset_version": RULESET_VERSION}
+
+
+def prepare_attachments(value: Any) -> list[PreparedAttachment]:
     if value in (None, ""):
         return []
     if not isinstance(value, list):
         raise RedmineMcpError("attachments must be an array.", code="ATTACHMENT_INVALID")
-    if len(value) > MAX_IMAGE_ATTACHMENTS:
+    if len(value) > MAX_ATTACHMENTS:
         raise RedmineMcpError(
-            f"At most {MAX_IMAGE_ATTACHMENTS} image attachments are allowed per bug.",
+            f"At most {MAX_ATTACHMENTS} attachments are allowed per write.",
             code="ATTACHMENT_LIMIT_EXCEEDED",
         )
 
-    prepared: list[PreparedImageAttachment] = []
+    prepared: list[PreparedAttachment] = []
     filenames: set[str] = set()
+    kind_counts: dict[str, int] = {}
+    total_bytes = 0
     for index, item in enumerate(value):
         if not isinstance(item, dict):
             raise RedmineMcpError(
@@ -121,6 +231,20 @@ def prepare_image_attachments(value: Any) -> list[PreparedImageAttachment]:
                 f"Attachment file does not exist or is not a file: {path}",
                 code="ATTACHMENT_NOT_FOUND",
             )
+        # Refuse oversized files before reading them into memory.
+        largest = max(limit for _, limit in _KIND_LIMITS.values())
+        try:
+            size_on_disk = path.stat().st_size
+        except OSError as exc:
+            raise RedmineMcpError(
+                f"Attachment file could not be read: {path}: {exc}",
+                code="ATTACHMENT_READ_FAILED",
+            ) from exc
+        if size_on_disk > largest:
+            raise RedmineMcpError(
+                f"Attachment exceeds the {largest}-byte limit: {path}",
+                code="ATTACHMENT_LIMIT_EXCEEDED",
+            )
         try:
             content = path.read_bytes()
         except OSError as exc:
@@ -133,24 +257,28 @@ def prepare_image_attachments(value: Any) -> list[PreparedImageAttachment]:
                 f"Attachment file must not be empty: {path}",
                 code="ATTACHMENT_INVALID",
             )
-        if len(content) > MAX_IMAGE_ATTACHMENT_BYTES:
+
+        filename = _safe_filename(item.get("filename"), fallback=path.name, index=index)
+        kind, content_type, content_scan = _classify(content, filename, path=path, index=index)
+        max_count, max_bytes = _KIND_LIMITS[kind]
+        if len(content) > max_bytes:
             raise RedmineMcpError(
-                f"Attachment exceeds the {MAX_IMAGE_ATTACHMENT_BYTES}-byte limit: {path}",
+                f"{kind.capitalize()} attachment exceeds the {max_bytes}-byte limit: {path}",
+                code="ATTACHMENT_LIMIT_EXCEEDED",
+            )
+        kind_counts[kind] = kind_counts.get(kind, 0) + 1
+        if kind_counts[kind] > max_count:
+            raise RedmineMcpError(
+                f"At most {max_count} {kind} attachments are allowed per write.",
+                code="ATTACHMENT_LIMIT_EXCEEDED",
+            )
+        total_bytes += len(content)
+        if total_bytes > MAX_TOTAL_ATTACHMENT_BYTES:
+            raise RedmineMcpError(
+                f"Attachments exceed the {MAX_TOTAL_ATTACHMENT_BYTES}-byte total limit.",
                 code="ATTACHMENT_LIMIT_EXCEEDED",
             )
 
-        content_type = _detect_image_content_type(content)
-        if content_type is None:
-            raise RedmineMcpError(
-                f"Attachment is not a supported PNG, JPEG, GIF, WebP, or BMP image: {path}",
-                code="ATTACHMENT_TYPE_UNSUPPORTED",
-            )
-        filename = _safe_filename(item.get("filename"), fallback=path.name, index=index)
-        if Path(filename).suffix.casefold() not in _IMAGE_EXTENSIONS[content_type]:
-            raise RedmineMcpError(
-                f"attachments[{index}].filename extension does not match the image content.",
-                code="ATTACHMENT_TYPE_MISMATCH",
-            )
         normalized_filename = filename.casefold()
         if normalized_filename in filenames:
             raise RedmineMcpError(
@@ -166,13 +294,15 @@ def prepare_image_attachments(value: Any) -> list[PreparedImageAttachment]:
                 code="ATTACHMENT_INVALID",
             )
         prepared.append(
-            PreparedImageAttachment(
+            PreparedAttachment(
                 path=path,
                 filename=filename,
                 description=description,
+                kind=kind,
                 content_type=content_type,
                 content=content,
                 sha256=hashlib.sha256(content).hexdigest(),
+                content_scan=content_scan,
             )
         )
     return prepared
