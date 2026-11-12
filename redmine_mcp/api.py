@@ -14,7 +14,7 @@ from qa_mcp_contracts import (
     validate_preview_digest,
 )
 
-from .attachments import PreparedAttachment, prepare_attachments
+from .attachments import PreparedAttachment, attachment_warnings, prepare_attachments
 from .audit import find_operation_audits, utc_now_iso, write_operation_audit
 from .client import RedmineClient
 from .config import DEFAULT_AUDIT_DIR, DEFAULT_TIMEOUT_SECONDS, RedmineSettings, load_redmine_settings
@@ -259,6 +259,7 @@ def _build_bug_plan(
         str(item.get("message") or "Redmine text format warning.")
         for item in format_validation["warnings"]
     )
+    warnings.extend(attachment_warnings(attachments))
     if not format_validation["valid"]:
         action = "blocked"
         existing_issue = open_issue or closed_issue
@@ -1148,6 +1149,7 @@ def _redmine_comment(
             warnings.append("Redmine comment format validation failed.")
         prepared_attachments: list[PreparedAttachment] = prepare_attachments(attachments)
         attachment_metadata = [attachment.metadata() for attachment in prepared_attachments]
+        warnings.extend(attachment_warnings(attachment_metadata))
         plan = {
             "schema_version": CONTRACT_SCHEMA_VERSION,
             "operation_id": _require_text("operation_id", operation_id, max_length=128),

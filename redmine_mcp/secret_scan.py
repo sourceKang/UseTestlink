@@ -1,8 +1,8 @@
-"""Block text attachments that look like they carry credentials.
+"""Flag credential-like lines in text attachments.
 
-The scanner is a gate, not a sanitizer: a hit rejects the attachment and the
-caller fixes the file. Findings carry only the line number and rule name, never
-the matched value.
+Hits do not block the upload (attachments are evidence for RD, which may need test
+accounts); they are listed in the preview for review. Findings carry only the line
+number and rule name, never the matched value.
 """
 
 from __future__ import annotations

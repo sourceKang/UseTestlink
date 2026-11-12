@@ -119,9 +119,13 @@ Type detection:
   extension must match the detected type, so a binary cannot be renamed into another kind.
 - Any other file is text only if its extension is on the list above. Text must be UTF-8
   (a BOM is allowed) and must not contain NUL bytes.
-- Text files are scanned for credentials before preview. A hit rejects the file with
-  `ATTACHMENT_SECRET_DETECTED`, naming the line number and rule but never the matched value;
-  the file is not rewritten, so the caller masks it and previews again. Rules cover
+- Text files are scanned for credential-like lines, but a hit does **not** block the upload:
+  attachments are evidence for RD, who may need the test accounts in a repro script or log to
+  reproduce the problem. The file's `content_scan` becomes `flagged` with `finding_count` and up
+  to 20 `{line, rule}` findings, and the preview adds a warning naming the file, line numbers and
+  rules; the matched value is never returned, logged or audited. The file is uploaded unchanged
+  once the user confirms the preview; to keep a value out of Redmine, mask the file and preview
+  again. Rules cover
   `key=value`, `key: value`, JSON fields, and headers for password, passphrase, secret,
   API key, devKey, token (including `csrftoken`, `access_token`), session ID, registration
   ID, and private key; `Bearer`/`Basic`/`Digest` credentials; `--password`, `sshpass -p`, and
@@ -134,7 +138,7 @@ Type detection:
   `os.environ[...]`, `null`, `N/A`, and empty values are not hits.
   In `.py` files only string literals count for English keys, so `password=args.password` is
   not a hit; Chinese labels count everywhere, including comments.
-  The scan is a gate, not a guarantee: still review the attachment list in the preview.
+  The scan only points at likely lines; it is not a guarantee, so still review the attachments.
 - Videos and images are not scanned.
 
 Preview performs no upload. It returns each file's `filename`, `description`, `kind`,

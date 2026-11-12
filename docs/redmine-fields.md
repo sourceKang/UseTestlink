@@ -202,8 +202,9 @@ tokens are never MCP arguments. Details and the credential-scan rules are in
 - Images: PNG, JPEG, GIF, WebP, BMP; at most 5, 10 MiB each (unchanged).
 - Videos: WebM, MKV, MP4/M4V, MOV detected from content; at most 3, 20 MiB each; not scanned.
 - Text: `.py`, `.sh`, `.json`, `.jsonl`, `.log`, `.txt`, `.csv`, `.md`; UTF-8 without NUL; at most 5,
-  1 MiB each; a possible credential (English or Chinese labels such as `密碼：`/`帳密`, unlabeled JWTs)
-  rejects the file (`ATTACHMENT_SECRET_DETECTED`) without echoing it.
+  1 MiB each; credential-like lines (English or Chinese labels such as `密碼：`/`帳密`, unlabeled JWTs)
+  are flagged in the preview by line and rule, without echoing the value, and are not blocked:
+  the file is evidence for RD and is uploaded unchanged after confirmation.
 - At most 10 files and 64 MiB per write. Company Redmine's own `attachment_max_size` is unknown and
   may be lower; an oversized upload fails before the issue or comment is written.
 - Upload tokens are internal ephemeral values and must not be written to responses, errors, or audit JSON.

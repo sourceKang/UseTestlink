@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import RedmineMcpError
-from .secret_scan import RULESET_VERSION, describe_findings, scan_text
+from .secret_scan import MAX_REPORTED_FINDINGS, RULESET_VERSION, SecretFinding, describe_findings, scan_text
 
 
 MIB = 1024 * 1024
@@ -56,7 +56,7 @@ _KIND_LIMITS = {
 SUPPORTED_TYPES_SUMMARY = (
     "<=10 files, <=64 MiB total; image PNG/JPEG/GIF/WebP/BMP <=5x10 MiB; "
     "video WebM/MKV/MP4/MOV <=3x20 MiB; UTF-8 text py/sh/json/jsonl/log/txt/csv/md <=5x1 MiB, "
-    "rejected if it may hold credentials"
+    "credential-like lines are flagged in preview, not blocked"
 )
 
 
@@ -182,14 +182,36 @@ def _classify(
             f"Text attachment must be UTF-8: {filename} (invalid byte at offset {exc.start}).",
             code="ATTACHMENT_ENCODING_INVALID",
         ) from exc
+    # Attachments are evidence for RD, which may need test accounts to reproduce, so
+    # credential-like lines are flagged for review in the preview instead of blocked.
     findings = scan_text(text, suffix=suffix)
+    content_scan: dict[str, Any] = {
+        "status": "flagged" if findings else "passed",
+        "ruleset_version": RULESET_VERSION,
+    }
     if findings:
-        raise RedmineMcpError(
-            f"Text attachment {filename} may contain credentials ({describe_findings(findings)}). "
-            "Remove or mask them and preview again; the file was not uploaded.",
-            code="ATTACHMENT_SECRET_DETECTED",
+        content_scan["finding_count"] = len(findings)
+        content_scan["findings"] = [
+            {"line": item.line, "rule": item.rule} for item in findings[:MAX_REPORTED_FINDINGS]
+        ]
+    return "text", content_type, content_scan
+
+
+def attachment_warnings(metadata: list[dict[str, Any]]) -> list[str]:
+    """Preview warnings for text attachments with credential-like lines (no values)."""
+    warnings = []
+    for item in metadata:
+        scan = item.get("content_scan") or {}
+        if scan.get("status") != "flagged":
+            continue
+        findings = [SecretFinding(line=entry["line"], rule=entry["rule"]) for entry in scan["findings"]]
+        hidden = scan["finding_count"] - len(findings)
+        detail = describe_findings(findings) + (f", and {hidden} more" if hidden > 0 else "")
+        warnings.append(
+            f"Text attachment {item['filename']} has credential-like lines ({detail}); "
+            "it is uploaded unchanged for RD, so confirm its content before writing."
         )
-    return "text", content_type, {"status": "passed", "ruleset_version": RULESET_VERSION}
+    return warnings
 
 
 def prepare_attachments(value: Any) -> list[PreparedAttachment]:

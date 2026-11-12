@@ -503,23 +503,45 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertEqual([], client.uploaded_files)
         self.assertEqual([], client.created_payloads)
 
-    def test_text_attachment_with_credential_is_rejected_without_echoing_it(self) -> None:
+    def test_text_attachment_with_credential_is_flagged_not_blocked(self) -> None:
+        client = FakeRedmineClient()
+        content = "GET /api ok\nCookie: sessionid=Zx81secretvalue\n測試帳密 admin/Ems12345\n".encode("utf-8")
+        with TemporaryDirectory() as tmpdir:
+            log = write_file(tmpdir, "session.log", content)
+            args = bug_args(attachments=[{"file": str(log)}])
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_preview_bug(**args)["result"]
+                result = api.redmine_create_bug(
+                    **args, write=True, preview_digest=preview["preview_digest"], audit_dir=tmpdir
+                )
+            audit_text = (Path(tmpdir) / result["result"]["audit_id"]).read_text(encoding="utf-8")
+
+        scan = preview["attachments"][0]["content_scan"]
+        self.assertEqual("flagged", scan["status"])
+        self.assertEqual(
+            [{"line": 2, "rule": "credential-assignment"}, {"line": 3, "rule": "chinese-credential-label"}],
+            scan["findings"],
+        )
+        warning = next(item for item in preview["warnings"] if "session.log" in item)
+        self.assertIn("line 2: credential-assignment", warning)
+        self.assertEqual("create", preview["action"])
+        for secret in ("Zx81secretvalue", "Ems12345"):
+            self.assertNotIn(secret, json.dumps(preview, ensure_ascii=False))
+            self.assertNotIn(secret, json.dumps(result, ensure_ascii=False))
+            self.assertNotIn(secret, audit_text)
+        self.assertTrue(result["ok"])
+        self.assertEqual([("session.log", content)], client.uploaded_files)
+
+    def test_comment_preview_warns_about_flagged_text_attachment(self) -> None:
         client = FakeRedmineClient()
         with TemporaryDirectory() as tmpdir:
-            log = write_file(
-                tmpdir,
-                "session.log",
-                b"GET /api ok\nCookie: sessionid=Zx81secretvalue\n",
-            )
+            script = write_file(tmpdir, "repro.py", b'PASSWORD = "Ems12345"\n')
             with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
-                result = api.redmine_preview_bug(**bug_args(attachments=[{"file": str(log)}]))
+                preview = api.redmine_preview_comment(**comment_args(attachments=[{"file": str(script)}]))["result"]
 
-        error = result["error"]["error"]
-        self.assertFalse(result["ok"])
-        self.assertEqual("ATTACHMENT_SECRET_DETECTED", error["code"])
-        self.assertIn("line 2: credential-assignment", error["message"])
-        self.assertNotIn("Zx81secretvalue", json.dumps(result))
-        self.assertEqual([], client.uploaded_files)
+        self.assertTrue(preview["planned_write"])
+        self.assertTrue(any("repro.py" in item and "line 1" in item for item in preview["warnings"]))
+        self.assertNotIn("Ems12345", json.dumps(preview))
 
     def test_comment_attachments_are_digest_bound_and_sent_with_notes(self) -> None:
         client = FakeRedmineClient()
@@ -1907,7 +1929,7 @@ class AttachmentPreparationTests(unittest.TestCase):
                     ("b.txt", b"y" * 20),
                 )
 
-    def test_secret_rules_hit_without_returning_values(self) -> None:
+    def test_secret_rules_flag_without_returning_values(self) -> None:
         cases = [
             ("a.log", "password=Hunter2x", "credential-assignment"),
             ("b.json", '{"apiKey": "k-1234567890"}', "credential-assignment"),
@@ -1933,12 +1955,15 @@ class AttachmentPreparationTests(unittest.TestCase):
         ]
         for name, line, rule in cases:
             with self.subTest(name=name), TemporaryDirectory() as tmpdir:
-                error = self.assert_rejected(
-                    "ATTACHMENT_SECRET_DETECTED", tmpdir, (name, f"ok\n{line}\n".encode("utf-8"))
-                )
-                self.assertIn(f"line 2: {rule}", error.message)
+                prepared = self.prepare(tmpdir, (name, f"ok\n{line}\n".encode("utf-8")))
+                metadata = [item.metadata() for item in prepared]
+                scan = metadata[0]["content_scan"]
+                self.assertEqual("flagged", scan["status"])
+                self.assertIn({"line": 2, "rule": rule}, scan["findings"])
+                reported = json.dumps(metadata) + " ".join(attachments.attachment_warnings(metadata))
+                self.assertIn(f"line 2: {rule}", reported)
                 for secret in ("Hunter2x", "k-1234567890", "0123456789abcdef", "def456", "reg-998877", "eyJhbGci"):
-                    self.assertNotIn(secret, error.message)
+                    self.assertNotIn(secret, reported)
 
     def test_placeholders_and_code_references_are_not_hits(self) -> None:
         clean = {
