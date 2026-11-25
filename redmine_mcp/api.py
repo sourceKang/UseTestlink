@@ -167,7 +167,7 @@ def _verify_issue_fields(
         ) if isinstance(custom_fields, list) else None
         expected_value = _normalized_field_value(priority.get("value"))
         actual_value = _normalized_field_value(matching.get("value")) if matching is not None else None
-        # Some projects (e.g. neox-series) do not enable the priority field at all, so
+        # Some projects do not enable custom field 119 (Priority) at all, so
         # Redmine omits it from readback. That only matches when the expected value is blank.
         absent_and_blank = matching is None and expected_value in ("", [])
         priority_result = {

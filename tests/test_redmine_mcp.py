@@ -1705,7 +1705,7 @@ class RedmineMcpApiTests(unittest.TestCase):
             template_path.write_text(
                 json.dumps(
                     {
-                        "project_id": "neox-series",
+                        "project_id": "example-project",
                         "tracker_id": 1,
                         "severity": {
                             "transport_field": "priority_id",
@@ -1735,7 +1735,7 @@ class RedmineMcpApiTests(unittest.TestCase):
                 )
 
     def test_priority_field_absent_on_issue_matches_blank_expectation(self) -> None:
-        # neox-series issues do not carry custom field 119 at all (#264013, #264067).
+        # Some projects do not enable custom field 119, so their issues omit it entirely.
         result = self._create_with_priority_readback([{"id": 15, "name": "Product Line", "value": "X"}])
 
         self.assertTrue(result["ok"], result)

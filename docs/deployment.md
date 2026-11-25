@@ -40,14 +40,14 @@ Do not publish a release tag from an unreviewed or partially merged branch.
 Install once per Windows user, not once per consuming project:
 
 ```powershell
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.10"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.11"
 ```
 
 If an editable or obsolete installation already exists, replace it explicitly:
 
 ```powershell
 pipx uninstall testlink-agent
-pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.10"
+pipx install "git+https://github.com/sourceKang/UseTestlink.git@v1.9.11"
 ```
 
 Run `pipx ensurepath` once if the pipx binary directory is not already on `PATH`, then
@@ -142,10 +142,16 @@ default, needs the confirmed `preview_digest`, refuses to overwrite a value chan
 reads the issue back, and keeps the previous text in the audit. The default `discovery` and the
 `integration` toolsets do not expose them.
 
+From v1.9.11, `redmine_search_issues` checks every returned subject against `subject_contains`
+(case-insensitive) and fails with `FILTER_NOT_APPLIED` when Redmine ignored the filter, instead of
+returning unfiltered issues. Bug-create readback accepts a project without custom field 119
+(Priority) when the expected Priority was blank, so it no longer reports a false
+`VERIFICATION_FAILED`; a non-blank expected Priority must still match.
+
 After a newer reviewed tag is published:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.10"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.11"
 ```
 
 Run `testlink-agent install-skills` to refresh the installed skills, restart Codex and
@@ -158,7 +164,7 @@ reproducible release identity.
 Reinstall the previously approved tag:
 
 ```powershell
-pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.9"
+pipx install --force "git+https://github.com/sourceKang/UseTestlink.git@v1.9.10"
 ```
 
 Restart Codex and verify the installed version. Rollback changes only the local MCP
