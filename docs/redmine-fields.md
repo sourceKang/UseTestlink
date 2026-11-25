@@ -72,6 +72,10 @@ priority_id
 custom_fields, when required by the corporate tracker
 ```
 
+`category_id` is optional and is not verified after create. The corporate Redmine has been seen
+to ignore a `category_id` sent on create (the issue was created with no category); check the
+created issue and set the category manually in Redmine if it matters.
+
 ## Template Custom Field Merge
 
 Caller `custom_fields` are overlaid on the template `custom_fields` by field ID: a caller
@@ -169,7 +173,10 @@ The preview also returns the exact safe `issue_payload`. Both the semantic field
 and resolved payload are covered by `preview_digest`; changing either requires a new preview.
 
 After creating an issue, `redmine-mcp` reads it back and verifies `issue.priority.id` and
-`custom_fields[id=119]` independently. A mismatch is a `VERIFICATION_FAILED` partial result:
+`custom_fields[id=119]` independently. Some corporate projects do not enable field 119 at all, so
+the readback omits it; an absent field counts as a match only when the expected Priority is blank,
+and a non-blank expectation or a different value still fails.
+A mismatch is a `VERIFICATION_FAILED` partial result:
 the created issue identity is retained in audit, and the issue must not be created again.
 
 The issue description must include TestLink evidence:

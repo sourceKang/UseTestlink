@@ -1318,6 +1318,36 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertEqual("FILTER_NOT_APPLIED", result["error"]["error"]["code"])
         self.assertNotIn("leaked-other-build", json.dumps(result))
 
+    def test_search_fails_closed_when_redmine_ignores_subject_filter(self) -> None:
+        client = FakeRedmineClient()
+        client.search_results = [
+            {"id": 1, "subject": "[RESTful] IPv6 ipconf missing", "custom_fields": []},
+            {"id": 2, "subject": "unrelated-latest-issue", "custom_fields": []},
+        ]
+        with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+            result = api.redmine_search_issues(
+                operation_id="operation-search-subject-ignored",
+                environment="sandbox",
+                subject_contains="ipv6",
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("FILTER_NOT_APPLIED", result["error"]["error"]["code"])
+        self.assertNotIn("unrelated-latest-issue", json.dumps(result))
+
+    def test_search_subject_filter_match_is_case_insensitive(self) -> None:
+        client = FakeRedmineClient()
+        client.search_results = [{"id": 1, "subject": "[RESTful] IPv6 ipconf missing", "custom_fields": []}]
+        with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+            result = api.redmine_search_issues(
+                operation_id="operation-search-subject-ok",
+                environment="sandbox",
+                subject_contains="ipv6",
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(["1"], [issue["id"] for issue in result["result"]["issues"]])
+
     def test_unknown_tool_argument_is_rejected_before_redmine_call(self) -> None:
         client = FakeRedmineClient()
         with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
@@ -1662,6 +1692,70 @@ class RedmineMcpApiTests(unittest.TestCase):
         self.assertTrue(verification["severity"]["match"])
         self.assertTrue(verification["priority"]["match"])
         self.assertEqual("", verification["priority"]["actual_value"])
+
+    def _create_with_priority_readback(self, custom_fields: list, priority_value: str | None = None) -> dict:
+        client = FakeRedmineClient()
+        client.issue_readback_override = {
+            "id": "12345",
+            "priority": {"id": 5, "name": "L2"},
+            "custom_fields": custom_fields,
+        }
+        with TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "redmine-template.json"
+            template_path.write_text(
+                json.dumps(
+                    {
+                        "project_id": "neox-series",
+                        "tracker_id": 1,
+                        "severity": {
+                            "transport_field": "priority_id",
+                            "default": "L2",
+                            "values": {"L3": 4, "L2": 5, "L1": 6},
+                        },
+                        "priority": {
+                            "transport_field": "custom_fields",
+                            "custom_field_id": 119,
+                            "allowed_values": ["P1"],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            extra = {"custom_priority": priority_value} if priority_value is not None else {}
+            args = bug_args(tracker_id=None, priority_id=None, template_file=str(template_path), **extra)
+            with patch("redmine_mcp.api._runtime", return_value=(settings(), client)):
+                preview = api.redmine_create_bug(**args)
+                if not preview["ok"]:
+                    return preview
+                return api.redmine_create_bug(
+                    **args,
+                    write=True,
+                    preview_digest=preview["result"]["preview_digest"],
+                    audit_dir=tmpdir,
+                )
+
+    def test_priority_field_absent_on_issue_matches_blank_expectation(self) -> None:
+        # neox-series issues do not carry custom field 119 at all (#264013, #264067).
+        result = self._create_with_priority_readback([{"id": 15, "name": "Product Line", "value": "X"}])
+
+        self.assertTrue(result["ok"], result)
+        verification = result["result"]["field_verification"]
+        self.assertEqual("verified", verification["status"])
+        self.assertFalse(verification["priority"]["found"])
+        self.assertTrue(verification["priority"]["match"])
+
+    def test_priority_field_absent_on_issue_fails_when_value_expected(self) -> None:
+        result = self._create_with_priority_readback([], priority_value="P1")
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("VERIFICATION_FAILED", result["error"]["error"]["code"])
+        self.assertFalse(result["error"]["partial_result"]["field_verification"]["priority"]["match"])
+
+    def test_priority_field_with_different_value_still_fails(self) -> None:
+        result = self._create_with_priority_readback([{"id": 119, "name": "Priority", "value": "P2"}])
+
+        self.assertFalse(result["ok"])
+        self.assertEqual("VERIFICATION_FAILED", result["error"]["error"]["code"])
 
     def test_created_issue_readback_mismatch_fails_and_audits_issue_identity(self) -> None:
         client = FakeRedmineClient()

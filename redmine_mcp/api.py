@@ -167,13 +167,16 @@ def _verify_issue_fields(
         ) if isinstance(custom_fields, list) else None
         expected_value = _normalized_field_value(priority.get("value"))
         actual_value = _normalized_field_value(matching.get("value")) if matching is not None else None
+        # Some projects (e.g. neox-series) do not enable the priority field at all, so
+        # Redmine omits it from readback. That only matches when the expected value is blank.
+        absent_and_blank = matching is None and expected_value in ("", [])
         priority_result = {
             "transport_field": "custom_fields",
             "custom_field_id": field_id,
             "expected_value": expected_value,
             "actual_value": actual_value,
             "found": matching is not None,
-            "match": matching is not None and actual_value == expected_value,
+            "match": absent_and_blank or (matching is not None and actual_value == expected_value),
         }
     verified = severity_result["match"] and (priority_result is None or priority_result["match"])
     result = {
@@ -564,6 +567,18 @@ def redmine_search_issues(
             query[f"cf_{field_filter['id']}"] = prefix + field_filter["value"]
         response = client.search_issues(query)
         issues = [issue for issue in response["issues"] if issue.get("id") not in (None, "")]
+        # Some Redmine instances silently ignore the `subject=~keyword` short filter and
+        # return the unfiltered latest issues; never pass those off as matches.
+        subject_keyword = str(subject_contains or "").strip().casefold()
+        if subject_keyword and any(
+            subject_keyword not in str(issue.get("subject") or "").casefold() for issue in issues
+        ):
+            raise RedmineMcpError(
+                "Redmine did not apply the subject_contains filter; results were discarded "
+                "instead of returned unfiltered. Narrow the search with other filters "
+                "(status, tracker, dates, custom fields) and check subjects manually.",
+                code="FILTER_NOT_APPLIED",
+            )
         # Redmine silently drops filters on fields that are not filterable or visible.
         ignored = sorted(
             {
